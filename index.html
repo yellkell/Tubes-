@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>TUBES</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🔧%3C/text%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0a0906;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      #scene-container {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        background:
+          radial-gradient(circle at 28% 22%, rgba(255, 162, 46, 0.14), transparent 28rem),
+          radial-gradient(circle at 74% 72%, rgba(70, 224, 255, 0.1), transparent 24rem),
+          linear-gradient(150deg, #0a0906 0%, #12100a 55%, #0a0d0e 100%);
+      }
+      /* The landing: a dark plant floor, work lights sweeping, one button.
+         The room on the other side of it is YOUR room. */
+      .landing {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: clamp(22px, 5vh, 44px);
+        padding: clamp(16px, 5vw, 48px);
+        box-sizing: border-box;
+        background: #080704;
+        transition:
+          opacity 220ms ease,
+          visibility 220ms ease;
+        overflow: hidden;
+      }
+      body.app-entered .landing {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      /* Sweeping work-light pools on the plant floor. */
+      .landing::before,
+      .landing::after {
+        content: '';
+        position: absolute;
+        inset: -20%;
+        pointer-events: none;
+        background:
+          radial-gradient(circle at 22% 32%, rgba(255, 162, 46, 0.16), transparent 24rem),
+          radial-gradient(circle at 78% 24%, rgba(70, 224, 255, 0.1), transparent 20rem),
+          radial-gradient(circle at 58% 82%, rgba(255, 122, 24, 0.12), transparent 26rem);
+        animation: sweep 14s linear infinite;
+        filter: blur(12px);
+      }
+      .landing::after {
+        background:
+          radial-gradient(circle at 68% 62%, rgba(180, 107, 255, 0.08), transparent 20rem),
+          radial-gradient(circle at 32% 74%, rgba(255, 162, 46, 0.1), transparent 22rem);
+        animation-duration: 21s;
+        animation-direction: reverse;
+      }
+      @keyframes sweep {
+        from {
+          transform: rotate(0deg) scale(1.05);
+        }
+        to {
+          transform: rotate(360deg) scale(1.05);
+        }
+      }
+      .landing__title {
+        position: relative;
+        z-index: 1;
+        text-align: center;
+        line-height: 0.92;
+        user-select: none;
+      }
+      /* TUBES: furnace-amber face with a cyan chromatic ghost — hot metal
+         under a cold shop light. The throb runs at a pump's pace, not a
+         kick drum's: this is a machine breathing, not a rave. */
+      .landing__word {
+        display: block;
+        font-family: 'Arial Black', 'Arial Narrow', system-ui, sans-serif;
+        font-weight: 900;
+        font-size: clamp(84px, 21vw, 240px);
+        letter-spacing: 0.1em;
+        text-indent: 0.1em;
+        color: #ffd9a8;
+        text-shadow:
+          -5px 0 0 rgba(70, 224, 255, 0.4),
+          5px 0 0 rgba(255, 82, 24, 0.5),
+          0 0 24px rgba(255, 162, 46, 0.95),
+          0 0 74px rgba(255, 140, 26, 0.5),
+          0 6px 0 rgba(56, 30, 4, 0.95);
+        animation: chug 2.4s ease-in-out infinite;
+      }
+      .landing__sub {
+        display: block;
+        margin-top: clamp(10px, 2vh, 20px);
+        font-family: 'Arial Black', system-ui, sans-serif;
+        font-weight: 900;
+        font-size: clamp(13px, 2vw, 19px);
+        letter-spacing: 0.42em;
+        text-indent: 0.42em;
+        color: rgba(255, 217, 168, 0.6);
+        text-shadow: 0 0 14px rgba(255, 162, 46, 0.35);
+      }
+      @keyframes chug {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+        8% {
+          transform: scale(1.03) skewX(-0.6deg);
+        }
+        16% {
+          transform: scale(0.995);
+        }
+      }
+      #enter-ar {
+        position: relative;
+        z-index: 1;
+        appearance: none;
+        border: 2px solid rgba(255, 162, 46, 0.8);
+        border-radius: 999px;
+        padding: 16px 44px;
+        font-family: 'Arial Black', system-ui, sans-serif;
+        font-weight: 900;
+        font-size: clamp(16px, 2.4vw, 22px);
+        letter-spacing: 0.18em;
+        text-indent: 0.18em;
+        color: #ffd9a8;
+        background: rgba(26, 18, 6, 0.72);
+        cursor: pointer;
+        box-shadow:
+          0 0 22px rgba(255, 162, 46, 0.4),
+          inset 0 0 18px rgba(255, 162, 46, 0.16);
+        transition:
+          transform 120ms ease,
+          box-shadow 120ms ease;
+      }
+      #enter-ar:hover:not([disabled]) {
+        transform: scale(1.045);
+        box-shadow:
+          0 0 34px rgba(255, 162, 46, 0.65),
+          inset 0 0 22px rgba(255, 162, 46, 0.28);
+      }
+      #enter-ar[disabled] {
+        opacity: 0.45;
+        cursor: default;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="scene-container"></div>
+    <div class="landing">
+      <div class="landing__title">
+        <span class="landing__word">TUBES</span>
+        <span class="landing__sub">THE WORKS WANTS BACK ON</span>
+      </div>
+      <button id="enter-ar">CLOCK IN</button>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

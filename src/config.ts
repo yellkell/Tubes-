@@ -1,0 +1,331 @@
+/**
+ * TUBES — every number the feel depends on.
+ *
+ * The game: a passthrough-AR pipefitting toy-puzzle played against the real
+ * walls of your real room. Behind those walls (the fiction goes) sleeps an
+ * old machine — THE WORKS — and you are the fitter bringing it back online.
+ * A job hands you a run: you MOUNT a flange on a wall of your choosing, the
+ * room answers by waking a socket somewhere on ANOTHER wall, and between
+ * them goes a tube — a big industrial telescoping thing that takes both
+ * hands. Grab the collar, haul it out of the wall click by click, walk it
+ * across your actual floor, and offer it up to the socket until the magnet
+ * takes it and the latch dogs slam home. Then the payoff: liquid light
+ * pours through the run, the socket blooms, and a shaft of sun leans into
+ * your room out of a wall that never had a window.
+ *
+ * Jobs start at one run and grow to three, keyed by LINE type — MAINS,
+ * COOLANT, VOLT — each with its own metalwork, its own light and its own
+ * voice. A socket only takes its own line. That is the whole puzzle, and
+ * it is enough: the game is the pull, the seat, and the pour.
+ *
+ * Dimensions are metres. Times are seconds. Colours are the line's.
+ */
+
+export const GAME_TITLE = 'TUBES';
+
+/* ────────────────────────────── THE WALLS ────────────────────────────────
+ * Quest's room scan (WebXR plane detection) hands us the real walls as
+ * planes. WallSystem folds them into a registry the whole game reads:
+ * centre, normal (into the room), tangent basis and extents per wall.
+ * Where no scan exists — desktop emulator, a headset that skipped room
+ * setup — a synthetic fallback room stands in after a grace period, so the
+ * game is always playable and the tools can always drive it.
+ */
+export const WALLS = {
+  /** A wall must offer at least this much face (m²) to host hardware. */
+  minArea: 1.1,
+  /** Nothing mounts within this margin of a wall's edges. */
+  edgeInset: 0.3,
+  /** Mounting band: hardware lives where hands can work it. */
+  minHeight: 0.7,
+  maxHeight: 2.05,
+  /** How long we wait for real planes after the session starts before the
+   *  fallback room stands in. The scan usually answers inside a second;
+   *  the grace keeps a slow first frame from building phantom walls. */
+  fallbackGraceS: 3,
+  /** The fallback room, centred on the player, aligned to their facing:
+   *  a comfortable flat footprint (w × d, height h). */
+  fallback: { w: 4.6, d: 3.6, h: 2.7 },
+  /** Faint edge hint drawn on fallback walls (real walls need none — the
+   *  player can SEE those). Opacity of the hairline frame. */
+  hintOpacity: 0.22,
+};
+
+/* ────────────────────────────── THE TUBE ─────────────────────────────────
+ * One run = flange (wall A) → telescoping tube → socket (wall B). The tube
+ * is rigid plant hardware, not rope: it exits the flange along the wall's
+ * normal, carries a gentle industrial flex on its way to your hands, and
+ * telescopes in SEGMENTS that emerge one by one as you pull — each arrival
+ * a click you can hear and feel. The segment count is fixed; the tube gets
+ * longer by each segment sliding out of the one behind it.
+ */
+export const TUBE = {
+  /** Telescoping segments (root → head). Eight reads unmistakably as
+   *  plant pipework and keeps the whole run cheap to pose. */
+  segments: 8,
+  /** Radius of the fattest (root) segment, and of the slimmest (head).
+   *  BIG on purpose: this is two-hands hardware, not a hose. */
+  rootRadius: 0.088,
+  headRadius: 0.058,
+  /** How much tube sticks out of a freshly mounted flange — the stub you
+   *  grab. Enough to read as "handle", not enough to poke anyone. */
+  stubLength: 0.42,
+  /** Max extension = run distance + this much slack, so a seated tube
+   *  always had headroom and a wild pull can overshoot the socket a bit
+   *  without hitting the stops the moment it lines up. */
+  slack: 1.2,
+  /** Hard ceiling on any run (fallback rooms are ~4.6 m corner to corner;
+   *  real scans can be bigger, and a 7 m tube is still a good time). */
+  maxLength: 7,
+  /** THE PULL. The head chases the two-hand midpoint through a critically
+   *  damped spring — the lag is the WEIGHT. Stiffness falls as the tube
+   *  gets longer (more metal in your hands), which reads as mass without
+   *  any physics engine. */
+  followStiffness: 14,
+  followStiffnessFar: 7.5,
+  /** Both hands must be inside this reach of the collar to take it.
+   *  Generous: the fantasy is hauling plant, not threading a needle. */
+  grabReach: 0.3,
+  /** One hand alone can't haul it — but it can RATTLE it. The shake
+   *  amplitude and the cooldown between rattle clanks. */
+  rattleAmp: 0.012,
+  rattleCooldownS: 0.4,
+  /** A detent clicks every time this much tube emerges (or returns). The
+   *  ratchet is most of what "it extends!" feels like in the hands. */
+  detentPitch: 0.34,
+  /** Released mid-carry, the free end DROOPS — a damped settle onto a
+   *  slight sag, held by the wall. Sag per metre of extension, capped. */
+  droopPerMetre: 0.055,
+  droopMax: 0.2,
+  droopSettleS: 0.7,
+  /** The root flex: the tube leaves the wall along its normal and bows
+   *  toward your hands. Control-point reach as a fraction of extension —
+   *  small numbers keep it reading as heavy pipe, not garden hose. */
+  bendReach: 0.32,
+  bendReachMax: 0.85,
+};
+
+/* ────────────────────────────── THE SEAT ─────────────────────────────────
+ * The socket answers a tube that comes CLOSE ENOUGH, POINTED ROUGHLY IN.
+ * Inside the window the guide brightens and a magnet takes over — the head
+ * eases onto the seat pose, the hands feel the pull-in, and the moment it
+ * bottoms the latch dogs slam. Forgiveness is the design: every number
+ * here is a doorway, not a keyhole.
+ */
+export const SEAT = {
+  /** The magnet's catch radius around the socket mouth. */
+  snapRadius: 0.32,
+  /** How square the tube must arrive: dot(tube direction, into-socket).
+   *  0.35 ≈ within ~70° — offer it up ANYWHERE near square and the
+   *  socket does the last of the aiming for you. */
+  alignDot: 0.35,
+  /** The magnet's ease-in time once it takes. */
+  magnetS: 0.16,
+  /** Seat travel: the last shove, eased over this long, then the dogs. */
+  seatS: 0.24,
+  /** A seated head is DONE — the run locks, hands come away clean. */
+};
+
+/* ────────────────────────────── THE WAKE ─────────────────────────────────
+ * The beat between mounting a flange and the room answering. Fixed
+ * theatre, always the same shape: the bolts bite, something KNOCKS from
+ * inside another wall, and the socket irises awake where the knock came
+ * from. Short enough to never wait through twice grudgingly.
+ */
+export const WAKE = {
+  /** Knock-knock from behind the chosen wall (s after mount). */
+  knockAt: 0.35,
+  /** The socket stamps itself and irises open. */
+  socketAt: 1.0,
+  /** The run hands over to the pull. */
+  doneAt: 1.55,
+};
+
+/* ────────────────────────────── THE FLOW ─────────────────────────────────
+ * The payoff. On latch, the line charges for a breath, then the front
+ * races the run from flange to socket and the tube is ALIVE — a living
+ * pour riding inside frosted metal, pulsing at the line's own pace. At
+ * the far end: the bloom, the shaft of light into the room, and the hum
+ * settling in for good.
+ */
+export const FLOW = {
+  /** The held breath between latch and pour. Anticipation is cheap. */
+  chargeS: 0.55,
+  /** The advancing front's hot band length (m). */
+  frontBand: 0.55,
+  /** The arrival bloom: glint burst count and its life. */
+  bloomCount: 90,
+  bloomLifeS: 1.6,
+  /** The sun shaft leaning out of a connected socket: length and radius
+   *  at the wide end. Passthrough loves a light that isn't there. */
+  shaftLength: 1.9,
+  shaftRadius: 0.5,
+  /** Dust motes drifting in the shaft — the part that sells "sunlight". */
+  moteCount: 46,
+};
+
+/* ────────────────────────────── THE LINES ────────────────────────────────
+ * Three services run through THE WORKS, and every piece of hardware wears
+ * its line head to toe — metalwork, light, pour and voice. A socket only
+ * takes its own line; the collar's colour tells you which wall it wants.
+ *
+ *  MAINS   — the old plant. Cast iron, hex bolts, furnace-amber glow.
+ *            The pour is slow and heavy; the hum is a boiler two rooms
+ *            over; the seat is a steam hiss off hot metal.
+ *  COOLANT — the retrofit. Brushed alloy, sleek rings, glacier cyan.
+ *            Fast bright pour, airy hum, hydraulic sighs.
+ *  VOLT    — the future bolted onto both. Dark glass, coil rings,
+ *            violet plasma that travels in pulses and BITES when it
+ *            lands. Crackle, arc, zap.
+ */
+export interface LineSpec {
+  id: 'mains' | 'coolant' | 'volt';
+  name: string;
+  /** UI + text accents. */
+  hex: string;
+  /** The pour: lit body, shadowed depths, hot front/meniscus. */
+  glow: number;
+  deep: number;
+  foam: number;
+  /** Metalwork: shell tint, roughness, metalness — the vibe in PBR. */
+  shell: number;
+  roughness: number;
+  metalness: number;
+  /** Pour speed (m/s) and the living pulse once connected (Hz). */
+  flowSpeed: number;
+  pulseHz: number;
+  /** VOLT's strobing front: 0 = smooth liquid, 1 = full plasma chop. */
+  chop: number;
+}
+
+export const LINES: Record<'mains' | 'coolant' | 'volt', LineSpec> = {
+  mains: {
+    id: 'mains',
+    name: 'MAINS',
+    hex: '#ffa22e',
+    glow: 0xffa22e,
+    deep: 0x571f02,
+    foam: 0xffe9c4,
+    shell: 0x4a4038,
+    roughness: 0.52,
+    metalness: 0.82,
+    flowSpeed: 2.3,
+    pulseHz: 0.5,
+    chop: 0,
+  },
+  coolant: {
+    id: 'coolant',
+    name: 'COOLANT',
+    hex: '#46e0ff',
+    glow: 0x46e0ff,
+    deep: 0x043346,
+    foam: 0xdcf8ff,
+    shell: 0x5a6670,
+    roughness: 0.28,
+    metalness: 0.9,
+    flowSpeed: 4.2,
+    pulseHz: 0.9,
+    chop: 0,
+  },
+  volt: {
+    id: 'volt',
+    name: 'VOLT',
+    hex: '#b46bff',
+    glow: 0xb46bff,
+    deep: 0x2a0b4e,
+    foam: 0xefe0ff,
+    shell: 0x2d2a38,
+    roughness: 0.38,
+    metalness: 0.72,
+    flowSpeed: 5.4,
+    pulseHz: 2.2,
+    chop: 0.85,
+  },
+};
+
+/* ────────────────────────────── THE JOBS ─────────────────────────────────
+ * The shift sheet: five authored jobs, one honest difficulty. The ladder
+ * teaches by doing — one run, then a longer one, then two lines at once,
+ * then two lines that want to cross your room, then all three services
+ * and the room celebrates. Nothing here is random except WHERE the room
+ * puts the hardware; what you owe each job never changes.
+ *
+ *  runs      — the lines this job wants connected, in the order their
+ *              flange holograms are handed to you.
+ *  longHaul  — bias the socket toward the farthest legal wall, so the
+ *              run has to cross the room instead of hugging a corner.
+ */
+export interface JobSpec {
+  id: string;
+  name: string;
+  brief: string;
+  runs: Array<'mains' | 'coolant' | 'volt'>;
+  longHaul?: boolean;
+}
+
+export const JOBS: JobSpec[] = [
+  {
+    id: 'first-light',
+    name: 'FIRST LIGHT',
+    brief: 'One run on the MAINS. Mount the flange, haul the tube, seat it. The machine does the rest.',
+    runs: ['mains'],
+  },
+  {
+    id: 'crosstown',
+    name: 'CROSSTOWN',
+    brief: 'The MAINS again — but the socket wakes across the room. Walk it over. Mind the sofa.',
+    runs: ['mains'],
+    longHaul: true,
+  },
+  {
+    id: 'two-hander',
+    name: 'TWO-HANDER',
+    brief: 'MAINS and COOLANT, one after the other. A socket only takes its own line — the collar tells you whose.',
+    runs: ['mains', 'coolant'],
+  },
+  {
+    id: 'hot-and-cold',
+    name: 'HOT AND COLD',
+    brief: 'Both services, long-hauled. The runs will want the same air. Route around your own work.',
+    runs: ['coolant', 'mains'],
+    longHaul: true,
+  },
+  {
+    id: 'full-pressure',
+    name: 'FULL PRESSURE',
+    brief: 'MAINS, COOLANT, VOLT. Every line at once. Seat the last one and see what the room does.',
+    runs: ['mains', 'coolant', 'volt'],
+    longHaul: true,
+  },
+];
+
+/** Target placement: how far a socket may wake from its flange. */
+export const RUN_RANGE = {
+  min: 1.15,
+  max: 6.4,
+};
+
+/* ────────────────────────────── THE BOARD ────────────────────────────────
+ * The menu is a work board: quiet glass, hairlines, one furnace-amber
+ * accent that only marks what matters (see ui/panel.ts for the whole
+ * discipline). It floats at spawn, hides for the shift, and the right
+ * controller's Ⓐ raises the JOB CARD mid-shift the way a fitter checks
+ * the sheet — the shift never stops for it.
+ */
+export const BOARD = {
+  widthM: 1.3,
+  heightM: 0.86,
+  pxW: 1360,
+  pxH: 900,
+  /** Where the board stands relative to spawn (m, forward is −Z). */
+  position: [0, 1.32, -1.35] as [number, number, number],
+  /** The JOB CARD (pause) — small, dead ahead, below the eye line. */
+  cardW: 0.56,
+  cardH: 0.42,
+  cardPx: [560, 420] as [number, number],
+  cardPosition: [0, 1.24, -1.0] as [number, number, number],
+};
+
+/** The celebration when a job's last run lands: how long the room gets to
+ *  glow before the board comes back with the sheet stamped. */
+export const CEREMONY_S = 4.2;

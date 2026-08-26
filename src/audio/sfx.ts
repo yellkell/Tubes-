@@ -1,0 +1,537 @@
+/**
+ * Tiny WebAudio sound kit — every sound is synthesised at runtime (no asset
+ * files to ship or load), tuned to the shop's palette: struck cast iron,
+ * ratchet pawls, steam off hot metal, transformer hum, and the three
+ * voices of the lines themselves. The core building blocks carry over
+ * from RAVE RAID — `tone` (a glided oscillator), `whooshNoise` (bandpassed
+ * noise) and `clank` (an inharmonic partial stack with a noisy attack,
+ * metal on metal) — because struck plate steel was already the right
+ * instrument; TUBES just plays it slower and lets it ring.
+ *
+ * The AudioContext can only start inside a user gesture, so we unlock it on
+ * the first DOM interaction; after that, sounds triggered from the frame
+ * loop play fine.
+ */
+
+// Two gain stages: the synth SFX sit under `_master` (0.3, the quiet mix
+// bus); `_sfxOut` sits ABOVE it as the user's master SFX-volume fader. One
+// knob scales EVERY sound while keeping the relative balance.
+type Ctx = AudioContext & { _master?: GainNode; _sfxOut?: GainNode };
+
+const SFX_VOL_KEY = 'tubes-sfx-vol';
+
+function clamp01(n: number): number {
+  return Math.min(1, Math.max(0, n));
+}
+
+let sfxVol = ((): number => {
+  try {
+    const n = parseFloat(localStorage.getItem(SFX_VOL_KEY) ?? '');
+    return Number.isFinite(n) ? clamp01(n) : 1;
+  } catch {
+    return 1;
+  }
+})();
+
+let ctx: Ctx | null = null;
+
+function getCtx(): Ctx | null {
+  if (typeof window === 'undefined') return null;
+  if (!ctx) {
+    const AC =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC() as Ctx;
+    // User master fader → speakers.
+    const sfxOut = ctx.createGain();
+    sfxOut.gain.value = sfxVol;
+    sfxOut.connect(ctx.destination);
+    ctx._sfxOut = sfxOut;
+    // A gentle glue compressor between the synth mix and the fader: a
+    // shift's worth of hand-tuned one-shots will never sit at exactly one
+    // loudness, so the bus evens the spread — the big seats lose a little
+    // spike, the ratchet ticks keep their place, and the SFX slider scales
+    // ONE coherent level. Soft knee, low ratio: glue, not pumping.
+    const glue = ctx.createDynamicsCompressor();
+    glue.threshold.value = -24;
+    glue.knee.value = 14;
+    glue.ratio.value = 3;
+    glue.attack.value = 0.004;
+    glue.release.value = 0.18;
+    glue.connect(sfxOut);
+    // Quiet synth mix bus → the glue → the fader.
+    const master = ctx.createGain();
+    master.gain.value = 0.3;
+    master.connect(glue);
+    ctx._master = master;
+  }
+  return ctx;
+}
+
+/** The user master SFX bus. */
+export function sfxOut(): GainNode | null {
+  return getCtx()?._sfxOut ?? null;
+}
+
+/** Current master SFX volume, 0..1 (1 = full). */
+export function sfxVolume(): number {
+  return sfxVol;
+}
+
+/** Set + persist the master SFX volume; live-updates the running bus. */
+export function setSfxVolume(v: number): void {
+  sfxVol = clamp01(v);
+  try {
+    localStorage.setItem(SFX_VOL_KEY, sfxVol.toFixed(3));
+  } catch {
+    /* private mode — the choice just won't persist */
+  }
+  if (ctx?._sfxOut) ctx._sfxOut.gain.value = sfxVol;
+}
+
+function unlock(): void {
+  const c = getCtx();
+  if (c && c.state === 'suspended') void c.resume();
+}
+
+if (typeof window !== 'undefined') {
+  for (const ev of ['pointerdown', 'click', 'keydown', 'touchstart']) {
+    window.addEventListener(ev, unlock, { capture: true });
+  }
+}
+
+/** Call from a user gesture (e.g. CLOCK IN) to make sure audio is live. */
+export function ensureAudio(): void {
+  unlock();
+}
+
+function ready(): Ctx | null {
+  const c = getCtx();
+  if (!c) return null;
+  if (c.state === 'suspended') void c.resume();
+  return c.state === 'running' ? c : null;
+}
+
+/* ── the instruments ────────────────────────────────────────────────────── */
+
+interface ToneOpts {
+  freq: number;
+  to?: number; // glide target
+  type?: OscillatorType;
+  dur?: number;
+  gain?: number;
+  delay?: number;
+}
+
+function tone(o: ToneOpts): void {
+  const c = ready();
+  if (!c) return;
+  const { freq, to, type = 'sine', dur = 0.12, gain = 0.2, delay = 0 } = o;
+  const t0 = c.currentTime + delay;
+  const osc = c.createOscillator();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t0);
+  if (to) osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), t0 + dur);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(g).connect(c._master!);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.03);
+}
+
+/** Bandpass-filtered noise burst — the basis of every hiss and whoosh. */
+function whooshNoise(dur: number, gain: number, fromHz: number, toHz: number, delay = 0): void {
+  const c = ready();
+  if (!c) return;
+  const t0 = c.currentTime + delay;
+  const frames = Math.floor(c.sampleRate * dur);
+  const buf = c.createBuffer(1, frames, c.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < frames; i++) {
+    const p = i / frames;
+    data[i] = (Math.random() * 2 - 1) * (p < 0.12 ? p / 0.12 : 1) * (1 - p) ** 0.8;
+  }
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  const bp = c.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 1.1;
+  bp.frequency.setValueAtTime(fromHz, t0);
+  bp.frequency.exponentialRampToValueAtTime(toHz, t0 + dur * 0.6);
+  const g = c.createGain();
+  g.gain.value = gain;
+  src.connect(bp).connect(g).connect(c._master!);
+  src.start(t0);
+}
+
+/**
+ * Struck plate steel: an inharmonic partial stack (plate-bell ratios, each
+ * slightly detuned) over a sharp noise tick. `base` sets the pitch of the
+ * plate, `dur` how long it rings. TUBES' hardware is HEAVY — most calls
+ * sit the base an octave under RAVE RAID's and let the ring run long.
+ */
+function clank(base: number, gain = 0.2, dur = 0.3, delay = 0): void {
+  const c = ready();
+  if (!c) return;
+  const t0 = c.currentTime + delay;
+  const ratios = [1, 1.51, 2.27, 3.43, 4.83];
+  ratios.forEach((ratio, i) => {
+    const osc = c.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = base * ratio * (1 + (Math.random() - 0.5) * 0.015);
+    const env = c.createGain();
+    const g = gain * (1 / (i + 1));
+    const d = dur * (1 - i * 0.12);
+    env.gain.setValueAtTime(0.0001, t0);
+    env.gain.exponentialRampToValueAtTime(g, t0 + 0.004);
+    env.gain.exponentialRampToValueAtTime(0.0001, t0 + Math.max(0.04, d));
+    osc.connect(env).connect(c._master!);
+    osc.start(t0);
+    osc.stop(t0 + d + 0.05);
+  });
+  // The impact tick that sells the strike.
+  whooshNoise(0.03, gain * 0.7, base * 4, base * 2, delay);
+}
+
+/** A slow sub-bass sine swell — the WEIGHT under every big plant moment. */
+function subSwell(from: number, to: number, dur: number, gain: number, delay = 0, attack = 0.05): void {
+  const c = ready();
+  if (!c) return;
+  const t0 = c.currentTime + delay;
+  const osc = c.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(from, t0);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), t0 + dur);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain, t0 + Math.min(attack, dur * 0.5));
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(g).connect(c._master!);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.05);
+}
+
+/** Servo whine: a narrow-banded saw gliding between two pitches. */
+function servo(from: number, to: number, dur: number, gain = 0.07, delay = 0): void {
+  const c = ready();
+  if (!c) return;
+  const t0 = c.currentTime + delay;
+  const osc = c.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(from, t0);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), t0 + dur);
+  const bp = c.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 7;
+  bp.frequency.setValueAtTime(from * 2, t0);
+  bp.frequency.exponentialRampToValueAtTime(Math.max(1, to * 2), t0 + dur);
+  const env = c.createGain();
+  env.gain.setValueAtTime(0.0001, t0);
+  env.gain.exponentialRampToValueAtTime(gain, t0 + 0.02);
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(bp).connect(env).connect(c._master!);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.05);
+}
+
+/* ── the board ──────────────────────────────────────────────────────────── */
+
+export function uiClick(): void {
+  tone({ freq: 900, to: 620, type: 'triangle', dur: 0.07, gain: 0.12 });
+  whooshNoise(0.03, 0.06, 2400, 1400);
+}
+
+export function uiHover(): void {
+  tone({ freq: 1400, type: 'sine', dur: 0.035, gain: 0.04 });
+}
+
+/** The sheet stamped DONE — a rubber-stamp thump with a ring of approval. */
+export function stampDone(): void {
+  clank(190, 0.2, 0.32);
+  subSwell(90, 44, 0.3, 0.16, 0, 0.01);
+  tone({ freq: 660, type: 'triangle', dur: 0.3, gain: 0.07, delay: 0.1 });
+  tone({ freq: 990, type: 'triangle', dur: 0.36, gain: 0.06, delay: 0.16 });
+}
+
+/* ── mounting the flange ────────────────────────────────────────────────── */
+
+/** The flange stamps onto the wall — one heavy arrival. */
+export function mountThunk(): void {
+  clank(120, 0.3, 0.5);
+  subSwell(70, 36, 0.4, 0.22, 0, 0.012);
+  whooshNoise(0.16, 0.1, 900, 300, 0.01);
+}
+
+/** Hex bolts pull themselves tight — three quick servo bites. */
+export function boltSpin(): void {
+  for (let i = 0; i < 3; i++) {
+    servo(620 + i * 90, 220, 0.14, 0.06, i * 0.11);
+    clank(700 + i * 120, 0.06, 0.06, i * 0.11 + 0.1);
+  }
+}
+
+/** Something answers from INSIDE the wall — two muffled knocks. A clank
+ *  with all its top end filtered off by the plaster it's behind. */
+export function wallKnock(): void {
+  const c = ready();
+  if (!c) return;
+  for (const delay of [0, 0.26]) {
+    const t0 = c.currentTime + delay;
+    const osc = c.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(88, t0);
+    osc.frequency.exponentialRampToValueAtTime(52, t0 + 0.16);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.24, t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
+    osc.connect(g).connect(c._master!);
+    osc.start(t0);
+    osc.stop(t0 + 0.25);
+  }
+}
+
+/** The socket irises awake on its wall, a beat after the knocks. */
+export function socketWake(): void {
+  servo(240, 760, 0.4, 0.06);
+  tone({ freq: 520, to: 780, type: 'sine', dur: 0.35, gain: 0.06, delay: 0.12 });
+}
+
+/* ── the pull ───────────────────────────────────────────────────────────── */
+
+/** Both hands take the collar. */
+export function grabLatch(): void {
+  clank(340, 0.1, 0.12);
+  servo(300, 180, 0.1, 0.04, 0.02);
+}
+
+/** One hand alone: the collar rocks in its gland and settles — a loose
+ *  double rattle that says "more hands", without a word. */
+export function oneHandRattle(): void {
+  clank(460, 0.08, 0.07);
+  clank(390, 0.06, 0.09, 0.07);
+}
+
+/** A telescoping detent — the ratchet pawl dropping into the next groove.
+ *  Pitch steps with the segment so a long haul plays a rising scale. */
+export function segmentClick(step: number): void {
+  const base = 520 + Math.min(step, 14) * 46;
+  clank(base, 0.09, 0.08);
+  tone({ freq: base * 2.2, type: 'triangle', dur: 0.03, gain: 0.03 });
+}
+
+/** A whole new SECTION emerges from the one behind it — the ratchet's big
+ *  brother: a proper clank, deeper the fatter the section arriving. */
+export function sectionArrive(index: number): void {
+  clank(200 - Math.min(index, 7) * 14, 0.16, 0.24);
+  whooshNoise(0.08, 0.05, 700, 350, 0.01);
+}
+
+/** All the way out — the stops take the load and the metal complains. */
+export function strainCreak(): void {
+  servo(140, 96, 0.5, 0.07);
+  whooshNoise(0.3, 0.05, 500, 220, 0.05);
+}
+
+/** Let go mid-carry: the free end sags onto its own weight. */
+export function droopSettle(): void {
+  subSwell(90, 52, 0.28, 0.1, 0, 0.02);
+  clank(210, 0.07, 0.16, 0.1);
+}
+
+/* ── the seat ───────────────────────────────────────────────────────────── */
+
+/** The magnet takes the head — a rising promise. */
+export function magnetTake(): void {
+  tone({ freq: 300, to: 620, type: 'sine', dur: 0.16, gain: 0.08 });
+  whooshNoise(0.12, 0.05, 800, 2000);
+}
+
+/** HOME. The heavy double clunk every satisfying thing is measured by. */
+export function seatClunk(): void {
+  clank(96, 0.34, 0.5);
+  clank(150, 0.22, 0.34, 0.09);
+  subSwell(64, 30, 0.5, 0.26, 0, 0.01);
+}
+
+/** The latch dogs walk round the collar — three bites and it's held. */
+export function latchDogs(): void {
+  for (let i = 0; i < 3; i++) {
+    servo(520, 260, 0.09, 0.06, 0.06 + i * 0.09);
+    clank(430 + i * 60, 0.08, 0.07, 0.12 + i * 0.09);
+  }
+}
+
+/** Steam off hot metal — MAINS' signature exhale on a fresh seat. */
+export function steamHiss(): void {
+  whooshNoise(0.7, 0.1, 3400, 900, 0.05);
+}
+
+/** A hydraulic sigh — COOLANT's version of the exhale. */
+export function hydraulicSigh(): void {
+  servo(400, 140, 0.4, 0.05, 0.05);
+  whooshNoise(0.35, 0.06, 1200, 500, 0.08);
+}
+
+/** VOLT bites — a snap of arc with crackle in its teeth. */
+export function arcZap(): void {
+  tone({ freq: 2400, to: 300, type: 'square', dur: 0.08, gain: 0.09 });
+  for (let i = 0; i < 4; i++) {
+    whooshNoise(0.02, 0.07, 5200 - i * 700, 2400, 0.02 + i * 0.045);
+  }
+}
+
+/* ── the pour ───────────────────────────────────────────────────────────── */
+
+/** The line charges — held breath, rising. `dur` matches FLOW.chargeS. */
+export function chargeRise(dur: number): void {
+  subSwell(40, 90, dur, 0.14, 0, dur * 0.7);
+  servo(120, 460, dur, 0.05);
+}
+
+/** The front lands in the socket: each line gets its own resolution.
+ *  MAINS lands a warm major third low; COOLANT a bright fifth; VOLT an
+ *  electric octave with bite. All three share the same soft boom under. */
+export function flowArrive(line: 'mains' | 'coolant' | 'volt'): void {
+  subSwell(80, 38, 0.5, 0.2, 0, 0.015);
+  const chords: Record<typeof line, number[]> = {
+    mains: [220, 277, 330],
+    coolant: [330, 494, 660],
+    volt: [262, 524, 1048],
+  };
+  chords[line].forEach((f, i) => {
+    tone({ freq: f, type: 'triangle', dur: 0.7 - i * 0.1, gain: 0.07, delay: 0.05 + i * 0.06 });
+  });
+  whooshNoise(0.4, 0.06, 700, 2600, 0.05);
+}
+
+/** Every line lit at once — the room's chord, saved for the last seat of
+ *  FULL PRESSURE. All three arrivals stacked into one rising spread. */
+export function ceremonyChord(): void {
+  subSwell(50, 26, 1.6, 0.24, 0, 0.05);
+  const spread = [220, 277, 330, 440, 554, 660, 880];
+  spread.forEach((f, i) => {
+    tone({ freq: f, type: 'triangle', dur: 1.4 - i * 0.12, gain: 0.055, delay: 0.08 + i * 0.09 });
+  });
+  whooshNoise(0.9, 0.07, 600, 3200, 0.2);
+}
+
+/* ── the hums (continuous) ──────────────────────────────────────────────
+ * A connected run keeps a voice. Each line's hum is a tiny patch that
+ * fades in after the arrival and holds until the job resolves — quiet
+ * enough to live under a conversation, present enough that a room with
+ * three lines lit sounds like a plant at readiness. Every hum detunes
+ * slightly per run so two MAINS never phase-lock into one flat drone.
+ */
+
+interface Hum {
+  nodes: OscillatorNode[];
+  noise?: AudioBufferSourceNode;
+  lfo?: OscillatorNode;
+  gain: GainNode;
+}
+
+const hums = new Map<string, Hum>();
+
+export function startHum(id: string, line: 'mains' | 'coolant' | 'volt', pulseHz: number): void {
+  const c = ready();
+  if (!c || hums.has(id)) return;
+  const t0 = c.currentTime;
+  const gain = c.createGain();
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(0.05, t0 + 1.2);
+  gain.connect(c._master!);
+  const detune = 1 + (Math.random() - 0.5) * 0.02;
+  const nodes: OscillatorNode[] = [];
+  let noise: AudioBufferSourceNode | undefined;
+  let lfo: OscillatorNode | undefined;
+
+  if (line === 'mains') {
+    // A boiler two rooms over: two low saws a hair apart, darkened hard.
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 240;
+    lp.connect(gain);
+    for (const f of [55, 55.7]) {
+      const osc = c.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = f * detune;
+      osc.connect(lp);
+      osc.start(t0);
+      nodes.push(osc);
+    }
+  } else if (line === 'coolant') {
+    // Moving fluid: soft filtered noise over a cool sine.
+    const frames = c.sampleRate * 2;
+    const buf = c.createBuffer(1, frames, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+    noise = c.createBufferSource();
+    noise.buffer = buf;
+    noise.loop = true;
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 900;
+    bp.Q.value = 0.7;
+    const ng = c.createGain();
+    ng.gain.value = 0.5;
+    noise.connect(bp).connect(ng).connect(gain);
+    noise.start(t0);
+    const osc = c.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 220 * detune;
+    const og = c.createGain();
+    og.gain.value = 0.35;
+    osc.connect(og).connect(gain);
+    osc.start(t0);
+    nodes.push(osc);
+  } else {
+    // A transformer with opinions: a buzzy pulse trembling at the line's
+    // own strobe rate.
+    const trem = c.createGain();
+    trem.gain.value = 0.7;
+    trem.connect(gain);
+    lfo = c.createOscillator();
+    lfo.frequency.value = pulseHz;
+    const depth = c.createGain();
+    depth.gain.value = 0.3;
+    lfo.connect(depth).connect(trem.gain);
+    lfo.start(t0);
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 900;
+    lp.connect(trem);
+    const osc = c.createOscillator();
+    osc.type = 'square';
+    osc.frequency.value = 110 * detune;
+    osc.connect(lp);
+    osc.start(t0);
+    nodes.push(osc);
+  }
+
+  hums.set(id, { nodes, noise, lfo, gain });
+}
+
+export function stopHum(id: string): void {
+  const c = ctx;
+  const hum = hums.get(id);
+  if (!c || !hum) return;
+  hums.delete(id);
+  const t0 = c.currentTime;
+  hum.gain.gain.cancelScheduledValues(t0);
+  hum.gain.gain.setValueAtTime(Math.max(0.0001, hum.gain.gain.value), t0);
+  hum.gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.6);
+  const stopAt = t0 + 0.7;
+  for (const n of hum.nodes) n.stop(stopAt);
+  hum.noise?.stop(stopAt);
+  hum.lfo?.stop(stopAt);
+  window.setTimeout(() => hum.gain.disconnect(), 800);
+}
+
+/** Silence every hum (job resolved, board back up). */
+export function stopAllHums(): void {
+  for (const id of [...hums.keys()]) stopHum(id);
+}

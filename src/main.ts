@@ -1,0 +1,184 @@
+/**
+ * TUBES — entry point.
+ *
+ * Boots an IWSDK World as a PASSTHROUGH AR (immersive-ar) session. Nothing
+ * here draws a world, because the world is your room: the renderer runs
+ * with an alpha backdrop over the headset's camera feed, the room scan
+ * (WebXR plane detection) hands the game your real walls, and everything
+ * TUBES adds — flanges, sockets, the tube in your hands, the board — is
+ * bolted onto or carried through the space you actually live in.
+ *
+ * `npm run dev` and open the page: a headset offers CLOCK IN; on desktop
+ * the IWSDK dev plugin provides a WebXR emulator (WASD + mouse), where the
+ * fallback room stands in for the scan (see room/walls.ts).
+ */
+
+import { launchXR, SessionMode, World } from '@iwsdk/core';
+import { DirectionalLight, HemisphereLight } from 'three';
+import { ensureAudio } from './audio/sfx.js';
+import { FlowSystem, flowView } from './systems/FlowSystem.js';
+import { MenuSystem, menuView } from './systems/MenuSystem.js';
+import { PlacementSystem, placeView } from './systems/PlacementSystem.js';
+import { TubeSystem, tubeView } from './systems/TubeSystem.js';
+import { WallSystem, wallsView } from './systems/WallSystem.js';
+
+const container = document.getElementById('scene-container') as HTMLDivElement;
+const enterButton = document.getElementById('enter-ar') as HTMLButtonElement | null;
+
+/** The created world, for the debug hook below (set once boot resolves). */
+let worldRef: World | null = null;
+
+enterButton?.setAttribute('disabled', '');
+
+function hideLanding(): void {
+  document.body.classList.add('app-entered');
+}
+
+function showLanding(): void {
+  document.body.classList.remove('app-entered');
+  enterButton?.removeAttribute('disabled');
+}
+
+World.create(container, {
+  // The landing button calls IWSDK's explicit WebXR launcher from the
+  // user's tap. Quest Browser needs that direct requestSession gesture path.
+  xr: {
+    sessionMode: SessionMode.ImmersiveAR,
+    offer: 'none',
+    features: {
+      // The room scan. Optional, never required: a headset that refuses
+      // (or an emulator that can't) still plays — the fallback room stands
+      // in the moment the grace runs out.
+      planeDetection: true,
+      anchors: true,
+      hitTest: true,
+    },
+  },
+  // The tube is our own two-hand mechanic and the board raycasts its own
+  // lasers — the stock grab/locomotion/UI stacks would only fight them.
+  features: {
+    sceneUnderstanding: true,
+    grabbing: false,
+    locomotion: false,
+    spatialUI: false,
+  },
+  render: {
+    // PASSTHROUGH IS THE BACKDROP. No dome, no background — a lit
+    // environment would paint over the camera feed (the renderer runs
+    // alpha in AR). Two plain lights below stand in for the room's own.
+    defaultLighting: false,
+    far: 60,
+    camera: { position: [0, 1.65, 0] },
+  },
+}).then((world) => {
+  worldRef = world;
+
+  // Hardware needs SOME light to read as metal. A soft sky/ground pair
+  // plus one keyed directional approximates a ceiling fixture well enough
+  // that PBR surfaces sit believably in most real rooms.
+  const hemi = new HemisphereLight(0xfff4e2, 0x40382e, 1.05);
+  const key = new DirectionalLight(0xffffff, 1.3);
+  key.position.set(0.6, 2.4, 0.8);
+  world.scene.add(hemi, key);
+
+  // Order matters lightly: walls first (everything reads the registry),
+  // then the shift's verbs in the order a run lives them, the payoff, and
+  // the board last so it reads final state.
+  world.registerSystem(WallSystem);
+  world.registerSystem(PlacementSystem);
+  world.registerSystem(TubeSystem);
+  world.registerSystem(FlowSystem);
+  world.registerSystem(MenuSystem);
+
+  const arSupported = navigator.xr
+    ?.isSessionSupported(SessionMode.ImmersiveAR)
+    .catch(() => false);
+
+  Promise.resolve(arSupported).then((ok) => {
+    if (!enterButton) return;
+    if (ok !== true) {
+      enterButton.textContent = 'XR unavailable';
+      return;
+    }
+    enterButton.removeAttribute('disabled');
+    enterButton.addEventListener('click', () => {
+      enterButton.setAttribute('disabled', '');
+      ensureAudio(); // unlock the AudioContext inside the tap gesture
+      launchXR(world, { sessionMode: SessionMode.ImmersiveAR });
+
+      const watchForSession = (): void => {
+        if (world.session) {
+          hideLanding();
+          world.session.addEventListener('end', showLanding, { once: true });
+          return;
+        }
+        if (!document.body.classList.contains('app-entered')) {
+          requestAnimationFrame(watchForSession);
+        }
+      };
+      requestAnimationFrame(watchForSession);
+      window.setTimeout(() => {
+        if (!world.session) enterButton.removeAttribute('disabled');
+      }, 4000);
+    });
+  });
+
+  // eslint-disable-next-line no-console
+  console.info('[TUBES] World ready — the walls are listening.');
+});
+
+// Dev/debug hook: drive the whole shift from the console (or a headless
+// tool) without controllers — e.g. __tubes.menu.act('start'),
+// __tubes.place.mountAt(0, 0, 0), __tubes.tube.grab(), __tubes.tube.dragTo(...).
+import { site } from './game/state.js';
+import { abandonShift, startJob } from './game/flow.js';
+import { walls } from './systems/WallSystem.js';
+
+declare global {
+  interface Window {
+    __tubes?: {
+      site: typeof site;
+      /** The wall registry, live — the room as the game sees it. */
+      walls: typeof walls;
+      wallsInfo: typeof wallsView;
+      startJob: typeof startJob;
+      abandonShift: typeof abandonShift;
+      /** The board + job card, drivable headlessly. */
+      menu: typeof menuView;
+      /** Flange placement: reticle state, and the headless mount. */
+      place: typeof placeView;
+      /** The tube: pull state, and the headless hands. */
+      tube: typeof tubeView;
+      /** The pour: fronts, energies, what's landed. */
+      flow: typeof flowView;
+      /** Draw calls / triangles this frame — the budget check. */
+      info: () => { calls: number; triangles: number } | null;
+      /** Park the player rig at (x, z) facing `yaw` — headless walks. */
+      rig: (x: number, z: number, yaw?: number, y?: number) => void;
+      /** The live scene graph — probes walk it by name. */
+      scene: () => import('three').Scene | null;
+    };
+  }
+}
+window.__tubes = {
+  site,
+  walls,
+  wallsInfo: wallsView,
+  startJob,
+  abandonShift,
+  menu: menuView,
+  place: placeView,
+  tube: tubeView,
+  flow: flowView,
+  info: () => {
+    const r = worldRef?.renderer;
+    return r ? { calls: r.info.render.calls, triangles: r.info.render.triangles } : null;
+  },
+  rig: (x, z, yaw = 0, y = 0) => {
+    const w = worldRef;
+    if (!w) return;
+    w.player.position.set(x, y, z);
+    w.player.rotation.set(0, yaw, 0);
+  },
+  scene: () => worldRef?.scene ?? null,
+};
