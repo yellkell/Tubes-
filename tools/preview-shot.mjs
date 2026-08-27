@@ -47,8 +47,11 @@ await page.evaluate(() => window.__tubes.menu.act('start'));
 await page.waitForFunction(() => window.__tubes.site.screen === 'shift', undefined, { timeout: 5000 });
 await page.evaluate(() => {
   const t = window.__tubes;
-  // The wall most in front of the spawn: biggest −z centre.
-  const wall = [...t.walls].sort((a, b) => a.center.z - b.center.z)[0];
+  // The wall most in front of the spawn: biggest −z centre (walls only —
+  // the floor and ceiling are in the registry now too).
+  const wall = t.walls
+    .filter((w) => w.kind === 'wall')
+    .sort((a, b) => a.center.z - b.center.z)[0];
   t.place.mountAt(wall.id, 0.3, 0.1);
 });
 await page.waitForTimeout(1200);
@@ -91,5 +94,44 @@ await page.waitForFunction(() => window.__tubes.site.runs[0]?.phase === 'flowing
 await page.waitForTimeout(900);
 await page.screenshot({ path: 'shots/flowing.png' });
 
-console.log('shots/: landing, board.scene, board, wake, pull, parked, flowing');
+// THE PORTS, on camera: hunt a seed whose run answers from overhead or
+// underfoot, work it, and shoot the pour running into the ceiling (or
+// up out of the floor). Best-effort — the roll is seeded, so a hunt
+// across a few dozen seeds all but always lands one.
+const flatSeed = await page.evaluate(() => {
+  const t = window.__tubes;
+  t.abandonShift();
+  const wallsOnly = t.walls.filter((w) => w.kind === 'wall');
+  for (let seed = 1; seed <= 80; seed++) {
+    t.startJob(0, seed);
+    t.place.mountAt(wallsOnly[0].id, 0.3, 0.1);
+    const target = t.walls.find((w) => w.id === t.site.runs[0].wallB);
+    if (target && target.kind !== 'wall') return { seed, kind: target.kind };
+    t.abandonShift();
+  }
+  return null;
+});
+if (flatSeed) {
+  await page.waitForFunction(() => window.__tubes.site.runs[0]?.phase === 'pull', undefined, {
+    timeout: 6000,
+  });
+  await page.evaluate(() => window.__tubes.tube.grab());
+  const flatSeat = await page.evaluate(() => {
+    const r = window.__tubes.site.runs[0];
+    return {
+      x: r.pointB.x + r.normalB.x * 0.1,
+      y: r.pointB.y + r.normalB.y * 0.1,
+      z: r.pointB.z + r.normalB.z * 0.1,
+    };
+  });
+  await page.evaluate((p) => window.__tubes.tube.dragTo(p.x, p.y, p.z), flatSeat);
+  await page.waitForFunction(() => window.__tubes.site.runs[0]?.phase === 'flowing', undefined, {
+    timeout: 12000,
+  });
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: `shots/port-${flatSeed.kind}.png` });
+  console.log(`port shot: ${flatSeed.kind} (seed ${flatSeed.seed})`);
+}
+
+console.log('shots/: landing, board.scene, board, wake, pull, parked, flowing (+ port)');
 await browser.close();

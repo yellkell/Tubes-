@@ -42,11 +42,18 @@ await page.waitForFunction(() => document.body.classList.contains('app-entered')
 await page.waitForFunction(() => Boolean(window.__tubes?.site), { timeout: 10000 });
 await page.waitForTimeout(600);
 
-// The room: force the stand-in and make sure it stands.
+// The room: force the stand-in and make sure it stands — four walls
+// plus the floor and the ceiling, every one a registry citizen.
 await page.evaluate(() => window.__tubes.wallsInfo.forceFallback());
 await page.waitForFunction(() => window.__tubes.site.wallsReady, { timeout: 5000 });
-const wallCount = await page.evaluate(() => window.__tubes.walls.length);
-check(wallCount === 4, `fallback room stands in (${wallCount} walls)`);
+const kinds = await page.evaluate(() => window.__tubes.walls.map((w) => w.kind));
+check(
+  kinds.length === 6 &&
+    kinds.filter((k) => k === 'wall').length === 4 &&
+    kinds.includes('floor') &&
+    kinds.includes('ceiling'),
+  `fallback room stands in (${kinds.join(', ')})`,
+);
 
 const phase = (i) => page.evaluate((idx) => window.__tubes.site.runs[idx]?.phase ?? 'gone', i);
 const waitPhase = (i, want, timeout = 15000) =>
@@ -60,11 +67,27 @@ const waitPhase = (i, want, timeout = 15000) =>
 async function workRun(runIndex) {
   check((await phase(runIndex)) === 'place', `run ${runIndex}: flange on the ray`);
 
+  // While the run is still placing: the floor and ceiling must refuse a
+  // flange (they answer runs, they don't take mounts).
+  if (runIndex === 0) {
+    const floorMount = await page.evaluate(() => {
+      const t = window.__tubes;
+      const flat = t.walls.find((w) => w.kind !== 'wall');
+      return flat ? t.place.mountAt(flat.id, 0, 0) : null;
+    });
+    if (floorMount !== null) {
+      check(floorMount === false, `run ${runIndex}: floor/ceiling refuse the flange`);
+    }
+  }
+
   // Mount on a wall the picker can answer from (vary the wall per run so
-  // multi-run jobs spread their hardware like a person would).
+  // multi-run jobs spread their hardware like a person would). Walls
+  // only — flanges don't mount on the floor or the ceiling, and mountAt
+  // enforces it, so the pick here filters by kind.
   const mounted = await page.evaluate((idx) => {
     const t = window.__tubes;
-    const wall = t.walls[idx % t.walls.length];
+    const wallsOnly = t.walls.filter((w) => w.kind === 'wall');
+    const wall = wallsOnly[idx % wallsOnly.length];
     return t.place.mountAt(wall.id, 0.2 * ((idx % 3) - 1), 0);
   }, runIndex);
   check(mounted, `run ${runIndex}: flange mounted`);
@@ -172,6 +195,39 @@ const sheet = await page.evaluate(() => ({
   unlocked: window.__tubes.menu.boardButtons().filter((b) => b.startsWith('job:')).length,
 }));
 check(sheet.unlocked === 5, `every sheet is open (${sheet.unlocked}/5)`);
+
+// THE PORTS: sweep seeds through the REAL picker (start a job with a
+// forced seed, mount, read where the room answered, walk away) and make
+// sure the floor and the ceiling both take their turn — and that every
+// answer, whatever the surface, arrives inside the magnet's alignment
+// cone, because a port the magnet can't take is a port that never was.
+const ports = await page.evaluate(() => {
+  const t = window.__tubes;
+  const seen = { wall: 0, floor: 0, ceiling: 0 };
+  let misaligned = 0;
+  const wallsOnly = t.walls.filter((w) => w.kind === 'wall');
+  for (let seed = 1; seed <= 60; seed++) {
+    t.startJob(0, seed);
+    t.place.mountAt(wallsOnly[seed % wallsOnly.length].id, 0.3 * ((seed % 3) - 1), 0.1);
+    const run = t.site.runs[0];
+    const target = t.walls.find((w) => w.id === run.wallB);
+    if (target) {
+      seen[target.kind]++;
+      const dx = run.pointB.x - run.pointA.x;
+      const dy = run.pointB.y - run.pointA.y;
+      const dz = run.pointB.z - run.pointA.z;
+      const len = Math.hypot(dx, dy, dz);
+      const align =
+        -(dx * run.normalB.x + dy * run.normalB.y + dz * run.normalB.z) / len;
+      if (align < 0.35) misaligned++;
+    }
+    t.abandonShift();
+  }
+  return { seen, misaligned };
+});
+check(ports.seen.floor + ports.seen.ceiling > 0, `the room answers from overhead or underfoot sometimes (walls ${ports.seen.wall} · floor ${ports.seen.floor} · ceiling ${ports.seen.ceiling} / 60 seeds)`);
+check(ports.seen.wall > ports.seen.floor + ports.seen.ceiling, 'walls still carry most of the shift');
+check(ports.misaligned === 0, 'every answered port sits inside the magnet\'s cone');
 
 await browser.close();
 if (fails.length) {

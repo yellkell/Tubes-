@@ -14,7 +14,11 @@ industrial tube at a time.
 - **The room answers.** Something KNOCKS from inside another wall — a
   spot the game picked for it — and a socket irises awake there, wearing
   the same line's colours. THE WORKS is already in your walls; you're just
-  opening the doors.
+  opening the doors. And not only the walls: sometimes the knock comes
+  from OVER YOUR HEAD, or under your feet — the scan's ceiling and floor
+  carry exit ports too, and a run that dives into the floorboards or
+  climbs into the ceiling is always a short, steep, reachable one (the
+  picker guarantees every port it wakes is one the magnet can take).
 - **The tube takes two hands.** A capped stub sticks out of the flange,
   collar glowing "grab me". One hand alone RATTLES it — a loose clank and
   a buzz that says *more hands* without a word. Both grips squeezing and
@@ -22,7 +26,11 @@ industrial tube at a time.
   section first, each new thinner section arriving with a clank one plate
   deeper, the ratchet clicking in your palms the whole way. The head
   chases your hands with a lag that reads as weight — a stub answers your
-  wrists, seven metres of plant answers your shoulders.
+  wrists, seven metres of plant answers your shoulders. And the collar
+  STEERS: where your two controllers point blends into the head's
+  travel, so tipping your wrists bows the run on command — carry it
+  straight, or sweep it round yourself like a fitter walking pipe round
+  a corner.
 - **Let go and it waits.** A parked tube sags onto its own weight with
   one heavy boing and holds — cantilevered off the wall, resumable,
   never punishing. Walk around it. It's plant now.
@@ -33,7 +41,11 @@ industrial tube at a time.
   willing.
 - **Then the payoff.** The line charges for one held breath — and POURS:
   a front of liquid light races the run from flange to socket behind
-  frosted metal, lands with the line's own chord, and the socket blooms —
+  frosted metal — ONE unbroken column, stepping down in bore straight
+  through every telescoping joint (each section's glow tucks back
+  through its collar into the section behind it, so the seams sit over
+  lit liquid, never over a gap) — lands with the line's own chord, and
+  the socket blooms —
   a burst of lens glints, a settling hum, and **a shaft of sunlight
   leaning down out of a wall that never had a window**, dust motes
   drifting in it. In passthrough that light lands in YOUR room, which is
@@ -112,11 +124,19 @@ usable wall, kept only if the straight run lands inside range, scored
 the flange roughly faces), with a seeded jitter among the top few — so
 reruns differ, but a tool's fixed seed replays a layout exactly.
 
+The registry holds more than walls: the scan's **floor and ceiling**
+are surfaces too (tables, desks and the rest of the furniture shelf are
+deliberately filtered out — the machine lives in the room's bones, not
+your coffee table), and a seeded roll sometimes routes a run's exit
+port there. Flanges stay wall-mounted; it's the room's half of the run
+that gets adventurous.
+
 No scan — an emulator, a declined permission, an unset-up headset — and
 the **fallback room** stands in after a grace: four synthetic walls
-around wherever you're standing. Honest registry citizens in every way
-except `real`; the game plays identically, and the board's status chip
-tells the truth about which room you're in.
+plus a floor and a ceiling around wherever you're standing. Honest
+registry citizens in every way except `real`; the game plays
+identically, and the board's status chip tells the truth about which
+room you're in.
 
 ## Project map
 

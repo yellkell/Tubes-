@@ -51,6 +51,7 @@ const _origin = new Vector3();
 const _dir = new Vector3();
 const _hit = new Vector3();
 const _clamped = new Vector3();
+const _feet = new Vector3();
 const _quat = new Quaternion();
 
 export class PlacementSystem extends createSystem({}) {
@@ -76,7 +77,7 @@ export class PlacementSystem extends createSystem({}) {
     placeView.mountAt = (wallId, u, v) => {
       const run = this.placingRun();
       const wall = walls.find((w) => w.id === wallId);
-      if (!run || !wall) return false;
+      if (!run || !wall || wall.kind !== 'wall') return false;
       const band = mountBand(wall);
       if (!band) return false;
       const uu = Math.max(-band.u, Math.min(band.u, u));
@@ -156,7 +157,10 @@ export class PlacementSystem extends createSystem({}) {
     let best: Wall | null = null;
     let bestT = Infinity;
     for (const w of walls) {
-      if (!usable(w)) continue;
+      // Flanges are WALL hardware — the floor and ceiling answer runs,
+      // they don't take mounts. (The room's half gets adventurous; the
+      // half you were taught stays where you were taught it.)
+      if (w.kind !== 'wall' || !usable(w)) continue;
       const facing = dir.dot(w.normal);
       if (facing > -1e-4) continue; // approaching from behind (or parallel)
       const t =
@@ -190,8 +194,14 @@ export class PlacementSystem extends createSystem({}) {
     // knows which wall to knock on.
     const seed = mix(site.seed, site.activeRun, 17);
     const longHaul = Boolean(JOBS[site.jobIndex]?.longHaul);
+    // Own scratch, and it matters: `point` often IS _clamped (the
+    // headless mount hands it over), and reading the camera into that
+    // vector here once re-aimed the whole picker at the player's head —
+    // every range, facing and alignment measured from the wrong place.
+    const feet = this.camera.getWorldPosition(_feet);
     const spot =
-      pickSocket(walls, wall.id, point, wall.normal, seed, longHaul) ?? this.lastResort(wall, point);
+      pickSocket(walls, wall.id, point, wall.normal, seed, longHaul, { x: feet.x, z: feet.z }) ??
+      this.lastResort(wall, point);
     if (!spot) {
       // No legal answer anywhere (a broom-cupboard scan). Stay placing —
       // the player can try a wall with more room across from it.

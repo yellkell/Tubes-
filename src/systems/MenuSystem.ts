@@ -370,8 +370,10 @@ export class MenuSystem extends createSystem({}) {
     g.fillStyle = UI.faint;
     g.fillText('THE WORKS WANTS BACK ON', RAIL_X + 226, 100);
 
-    // Room status, top right: what the scan gave us.
-    const real = walls.filter((w) => w.real).length;
+    // Room status, top right: what the scan gave us. Walls only — the
+    // floor and ceiling are registry citizens too, but "6 WALLS" over a
+    // four-walled room reads as a bug, not a feature.
+    const real = walls.filter((w) => w.real && w.kind === 'wall').length;
     const label = !site.wallsReady
       ? 'WAITING FOR WALLS'
       : site.fallbackRoom
@@ -606,12 +608,13 @@ export class MenuSystem extends createSystem({}) {
       label('WALL FRAMES', 'hairlines on what the scan found', SYS_Y0 + SYS_PITCH);
       label('THE SHEET', 'tear it up, start the trade again', SYS_Y0 + SYS_PITCH * 2);
 
-      const real = walls.filter((w) => w.real).length;
-      const fake = walls.length - real;
+      const real = walls.filter((w) => w.real && w.kind === 'wall').length;
+      const flats = walls.filter((w) => w.kind !== 'wall').length;
+      const fake = walls.filter((w) => !w.real && w.kind === 'wall').length;
       g.font = font(500, 22);
       g.fillStyle = UI.faint;
       g.fillText(
-        `room: ${real} scanned wall${real === 1 ? '' : 's'}${fake ? ` · ${fake} stand-in` : ''}  ·  passthrough AR  ·  built on the Immersive Web SDK`,
+        `room: ${real} scanned wall${real === 1 ? '' : 's'}${fake ? ` · ${fake} stand-in` : ''}${flats ? ` · floor/ceiling ports live` : ''}  ·  passthrough AR  ·  built on the Immersive Web SDK`,
         CONTENT_X + 10,
         H - 96,
       );

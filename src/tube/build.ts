@@ -65,6 +65,15 @@ function ringGeo(): TorusGeometry {
   return (_ringGeo ??= new TorusGeometry(1, 0.14, 10, 24));
 }
 
+let _ribGeo: TorusGeometry | null = null;
+/** The JOINT ring — deliberately slimmer than the collar stock (0.09 vs
+ *  0.14): a joint band as fat as the grab ring chopped the pour into
+ *  eight lit cells, and the whole point of the pour is that it reads as
+ *  ONE column. Narrow bands, continuous light. */
+function ribGeo(): TorusGeometry {
+  return (_ribGeo ??= new TorusGeometry(1, 0.09, 10, 24));
+}
+
 let _glowRingGeo: RingGeometry | null = null;
 /** Unit flat ring for additive glow halos on hardware faces. */
 function glowRingGeo(): RingGeometry {
@@ -244,8 +253,8 @@ export function buildSegment(line: LineSpec, index: number): SegmentRefs {
   shell.renderOrder = 8; // after the pour writes depth
   shell.scale.set(r, 1, r);
 
-  const rib = new Mesh(ringGeo(), m.plate);
-  rib.scale.setScalar(r * 1.12);
+  const rib = new Mesh(ribGeo(), m.plate);
+  rib.scale.setScalar(r * 1.1);
 
   const pourMat = createFlowMaterial(
     line.glow,

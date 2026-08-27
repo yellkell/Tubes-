@@ -88,16 +88,19 @@ export function bendControl(
 }
 
 /** The end control: back from the head along `entryDir` — the direction
- *  the head is ARRIVING from (the socket's normal once the magnet has it;
- *  the straight run while carried, which degenerates the cubic toward a
- *  quadratic and keeps one code path for both). */
+ *  the head is ARRIVING from (the socket's normal once the magnet has
+ *  it; the hands' steer while carried; the straight run when parked,
+ *  which degenerates the cubic toward a quadratic and keeps one code
+ *  path for all three). `reachScale` lets the steer reach further, so
+ *  the bow the wrists ask for is a bow the eye can see. */
 export function endControl(
   head: Vector3,
   entryDir: Vector3,
   ext: number,
   out = new Vector3(),
+  reachScale = 1,
 ): Vector3 {
-  return out.copy(head).addScaledVector(entryDir, controlReach(ext) * 0.8);
+  return out.copy(head).addScaledVector(entryDir, controlReach(ext) * 0.8 * reachScale);
 }
 
 const _a = new Vector3();

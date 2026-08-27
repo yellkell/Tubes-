@@ -3,9 +3,13 @@
  *
  * IWSDK's SceneUnderstandingSystem turns WebXR's detected planes into
  * entities; this system reads those entities every frame and folds the
- * VERTICAL ones into the registry everything else plays against: centre,
- * into-the-room normal, right/up tangents, half-extents (see
- * room/walls.ts for the model and the maths).
+ * mountable ones into the registry everything else plays against:
+ * centre, into-the-room normal, right/up tangents, half-extents (see
+ * room/walls.ts for the model and the maths). Vertical planes become
+ * walls; horizontal ones become the FLOOR and the CEILING — exit ports
+ * live there too — while tables, desks and the rest of the furniture
+ * shelf are deliberately left out (a tube into a coffee table is a
+ * gag, not a run; the machine lives in the room's BONES).
  *
  * Where no scan answers — desktop emulator, a headset without room setup,
  * a player who declined — the FALLBACK ROOM stands in after a short
@@ -30,7 +34,13 @@ import {
 } from 'three';
 import { WALLS } from '../config.js';
 import { site } from '../game/state.js';
-import { buildFallbackRoom, pointOn, usable, type Wall } from '../room/walls.js';
+import {
+  buildFallbackRoom,
+  pointOn,
+  usable,
+  type SurfaceKind,
+  type Wall,
+} from '../room/walls.js';
 
 /** The live registry — everything downstream reads walls through here. */
 export const walls: Wall[] = [];
@@ -113,7 +123,9 @@ export class WallSystem extends createSystem({
         | (XRPlaneNative & { polygon: ArrayLike<{ x: number; z: number }> })
         | undefined;
       const obj = entity.object3D;
-      if (!plane || !obj || plane.orientation !== 'vertical') continue;
+      if (!plane || !obj) continue;
+      const kind = classifyPlane(plane, obj.position.y);
+      if (!kind) continue;
 
       const shape = polygonShape(plane.polygon);
       if (!shape) continue;
@@ -125,7 +137,7 @@ export class WallSystem extends createSystem({
         realArrived = true;
       }
       seen.add(id);
-      this.writeWall(id, obj.position, obj.quaternion, shape);
+      this.writeWall(id, kind, obj.position, obj.quaternion, shape);
     }
 
     // Planes the scan withdrew (or the session ended) leave the registry.
@@ -149,6 +161,7 @@ export class WallSystem extends createSystem({
   /** Fold one plane pose into the registry (insert or refresh in place). */
   private writeWall(
     id: number,
+    kind: SurfaceKind,
     position: Vector3,
     quaternion: { x: number; y: number; z: number; w: number },
     shape: PlaneShape,
@@ -190,6 +203,7 @@ export class WallSystem extends createSystem({
     const existing = walls.find((w) => w.id === id);
     const wall: Wall = existing ?? {
       id,
+      kind,
       center: new Vector3(),
       normal: new Vector3(),
       right: new Vector3(),
@@ -204,6 +218,7 @@ export class WallSystem extends createSystem({
       Math.abs(existing.halfW - halfW) > 0.03 ||
       Math.abs(existing.halfH - halfH) > 0.03 ||
       existing.center.distanceToSquared(_center) > 0.001;
+    wall.kind = kind;
     wall.center.copy(_center);
     wall.normal.copy(normal);
     wall.right.copy(_right);
@@ -270,9 +285,27 @@ export class WallSystem extends createSystem({
 }
 
 /** The native XRPlane surface we read (typed loosely — the WebXR lib
- *  typings don't ship `orientation`/`polygon` everywhere yet). */
+ *  typings don't ship `orientation`/`polygon`/`semanticLabel`
+ *  everywhere yet). */
 interface XRPlaneNative {
   orientation: 'horizontal' | 'vertical';
+  semanticLabel?: string;
+}
+
+/** What a detected plane is to the game — or null for the furniture we
+ *  leave alone. Vertical planes are walls; horizontal ones are the
+ *  floor/ceiling when the runtime SAYS so, else judged by height (a
+ *  labelless slab at lamp height is somebody's desk, and desks are out). */
+function classifyPlane(plane: XRPlaneNative, poseY: number): SurfaceKind | null {
+  if (plane.orientation === 'vertical') return 'wall';
+  if (plane.orientation !== 'horizontal') return null;
+  const label = (plane.semanticLabel ?? '').toLowerCase();
+  if (label.includes('floor')) return 'floor';
+  if (label.includes('ceiling')) return 'ceiling';
+  if (label) return null; // a labelled table/desk/couch — furniture, out
+  if (poseY < 0.25) return 'floor';
+  if (poseY > 2.05) return 'ceiling';
+  return null;
 }
 
 function polygonShape(polygon: ArrayLike<{ x: number; z: number }>): PlaneShape | null {

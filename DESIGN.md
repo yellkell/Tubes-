@@ -64,13 +64,27 @@ never touches a raw XRPlane.
 - **The mount band.** Hardware lives away from wall edges (0.3 m inset)
   and between 0.7 m and 2.05 m of height — where hands actually work.
   All placement maths clamps into the band rather than rejecting.
-- **The socket picker** is a pure seeded function: sample candidate spots
-  across every other usable wall, keep those whose straight run fits
-  [1.15 m, 6.4 m], require the spot to be in FRONT of the flange's face
-  and vice versa (a socket behind your own wall is a trick, and TUBES
-  doesn't do tricks), score — long-haul jobs weight distance, ordinary
-  jobs weight the middle of the range — and take the best with seeded
-  jitter. Same seed, same layout: the headless walk replays exactly.
+- **The registry holds every mountable surface.** Vertical planes are
+  walls; the scan's floor and ceiling join them with a `kind`, and
+  labelled furniture (tables, desks, couches) is filtered out on
+  principle. Flanges mount on walls only — the half of the run you were
+  taught stays where you were taught it — but the room's answer can
+  come from any kind.
+- **The socket picker** is a pure seeded function in two lanes: sample
+  candidate spots across every other usable surface, keep those whose
+  straight run fits [1.15 m, 6.4 m], require the spot to be in FRONT of
+  the flange's face, AND require the chord to arrive inside the seat's
+  own alignment cone with margin — **every pick the room makes is a
+  pick the magnet can take, by construction**, which also means flat
+  ports are always short and steep (the cone caps them by geometry: a
+  ceiling port is always an arm's reach up, never a room away). A
+  seeded roll (PORTS.flatChance) sometimes tries the overhead lane
+  first — a lane, not a score bias, because on a distance-flavoured
+  score a short flat spot never outbids a wall, and "sometimes the
+  ceiling answers" has to actually happen. Within a lane: long-haul
+  jobs weight distance, ordinary jobs the middle of the range, best
+  wins with seeded jitter. Same seed, same layout: the headless walk
+  replays exactly. A floor port never wakes under the player's feet.
 - **The fallback room** (4.6 × 3.6 × 2.7 m around the player, aligned to
   their facing) stands in when no scan answers within the grace. It's
   drawn only as hairline frames, only while a flange wants placing — you
@@ -90,12 +104,17 @@ section's arrival an EVENT (a deeper clank, a harder buzz) on top of the
 fine ratchet detents every 0.34 m.
 
 The pull's five rules (each one line of feel, all in TubeSystem's
-header): two hands or nothing · the lag is the weight · the ratchet
-tells the truth · parked is a real state · the socket does the last
-metre. The follow is a single exponential spring whose rate falls with
-extension; the park is one underdamped droop spring; the stops creak.
-No physics engine — RAVE RAID's club glasses proved five cheap tricks
-read as one expensive one, and the tube runs on the same economy.
+header): two hands or nothing · the lag is the weight and the wrists
+are the rudder · the ratchet tells the truth · parked is a real state ·
+the socket does the last metre. The follow is a single exponential
+spring whose rate falls with extension; THE STEER blends the two
+controllers' pointing direction into the head's travel
+(TUBE.steerBlend) and stretches the end control while it's live, so
+tipping both hands visibly bows the run — the curve answers your
+wrists, not just your feet; the park is one underdamped droop spring;
+the stops creak. No physics engine — RAVE RAID's club glasses proved
+five cheap tricks read as one expensive one, and the tube runs on the
+same economy.
 
 **The seat.** Inside 0.32 m and within ~70° of square, the magnet takes:
 the head eases onto the seat pose while the path's end control swings to
@@ -116,6 +135,14 @@ run sharing front/time/energy:
   bulkhead), back-faces painted as the bright cut, a hot foam band
   burning behind it, racing at the line's speed (MAINS 2.3 m/s heavy,
   COOLANT 4.2 fast, VOLT 5.4 in packets).
+- **One column, no cells**: each section's pour volume tucks back
+  through its own joint into the fatter section behind it (the root
+  tucks into the flange's gland), with the uniforms carrying the
+  stretched span so the front's clip stays world-true straight through
+  the overlap — and the joint rings are cut slimmer than the collar
+  stock so the bands sit over lit liquid. The column steps down in bore
+  at every joint, exactly what a telescope full of liquid would do; it
+  never breaks.
 - **Alive**: two travelling body waves plus the line's pulse — MAINS
   rolls (0.5 Hz), COOLANT streams (0.9), VOLT strobes (2.2 with `chop`
   squaring the wave into plasma packets with dark water between). Wet
@@ -179,8 +206,10 @@ and the fiction is the boss here.
   hands need a pinch-strength grammar that deserves its own pass.
 - **The scan is trusted, not audited.** A wall the scan missed doesn't
   exist; furniture is invisible to the picker (a run can cross your
-  bookcase). The mount band keeps the worst of it away from skirting
-  and ceiling.
+  bookcase), and horizontal furniture is deliberately REFUSED as a port
+  surface — floor and ceiling only, because the machine lives in the
+  room's bones. The mount band keeps the worst of it away from
+  skirting.
 - **Solo.** There is no wire. The seeded-layout discipline is already
   multiplayer-shaped (a shared seed deals both players the same walls
   only if they share a room scan, which is exactly the co-location
@@ -202,6 +231,7 @@ and the fiction is the boss here.
 - **Co-located co-op.** Two fitters, one room, one tube — one on each
   end of a run that takes four hands. The relay would carry poses and
   seeds only, RAVE RAID style.
-- **More services.** STEAM (billowing, scalding, wants the ceiling),
-  DATA (glass fibre, light packets, wants corners). Each must earn a
+- **More services.** STEAM (billowing, scalding, and now that the
+  ceiling takes ports, it would live up there on principle), DATA
+  (glass fibre, light packets, wants corners). Each must earn a
   distinct pour, voice and metal or it doesn't ship.

@@ -103,6 +103,20 @@ export const TUBE = {
    *  small numbers keep it reading as heavy pipe, not garden hose. */
   bendReach: 0.32,
   bendReachMax: 0.85,
+  /** THE STEER. Held with both hands, the collar AIMS: the controllers'
+   *  pointing direction blends into the head's travel, so tipping your
+   *  wrists bows the run where you're looking instead of only where
+   *  you're standing. 0 = the old straight chord, 1 = pure wrist. */
+  steerBlend: 0.6,
+  /** The end control reaches further while you're steering, so the bow
+   *  you're asking for is a bow you can see. */
+  steerReach: 1.2,
+  /** How far each section's pour volume tucks back through its joint
+   *  into the fatter section behind it. This is what makes the column
+   *  read as ONE pour stepping down in bore, not eight lit cells: the
+   *  overlap swallows the seam, the bend wedge, and the collar's shadow
+   *  in a single move. */
+  pourOverlap: 0.1,
 };
 
 /* ────────────────────────────── THE SEAT ─────────────────────────────────
@@ -303,6 +317,29 @@ export const JOBS: JobSpec[] = [
 export const RUN_RANGE = {
   min: 1.15,
   max: 6.4,
+};
+
+/* ────────────────────────────── THE PORTS ────────────────────────────────
+ * Exit ports don't only live on walls: the scan's floor and ceiling are
+ * registry citizens too, and sometimes the room answers from one — a
+ * socket irising awake OVER your head, or under your feet. Flanges stay
+ * wall-mounted (the thing YOU place is the thing you were taught); it's
+ * the room's half of the run that gets adventurous.
+ */
+export const PORTS = {
+  /** The seeded roll: this often, the picker TRIES overhead/underfoot
+   *  first and takes the best legal flat spot it finds — its own lane,
+   *  because on a distance-flavoured score a flat can never outbid a
+   *  wall (the seat's alignment cone caps flat runs SHORT by geometry,
+   *  which is also why a ceiling answer feels like an event: it's
+   *  always close, always steep, always a reach). No legal flat spot —
+   *  a mount too high for the ceiling's cone, a floor swallowed by the
+   *  avoid circle — and the walls answer as ever. */
+  flatChance: 0.3,
+  /** Candidate samples per horizontal surface (walls get 14). */
+  horizontalSamples: 10,
+  /** A floor port never wakes under the player's feet. */
+  floorAvoidRadius: 0.9,
 };
 
 /* ────────────────────────────── THE BOARD ────────────────────────────────

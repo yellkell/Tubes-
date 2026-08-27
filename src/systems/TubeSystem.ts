@@ -8,10 +8,14 @@
  *  1. TWO HANDS OR NOTHING. Both grips inside reach, both squeezing, and
  *     the collar is yours. One hand squeezing alone RATTLES it — a shake,
  *     a loose clank, a buzz in that hand — which is the entire tutorial.
- *  2. THE LAG IS THE WEIGHT. The head chases the two-hand midpoint
- *     through an exponential spring whose stiffness falls as the tube
- *     lengthens: a stub answers your wrists, seven metres of plant
- *     answers your shoulders. No physics engine — one lerp rate.
+ *  2. THE LAG IS THE WEIGHT — AND THE WRISTS ARE THE RUDDER. The head
+ *     chases the two-hand midpoint through an exponential spring whose
+ *     stiffness falls as the tube lengthens: a stub answers your
+ *     wrists, seven metres of plant answers your shoulders. And while
+ *     it's yours, the collar AIMS: where the two controllers point
+ *     blends into the head's travel (TUBE.steerBlend), so tipping your
+ *     hands bows the run on command instead of the curve only knowing
+ *     where you stand. No physics engine — one lerp rate and one blend.
  *  3. THE RATCHET TELLS THE TRUTH. Every detentPitch of travel clicks in
  *     the hands and the ears; every SECTION arrival lands a proper clank
  *     one plate deeper. Pulling tube out of a wall should feel like
@@ -68,6 +72,10 @@ export interface RunHardware {
   /** The pull's live state. */
   held: boolean;
   magnet: boolean;
+  /** THE STEER: where the wrists say the head travels (world, unit),
+   *  and whether the hands are agreeing enough to say it. */
+  aim: Vector3;
+  aimOk: boolean;
   /** Parked droop: current sag (m) and its settle velocity. */
   droop: number;
   droopVel: number;
@@ -113,6 +121,9 @@ const _entry = new Vector3();
 const _target = new Vector3();
 const _handL = new Vector3();
 const _handR = new Vector3();
+const _chord = new Vector3();
+const _aimL = new Vector3();
+const _aimSum = new Vector3();
 const _point = new Vector3();
 const _tangent = new Vector3();
 const _quat = new Quaternion();
@@ -208,6 +219,8 @@ export class TubeSystem extends createSystem({}) {
       collar,
       held: false,
       magnet: false,
+      aim: new Vector3(),
+      aimOk: false,
       droop: 0,
       droopVel: 0,
       lastDetent: Math.floor(TUBE.stubLength / TUBE.detentPitch),
@@ -281,6 +294,8 @@ export class TubeSystem extends createSystem({}) {
     // Where are the hands, and how many of them are ON the collar?
     const hands = this.readHands(hw);
     run.hands = hands.near;
+    if (hands.aim) hw.aim.copy(hands.aim);
+    hw.aimOk = hands.aim !== null;
 
     if (!hw.magnet) {
       if (hands.holding && !hw.held) {
@@ -403,19 +418,21 @@ export class TubeSystem extends createSystem({}) {
     hw.socket.iris.visible = false;
   }
 
-  /** Both grip poses → held / rattling / midpoint. The tools' driven
-   *  hands substitute both grips and run the same rules. */
+  /** Both grip poses → held / rattling / midpoint / the wrists' aim.
+   *  The tools' driven hands substitute both grips and run the same
+   *  rules (aimless — a tool steers by position, and the chord serves). */
   private readHands(hw: RunHardware): {
     holding: boolean;
     rattling: boolean;
     rattleHand: 'left' | 'right';
     near: number;
     mid: Vector3;
+    aim: Vector3 | null;
   } {
     if (this.driven.active) {
       // Tool hands are ideal hands: both on the collar, both squeezing.
       _target.copy(this.driven.pos);
-      return { holding: true, rattling: false, rattleHand: 'right', near: 2, mid: _target };
+      return { holding: true, rattling: false, rattleHand: 'right', near: 2, mid: _target, aim: null };
     }
 
     const grips = this.world.playerSpaceEntities?.gripSpaces;
@@ -445,7 +462,21 @@ export class TubeSystem extends createSystem({}) {
     }
     if (holding === 1) rattling = true;
     _target.copy(_handL).add(_handR).multiplyScalar(0.5);
-    return { holding: holding === 2, rattling, rattleHand, near, mid: _target };
+
+    // THE STEER: the two pointers' average forward. Rays, not grips —
+    // "point the collar where you want the bend" is the same grammar as
+    // every laser in the game. Hands pointing hard against each other
+    // cancel out (a short sum) and the steer politely stands down.
+    let aim: Vector3 | null = null;
+    const rays = this.world.playerSpaceEntities?.raySpaces;
+    const rayL = rays?.left?.object3D;
+    const rayR = rays?.right?.object3D;
+    if (rayL && rayR) {
+      rayL.getWorldDirection(_aimL).negate();
+      rayR.getWorldDirection(_aimSum).negate().add(_aimL);
+      if (_aimSum.lengthSq() > 0.5) aim = _aimSum.normalize();
+    }
+    return { holding: holding === 2, rattling, rattleHand, near, mid: _target, aim };
   }
 
   /* ── laying the tube along its path ───────────────────────────────────── */
@@ -455,10 +486,27 @@ export class TubeSystem extends createSystem({}) {
     const maxExt = maxExtensionFor(runLength(_mouth, _seat.copy(run.pointB)));
     bendControl(_mouth, run.normalA, ext, _p1);
     // The head's arrival direction: the socket's normal once seating (or
-    // seated), the straight run otherwise (degenerates to near-straight).
-    if (entering) _entry.copy(run.normalB);
-    else _entry.copy(hw.headVisual).sub(_mouth).normalize();
-    endControl(hw.headVisual, _entry, ext, _p2);
+    // seated); held, the wrists' steer blended into the straight chord;
+    // parked, the chord alone — with the cap facing OUTWARD along the
+    // travel, the way a tube's face looks where the tube is going.
+    if (entering) {
+      _entry.copy(run.normalB);
+    } else {
+      _chord.copy(hw.headVisual).sub(_mouth).normalize();
+      if (hw.held && hw.aimOk) {
+        _entry
+          .copy(_chord)
+          .multiplyScalar(1 - TUBE.steerBlend)
+          .addScaledVector(hw.aim, TUBE.steerBlend);
+        // Wrists dead against the chord: no direction survives the
+        // blend, so the run falls straight rather than folding.
+        if (_entry.lengthSq() < 0.01) _entry.copy(_chord);
+        _entry.normalize().negate();
+      } else {
+        _entry.copy(_chord).negate();
+      }
+    }
+    endControl(hw.headVisual, _entry, ext, _p2, hw.held && hw.aimOk && !entering ? TUBE.steerReach : 1);
 
     const spans = segmentSpans(ext, maxExt);
     for (let i = 0; i < hw.segments.length; i++) {
@@ -480,11 +528,23 @@ export class TubeSystem extends createSystem({}) {
       seg.shell.position.copy(_point);
       seg.shell.quaternion.copy(_quat);
       seg.shell.scale.set(span.radius, len + 0.024, span.radius);
-      // The pour rides the same pose, a hair inside the shell.
+      // THE POUR IS ONE COLUMN. Each section's volume tucks back through
+      // its own joint into the fatter section behind it (the root tucks
+      // into the flange's gland), so the seam, the bend wedge and the
+      // joint ring all sit over lit glow instead of a gap — the column
+      // reads as one pour stepping down in bore, exactly what a
+      // telescope full of liquid would do. The uniforms carry the
+      // STRETCHED span, so the front's arc-length clip stays world-true
+      // straight through the overlap: both volumes cut on the same s.
+      const pour0 = span.s0 - (span.index === 0 ? 0.03 : Math.min(TUBE.pourOverlap, span.s0));
+      const pourLen = span.s1 - pour0;
+      const tPour = Math.min(1, (pour0 + span.s1) / 2 / Math.max(0.001, ext));
+      pathPoint(_mouth, _p1, _p2, hw.headVisual, tPour, _point);
+      pathTangent(_mouth, _p1, _p2, hw.headVisual, tPour, _tangent);
       seg.pour.position.copy(_point);
-      seg.pour.quaternion.copy(_quat);
-      seg.pour.scale.set(span.radius * 0.82, Math.max(0.01, len - 0.01), span.radius * 0.82);
-      seg.pourMat.uniforms.uS0.value = span.s0;
+      seg.pour.quaternion.copy(_quat.setFromUnitVectors(UP_Y, _tangent));
+      seg.pour.scale.set(span.radius * 0.82, pourLen, span.radius * 0.82);
+      seg.pourMat.uniforms.uS0.value = pour0;
       seg.pourMat.uniforms.uS1.value = span.s1;
       // The joint collar at this section's outer end.
       const tEnd = Math.min(1, span.s1 / Math.max(0.001, ext));
