@@ -89,6 +89,12 @@ function discGeo(): CircleGeometry {
 
 interface LineMats {
   plate: MeshStandardMaterial;
+  /** The same metal, rendered BOTH SIDES — for open geometry (a bore you
+   *  can see into). A FrontSide open cylinder draws only the wall facing
+   *  you: the far wall's inner surface points away and is culled, so the
+   *  socket's mouth read as HALF a rim, and the half you got followed you
+   *  round the room. A pipe's bore has an inside; this is it. */
+  plateOpen: MeshStandardMaterial;
   shell: MeshStandardMaterial;
   glow: MeshBasicMaterial; // template — cloned where opacity animates alone
 }
@@ -103,6 +109,12 @@ function matsFor(line: LineSpec): LineMats {
       color: line.shell,
       roughness: line.roughness,
       metalness: line.metalness,
+    }),
+    plateOpen: new MeshStandardMaterial({
+      color: line.shell,
+      roughness: line.roughness,
+      metalness: line.metalness,
+      side: DoubleSide,
     }),
     // The frosted barrel the pour glows through. Depth-writing OFF so the
     // opaque pour renders first and the shell blends over it — the same
@@ -199,12 +211,23 @@ export function buildSocket(line: LineSpec): SocketRefs {
   plate.position.z = 0.02;
   group.add(plate);
 
-  // The throat: a short open barrel the head slides into.
-  const throat = new Mesh(shellGeo(), m.plate);
+  // The throat: a short open barrel the head slides into. TWO-SIDED —
+  // it is a bore, and you must be able to see the inside of its far wall
+  // (see plateOpen). Cheap: one short cylinder per socket.
+  const throat = new Mesh(shellGeo(), m.plateOpen);
   throat.rotation.x = Math.PI / 2;
   throat.scale.set(r * 1.45, 0.12, r * 1.45);
   throat.position.z = 0.08;
   group.add(throat);
+
+  // THE RIM: a machined lip round the mouth. A torus is closed geometry,
+  // so it is whole from every angle by construction — the socket's
+  // outline can never depend on where you're standing again. It also
+  // gives the mouth the weight a bare barrel edge never had.
+  const rim = new Mesh(ringGeo(), m.plate);
+  rim.scale.setScalar(r * 1.45);
+  rim.position.z = 0.14;
+  group.add(rim);
 
   // The iris: a dark disc a hair inside the throat — the "closed" read.
   const irisMat = new MeshBasicMaterial({ color: 0x07070a });

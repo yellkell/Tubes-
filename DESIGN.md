@@ -170,6 +170,27 @@ run sharing front/time/energy:
   downward for "sunlight" and it read as droop from anywhere but the
   floor. The sun flavour lives in the ramp and the motes, not a sag.
 
+## Hardware that reads from everywhere
+
+A socket's throat is an OPEN cylinder — it is a bore, you look into it —
+and open geometry is where one-sided materials betray you: FrontSide
+draws only the wall facing the camera, so the far wall's inner surface
+is culled and the mouth reads as HALF a rim, with the visible half
+following the viewer round the room. Invisible from any one viewpoint,
+obvious the moment you walk past. Two rules came out of it, and both are
+cheap:
+
+1. **Open geometry renders both sides.** The throat wears its own
+   two-sided material (`plateOpen`). The tube's shells stay one-sided on
+   purpose — they are transparent and filled with an opaque pour, so
+   their far wall is hidden anyway, and two-sided transparency would
+   only buy self-sorting artefacts.
+2. **Silhouettes are closed shapes.** The socket's rim is a torus, so
+   the outline that says "socket" is whole by construction and can never
+   depend on where you're standing. `tools/socket-look.mjs` orbits one
+   and shoots 14 angles, because this class of defect is only ever
+   visible in motion.
+
 ## The lines
 
 Identity is carried three free ways — silhouette (plate sides: 8 / 24 /

@@ -175,8 +175,11 @@ src/
                               language, re-accented furnace amber
 tools/
   job-walk.mjs           THE FULL SHIFT: every job worked end to end,
-                         headlessly, with phase/unlock/budget asserts
+                         headlessly, with phase/unlock/budget/joint asserts
   preview-shot.mjs       screenshots of the moments that carry the look
+  socket-look.mjs        a socket from 14 angles — the anti-culling check
+                         (open geometry looks whole from one viewpoint and
+                         half-there from the next; only an orbit catches it)
 ```
 
 `DESIGN.md` has the full design notes and the roadmap.
@@ -188,6 +191,7 @@ npm run typecheck        # strict TS, no emit
 npm run dev &            # then:
 node tools/job-walk.mjs  # the whole ladder, asserted (exits non-zero on fail)
 node tools/preview-shot.mjs   # shots/ of the landing, board, pull, pour
+node tools/socket-look.mjs    # shots/socket/ — one socket, 14 angles
 ```
 
 The walk drives the REAL game through the debug hook — real placement
