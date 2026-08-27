@@ -49,8 +49,9 @@ industrial tube at a time.
   lit liquid, never over a gap) — lands with the line's own chord, and
   the socket blooms —
   a burst of lens glints, a settling hum, and **a shaft of sunlight
-  leaning down out of a wall that never had a window**, dust motes
-  drifting in it. In passthrough that light lands in YOUR room, which is
+  firing straight out of a wall that never had a window**, dust motes
+  drifting in it — level across the room from a wall port, rising off
+  a floor port, pouring straight down from a ceiling one. In passthrough that light lands in YOUR room, which is
   the whole trick: the game's best effect is played on a stage it didn't
   have to draw.
 - **Five jobs, one honest ladder.** One run on the MAINS teaches

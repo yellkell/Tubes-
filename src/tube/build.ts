@@ -106,13 +106,15 @@ function matsFor(line: LineSpec): LineMats {
     }),
     // The frosted barrel the pour glows through. Depth-writing OFF so the
     // opaque pour renders first and the shell blends over it — the same
-    // sort order the glowstick liquid taught us.
+    // sort order the glowstick liquid taught us. The frost is a step
+    // THINNER than instinct says: over passthrough the shell fights a
+    // lit room for the pour's light, and the pour must win.
     shell: new MeshStandardMaterial({
       color: line.shell,
       roughness: Math.min(0.9, line.roughness + 0.15),
       metalness: line.metalness * 0.5,
       transparent: true,
-      opacity: line.id === 'mains' ? 0.6 : line.id === 'coolant' ? 0.44 : 0.38,
+      opacity: line.id === 'mains' ? 0.48 : line.id === 'coolant' ? 0.36 : 0.32,
       depthWrite: false,
     }),
     glow: new MeshBasicMaterial({
@@ -266,7 +268,7 @@ export function buildSegment(line: LineSpec, index: number): SegmentRefs {
   );
   const pour = new Mesh(pourGeo(), pourMat);
   pour.renderOrder = 4;
-  pour.scale.set(r * 0.82, 1, r * 0.82);
+  pour.scale.set(r * 0.87, 1, r * 0.87);
   pour.visible = false;
 
   return { shell, rib, pour, pourMat };

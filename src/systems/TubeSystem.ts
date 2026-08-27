@@ -607,7 +607,9 @@ export class TubeSystem extends createSystem({}) {
       _tangent.normalize();
       seg.pour.position.copy(_point).add(_pB).multiplyScalar(0.5);
       seg.pour.quaternion.copy(_quat.setFromUnitVectors(UP_Y, _tangent));
-      seg.pour.scale.set(span.radius * 0.82, pourChord, span.radius * 0.82);
+      // 0.87 of the shell's bore: a hair off the glass, so the frost
+      // reads as a film over liquid rather than a pipe with a light in.
+      seg.pour.scale.set(span.radius * 0.87, pourChord, span.radius * 0.87);
       seg.pourMat.uniforms.uS0.value = pour0;
       seg.pourMat.uniforms.uS1.value = span.s1;
       // The joint collar sits ON the shared joint point, wearing the

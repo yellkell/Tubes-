@@ -77,20 +77,25 @@ const FLOW_FRAG = /* glsl */ `
       return;
     }
 
-    // The body: shaded toward the depths, streaming. Two travelling waves
-    // run the pour's length; their sum is the "current" you can see.
+    // The body: lit and streaming. Two travelling waves run the pour's
+    // length; their sum is the "current" you can see. The weights sit
+    // HOT on purpose: the glowstick gel this shader descends from was
+    // tuned for optical density in a dark void, but this pour lives
+    // behind a frosted shell over a daylit real room — a body weighted
+    // toward its depths read as murk, and the light is the payoff.
     float stream =
       sin(s * 6.0 - uTime * 5.2) * 0.5 +
       sin(s * 13.0 - uTime * 8.6) * 0.5;
-    // The living pulse: a slow breath down the whole line. VOLT's chop
-    // squares it into travelling packets with dark water between them.
+    // The living pulse: a slow breath down the whole line, with its
+    // trough lifted — the line breathes, it never gutters. VOLT's chop
+    // still squares it into packets with dark water between them.
     float phase = sin((uTime * uPulseHz - s * 0.55) * 6.2831853);
     float breath = 0.5 + 0.5 * phase;
     float packets = smoothstep(0.15, 0.65, breath);
-    float pulse = mix(0.65 + 0.35 * breath, 0.25 + 0.85 * packets, uChop);
+    float pulse = mix(0.78 + 0.22 * breath, 0.3 + 0.85 * packets, uChop);
 
     float up = clamp(vWorldNormal.y * 0.5 + 0.5, 0.0, 1.0);
-    vec3 col = mix(uDeep, uGlow, (0.3 + 0.5 * up + 0.12 * stream) * pulse);
+    vec3 col = mix(uDeep, uGlow, (0.52 + 0.42 * up + 0.12 * stream) * pulse);
 
     // The hot band hugging the front — brightest just behind the face.
     col = mix(col, uFoam, smoothstep(uBand, 0.0, uFront - s) * 0.85);
@@ -105,6 +110,11 @@ const FLOW_FRAG = /* glsl */ `
     col += pow(ndh, 110.0) * 0.8 * uEnergy;
     // Fresnel skin: the bore turns to bright film at grazing angles.
     col += pow(1.0 - max(dot(n, viewDir), 0.0), 4.0) * 0.24 * uGlow;
+
+    // One honest gain over the lot — body, band, gloss and skin brighten
+    // together, so the pour reads LIT through the frosted shell instead
+    // of merely coloured.
+    col *= 1.12;
 
     // Dormant hardware idles DIM — energy scales the whole volume so a
     // charging line visibly wakes before the front ever moves.

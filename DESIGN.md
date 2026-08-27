@@ -164,8 +164,11 @@ run sharing front/time/energy:
   (population-sized sparkle — dust, grains, hero catches — that dies in
   the air, never litter), the hum fading in (per-line patch, detuned per
   run so two MAINS never phase-lock), and THE SHAFT: a ramped additive
-  cone leaning out of the socket and DOWN into the room, 46 motes
-  drifting in it. Sunlight, from a wall.
+  cone firing straight out of the socket's mouth, 46 motes drifting in
+  it. Centred on every surface — level from a wall, rising from the
+  floor, pouring from the ceiling; an early draft leaned every shaft
+  downward for "sunlight" and it read as droop from anywhere but the
+  floor. The sun flavour lives in the ramp and the motes, not a sag.
 
 ## The lines
 

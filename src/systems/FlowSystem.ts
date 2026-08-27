@@ -11,10 +11,10 @@
  *
  *  ARRIVAL — the front lands in the socket and the room gets paid: a
  *  burst of lens glints off the socket mouth, the line's chord, the hum
- *  settling in — and THE SHAFT: a ramped light cone leaning down out of
- *  the socket with dust motes drifting in it, sunlight out of a wall
- *  that never had a window. Passthrough sells this harder than any void
- *  could: the light lands in YOUR room.
+ *  settling in — and THE SHAFT: a ramped light cone firing straight
+ *  out of the socket's mouth with dust motes drifting in it, sunlight
+ *  out of a wall that never had a window. Passthrough sells this harder
+ *  than any void could: the light lands in YOUR room.
  *
  *  CEREMONY — the job's last run landed: every pour surges, every halo
  *  leans in, the room chord plays, and after CEREMONY_S the board comes
@@ -275,8 +275,14 @@ export class FlowSystem extends createSystem({}) {
 
   private spawnShaft(runIndex: number, at: Vector3, normal: Vector3, color: number): void {
     if (this.shafts.has(runIndex)) return;
-    // Sunlight leans: out of the wall and DOWN into the room.
-    const axis = new Vector3(normal.x, normal.y - 0.75, normal.z).normalize();
+    // Straight out of the socket's mouth, every surface alike — a wall
+    // port throws its light level across the room, the floor's rises,
+    // the ceiling's pours straight down. (This used to lean every shaft
+    // downward for "sunlight", which read beautifully from the floor —
+    // where the lean happened to normalise to dead-centre — and droopy
+    // from every wall. The centred one WAS the good one; now they all
+    // are. The sun flavour lives in the ramp and the motes, not a sag.)
+    const axis = normal.clone().normalize();
     const len = FLOW.shaftLength;
 
     const cone = new Mesh(
