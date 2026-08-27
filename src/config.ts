@@ -83,9 +83,16 @@ export const TUBE = {
    *  any physics engine. */
   followStiffness: 14,
   followStiffnessFar: 7.5,
-  /** Both hands must be inside this reach of the collar to take it.
-   *  Generous: the fantasy is hauling plant, not threading a needle. */
+  /** Both hands must be inside this reach of the collar to TAKE it.
+   *  Generous: the fantasy is hauling plant, not threading a needle.
+   *  Acquisition only — a held collar never re-tests reach (the head
+   *  deliberately LAGS the hands; measuring your grip against your own
+   *  weight illusion is how a fast haul used to drop itself). */
   grabReach: 0.3,
+  /** Once held, the grab persists while both squeezes stay above this
+   *  (analog, with the press as fallback) — a jostled grip mid-swing
+   *  dips, it doesn't open. The only way to drop plant is to let go. */
+  holdSqueeze: 0.3,
   /** One hand alone can't haul it — but it can RATTLE it. The shake
    *  amplitude and the cooldown between rattle clanks. */
   rattleAmp: 0.012,

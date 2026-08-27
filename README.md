@@ -22,7 +22,9 @@ industrial tube at a time.
 - **The tube takes two hands.** A capped stub sticks out of the flange,
   collar glowing "grab me". One hand alone RATTLES it — a loose clank and
   a buzz that says *more hands* without a word. Both grips squeezing and
-  it's yours: pull, and the tube TELESCOPES out of the wall, fat root
+  it's yours — and it STAYS yours however hard you haul: the grab never
+  re-tests your reach against the lagging weight, so the only way to
+  drop plant is to open a hand. Then: pull, and the tube TELESCOPES out of the wall, fat root
   section first, each new thinner section arriving with a clank one plate
   deeper, the ratchet clicking in your palms the whole way. The head
   chases your hands with a lag that reads as weight — a stub answers your

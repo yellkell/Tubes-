@@ -5,9 +5,13 @@
  * mount lands, irises the socket awake on cue, and then runs THE PULL —
  * the game's whole feel, five rules deep:
  *
- *  1. TWO HANDS OR NOTHING. Both grips inside reach, both squeezing, and
- *     the collar is yours. One hand squeezing alone RATTLES it — a shake,
- *     a loose clank, a buzz in that hand — which is the entire tutorial.
+ *  1. TWO HANDS OR NOTHING — AND THEN IT'S YOURS. Both grips inside
+ *     reach, both squeezing, and the collar is yours. One hand squeezing
+ *     alone RATTLES it — a shake, a loose clank, a buzz in that hand —
+ *     which is the entire tutorial. And once taken, the grab re-tests
+ *     the SQUEEZE, never the reach: the head lags the hands on purpose
+ *     (that's the weight), so distance must never be grounds for
+ *     dropping — the only way to let go of plant is to open a hand.
  *  2. THE LAG IS THE WEIGHT — AND THE WRISTS ARE THE RUDDER. The head
  *     chases the two-hand midpoint through an exponential spring whose
  *     stiffness falls as the tube lengthens: a stub answers your
@@ -108,6 +112,10 @@ export const tubeView: {
   dragTo?: (x: number, y: number, z: number) => void;
   /** Open the virtual hands. */
   release?: () => void;
+  /** The polyline law, measured off the SCENE: the largest distance
+   *  between consecutive sections' shared joint points (metres) for a
+   *  run, from the shells' actual transforms. ~0 or the law is broken. */
+  jointGaps?: (runIndex: number) => number | null;
 } = {};
 
 const UP_Y = new Vector3(0, 1, 0);
@@ -124,6 +132,11 @@ const _handR = new Vector3();
 const _chord = new Vector3();
 const _aimL = new Vector3();
 const _aimSum = new Vector3();
+const _pA = new Vector3();
+const _pB = new Vector3();
+
+/** How far a shell runs past each joint, hiding the elbow. */
+const SHELL_PAD = 0.03;
 const _point = new Vector3();
 const _tangent = new Vector3();
 const _quat = new Quaternion();
@@ -158,6 +171,31 @@ export class TubeSystem extends createSystem({}) {
     };
     tubeView.release = () => {
       this.driven.active = false;
+    };
+    tubeView.jointGaps = (runIndex) => {
+      const hw = runHardware[runIndex];
+      if (!hw) return null;
+      let worst = 0;
+      let measured = false;
+      for (let i = 0; i + 1 < hw.segments.length; i++) {
+        const a = hw.segments[i].shell;
+        const b = hw.segments[i + 1].shell;
+        if (!a.visible || !b.visible) break;
+        // Each shell's true joint point: half its chord (scale minus the
+        // pad) along its own axis, off its own transform — the scene's
+        // word, not layTube's.
+        _pA.set(0, 1, 0)
+          .applyQuaternion(a.quaternion)
+          .multiplyScalar((a.scale.y - SHELL_PAD) / 2)
+          .add(a.position);
+        _pB.set(0, 1, 0)
+          .applyQuaternion(b.quaternion)
+          .multiplyScalar(-(b.scale.y - SHELL_PAD) / 2)
+          .add(b.position);
+        worst = Math.max(worst, _pA.distanceTo(_pB));
+        measured = true;
+      }
+      return measured ? worst : null;
     };
   }
 
@@ -450,12 +488,22 @@ export class TubeSystem extends createSystem({}) {
     ] as const) {
       if (!obj) continue;
       const gp = this.input.xr.gamepads[hand];
-      const squeezing =
+      const pressed =
         (gp?.getButtonPressed(InputComponent.Squeeze) ?? false) ||
         (gp?.getButtonPressed(InputComponent.Trigger) ?? false);
       const isNear = pos.distanceTo(hw.headVisual) < TUBE.grabReach;
       if (isNear) near++;
-      if (isNear && squeezing) {
+      if (hw.held) {
+        // RETENTION: the hands are ON the collar — the collar goes where
+        // they go, however hard the weight spring lags behind. Reach is
+        // never re-tested, and the squeeze reads ANALOG with a soft
+        // floor, so a grip jostled mid-swing dips without opening.
+        const grip = Math.max(
+          gp?.getButtonValue(InputComponent.Squeeze) ?? 0,
+          gp?.getButtonValue(InputComponent.Trigger) ?? 0,
+        );
+        if (pressed || grip > TUBE.holdSqueeze) holding++;
+      } else if (isNear && pressed) {
         holding++;
         rattleHand = hand;
       }
@@ -509,6 +557,16 @@ export class TubeSystem extends createSystem({}) {
     endControl(hw.headVisual, _entry, ext, _p2, hw.held && hw.aimOk && !entering ? TUBE.steerReach : 1);
 
     const spans = segmentSpans(ext, maxExt);
+    // THE POLYLINE LAW: every piece spans the straight line BETWEEN its
+    // two points ON the curve, so consecutive sections share their joint
+    // point EXACTLY and the run cannot open a gap — at any bend the
+    // steer, the droop or the seat can ask for. (Sections used to be
+    // sized by arc length and centred on the curve's midpoint — but a
+    // bent curve is LONGER than the chord between its ends, so straight
+    // pieces cut to arc length could never reach each other, and every
+    // joint inherited the difference. The steer made the bends bigger
+    // and the gaps with them.)
+    const extSafe = Math.max(0.001, ext);
     for (let i = 0; i < hw.segments.length; i++) {
       const seg = hw.segments[i];
       const span = spans[i];
@@ -519,38 +577,43 @@ export class TubeSystem extends createSystem({}) {
         seg.pour.visible = false;
         continue;
       }
-      const sMid = (span.s0 + span.s1) / 2;
-      const len = span.s1 - span.s0;
-      const tMid = Math.min(1, sMid / Math.max(0.001, ext));
-      pathPoint(_mouth, _p1, _p2, hw.headVisual, tMid, _point);
-      pathTangent(_mouth, _p1, _p2, hw.headVisual, tMid, _tangent);
+      pathPoint(_mouth, _p1, _p2, hw.headVisual, span.s0 / extSafe, _pA);
+      pathPoint(_mouth, _p1, _p2, hw.headVisual, Math.min(1, span.s1 / extSafe), _pB);
+      _tangent.copy(_pB).sub(_pA);
+      let chord = _tangent.length();
+      if (chord < 1e-5) {
+        // A section barely emerged: fall back to the curve's own tangent.
+        pathTangent(_mouth, _p1, _p2, hw.headVisual, span.s0 / extSafe, _tangent);
+        chord = span.s1 - span.s0;
+      } else {
+        _tangent.divideScalar(chord);
+      }
       _quat.setFromUnitVectors(UP_Y, _tangent);
-      seg.shell.position.copy(_point);
+      seg.shell.position.copy(_pA).add(_pB).multiplyScalar(0.5);
       seg.shell.quaternion.copy(_quat);
-      seg.shell.scale.set(span.radius, len + 0.024, span.radius);
+      seg.shell.scale.set(span.radius, chord + SHELL_PAD, span.radius);
       // THE POUR IS ONE COLUMN. Each section's volume tucks back through
       // its own joint into the fatter section behind it (the root tucks
-      // into the flange's gland), so the seam, the bend wedge and the
-      // joint ring all sit over lit glow instead of a gap — the column
-      // reads as one pour stepping down in bore, exactly what a
-      // telescope full of liquid would do. The uniforms carry the
-      // STRETCHED span, so the front's arc-length clip stays world-true
-      // straight through the overlap: both volumes cut on the same s.
+      // into the flange's gland), so the seam, the elbow wedge and the
+      // joint ring all sit over lit glow instead of a gap. The pour's
+      // own endpoints live on the curve too (t < 0 extrapolates the
+      // root's tuck into the wall), and the uniforms carry the STRETCHED
+      // span, so the front's arc-length clip stays world-true straight
+      // through the overlap: both volumes cut on the same s.
       const pour0 = span.s0 - (span.index === 0 ? 0.03 : Math.min(TUBE.pourOverlap, span.s0));
-      const pourLen = span.s1 - pour0;
-      const tPour = Math.min(1, (pour0 + span.s1) / 2 / Math.max(0.001, ext));
-      pathPoint(_mouth, _p1, _p2, hw.headVisual, tPour, _point);
-      pathTangent(_mouth, _p1, _p2, hw.headVisual, tPour, _tangent);
-      seg.pour.position.copy(_point);
+      pathPoint(_mouth, _p1, _p2, hw.headVisual, pour0 / extSafe, _point);
+      _tangent.copy(_pB).sub(_point);
+      const pourChord = Math.max(0.01, _tangent.length());
+      _tangent.normalize();
+      seg.pour.position.copy(_point).add(_pB).multiplyScalar(0.5);
       seg.pour.quaternion.copy(_quat.setFromUnitVectors(UP_Y, _tangent));
-      seg.pour.scale.set(span.radius * 0.82, pourLen, span.radius * 0.82);
+      seg.pour.scale.set(span.radius * 0.82, pourChord, span.radius * 0.82);
       seg.pourMat.uniforms.uS0.value = pour0;
       seg.pourMat.uniforms.uS1.value = span.s1;
-      // The joint collar at this section's outer end.
-      const tEnd = Math.min(1, span.s1 / Math.max(0.001, ext));
-      pathPoint(_mouth, _p1, _p2, hw.headVisual, tEnd, _point);
-      pathTangent(_mouth, _p1, _p2, hw.headVisual, tEnd, _tangent);
-      seg.rib.position.copy(_point);
+      // The joint collar sits ON the shared joint point, wearing the
+      // curve's own tangent there — halfway between its two elbows.
+      pathTangent(_mouth, _p1, _p2, hw.headVisual, Math.min(1, span.s1 / extSafe), _tangent);
+      seg.rib.position.copy(_pB);
       seg.rib.quaternion.copy(_quat.setFromUnitVectors(FWD_Z, _tangent));
     }
 

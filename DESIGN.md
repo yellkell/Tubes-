@@ -104,9 +104,13 @@ section's arrival an EVENT (a deeper clank, a harder buzz) on top of the
 fine ratchet detents every 0.34 m.
 
 The pull's five rules (each one line of feel, all in TubeSystem's
-header): two hands or nothing · the lag is the weight and the wrists
-are the rudder · the ratchet tells the truth · parked is a real state ·
-the socket does the last metre. The follow is a single exponential
+header): two hands or nothing, and then it's yours · the lag is the
+weight and the wrists are the rudder · the ratchet tells the truth ·
+parked is a real state · the socket does the last metre. "Then it's
+yours" is load-bearing: acquisition tests reach + squeeze, but a HELD
+collar re-tests only the squeeze (analog, soft floor) — the head lags
+the hands on purpose, and measuring your grip against your own weight
+illusion is how a fast haul once dropped itself. The follow is a single exponential
 spring whose rate falls with extension; THE STEER blends the two
 controllers' pointing direction into the head's travel
 (TUBE.steerBlend) and stretches the end control while it's live, so
@@ -135,14 +139,21 @@ run sharing front/time/energy:
   bulkhead), back-faces painted as the bright cut, a hot foam band
   burning behind it, racing at the line's speed (MAINS 2.3 m/s heavy,
   COOLANT 4.2 fast, VOLT 5.4 in packets).
-- **One column, no cells**: each section's pour volume tucks back
-  through its own joint into the fatter section behind it (the root
-  tucks into the flange's gland), with the uniforms carrying the
-  stretched span so the front's clip stays world-true straight through
-  the overlap — and the joint rings are cut slimmer than the collar
-  stock so the bands sit over lit liquid. The column steps down in bore
-  at every joint, exactly what a telescope full of liquid would do; it
-  never breaks.
+- **One column, no cells**: two laws together. THE POLYLINE LAW —
+  every piece (shell and pour alike) spans the straight line between
+  its two points ON the curve, so consecutive sections share their
+  joint point exactly and the run cannot open a gap at any bend the
+  steer, the droop or the seat can ask for (pieces sized by arc length
+  and centred on the curve used to fall short of each other, because a
+  bent curve is longer than the chord between its ends — the walk now
+  measures the worst joint off the scene's own transforms and holds it
+  at zero). And THE TUCK — each section's pour volume runs back through
+  its own joint into the fatter section behind it (the root into the
+  flange's gland), uniforms carrying the stretched span so the front's
+  clip stays world-true through the overlap, with the joint rings cut
+  slimmer than the collar stock so the bands sit over lit liquid. The
+  column steps down in bore at every joint, exactly what a telescope
+  full of liquid would do; it never breaks.
 - **Alive**: two travelling body waves plus the line's pulse — MAINS
   rolls (0.5 Hz), COOLANT streams (0.9), VOLT strobes (2.2 with `chop`
   squaring the wave into plasma packets with dark water between). Wet

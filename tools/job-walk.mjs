@@ -135,6 +135,13 @@ async function workRun(runIndex) {
   await waitPhase(runIndex, 'flowing', 8000);
   const front = await page.evaluate((idx) => window.__tubes.flow.progress()[idx], runIndex);
   check(front.front > front.length, `run ${runIndex}: the pour landed (front ${front.front.toFixed(1)}m)`);
+
+  // THE POLYLINE LAW, measured off the scene: consecutive sections must
+  // share their joint points exactly. A seated run carries a real bend
+  // (the path sweeps into the socket's normal), so this is the law
+  // under load, not the law on a straight pipe.
+  const gap = await page.evaluate((idx) => window.__tubes.tube.jointGaps(idx), runIndex);
+  check(gap !== null && gap < 0.002, `run ${runIndex}: no gaps at the joints (worst ${(gap * 1000).toFixed(2)}mm)`);
 }
 
 const JOBS = await page.evaluate(() =>
