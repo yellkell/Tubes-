@@ -462,15 +462,55 @@ export interface ItemSpec {
   tier: 1 | 2;
   /** The lines whose look this part carries (first = the body). */
   lineage: Array<'mains' | 'coolant' | 'volt'>;
+  /** THE DOCKET — what the works DOES with it. One line, on the sheet:
+   *  every part is FOR something behind your walls, and the fiction
+   *  says so out loud. */
+  docket: string;
 }
 
 export const ITEMS: Record<ItemId, ItemSpec> = {
-  gear: { id: 'gear', name: 'GEAR', tier: 1, lineage: ['mains'] },
-  cell: { id: 'cell', name: 'CELL', tier: 1, lineage: ['coolant'] },
-  chip: { id: 'chip', name: 'CHIP', tier: 1, lineage: ['volt'] },
-  pump: { id: 'pump', name: 'PUMP', tier: 2, lineage: ['mains', 'coolant'] },
-  lamp: { id: 'lamp', name: 'LAMP', tier: 2, lineage: ['coolant', 'volt'] },
-  servo: { id: 'servo', name: 'SERVO', tier: 2, lineage: ['mains', 'volt'] },
+  gear: {
+    id: 'gear',
+    name: 'GEAR',
+    tier: 1,
+    lineage: ['mains'],
+    docket: 're-tooths the old drives sleeping behind your walls',
+  },
+  cell: {
+    id: 'cell',
+    name: 'CELL',
+    tier: 1,
+    lineage: ['coolant'],
+    docket: 'holds a charge of coolant light for the dark stretches',
+  },
+  chip: {
+    id: 'chip',
+    name: 'CHIP',
+    tier: 1,
+    lineage: ['volt'],
+    docket: 'thinks for valves that forgot their timings',
+  },
+  pump: {
+    id: 'pump',
+    name: 'PUMP',
+    tier: 2,
+    lineage: ['mains', 'coolant'],
+    docket: 'puts pressure back where the mains ran to silt',
+  },
+  lamp: {
+    id: 'lamp',
+    name: 'LAMP',
+    tier: 2,
+    lineage: ['coolant', 'volt'],
+    docket: 'a room behind the plaster gets its morning back',
+  },
+  servo: {
+    id: 'servo',
+    name: 'SERVO',
+    tier: 2,
+    lineage: ['mains', 'volt'],
+    docket: 'an old arm on the far side learns its reach again',
+  },
 };
 
 /** The maker's law: feed it a colour, get the colour's base part. */
@@ -490,6 +530,52 @@ export const COMBINES: Record<string, ItemId> = {
 export function combineKey(a: ItemId, b: ItemId): string {
   return [a, b].sort().join('+');
 }
+
+/* ─────────────────────────────── THE BILLS ───────────────────────────────
+ * What the bank is FOR (FACTORY.md, the economy): upgrades are BILLS OF
+ * BANKED PARTS, exactly like milestones — no abstract currency, ever.
+ * Overproducing a SPECIFIC item is a decision, and old lines stay alive
+ * because their product stays spendable. Bought fittings persist with
+ * the trade (localStorage) and apply the moment the bill is paid.
+ * (The SECOND SPOUT — the big physical one, with its colour dial — is
+ * the next fitting on this list.)
+ */
+export type UpgradeId = 'long-reach' | 'belt-pace' | 'quick-boxes' | 'deep-crates';
+
+export interface UpgradeSpec {
+  id: UpgradeId;
+  name: string;
+  /** What it does, in the card's one line. */
+  effect: string;
+  bill: Partial<Record<ItemId, number>>;
+}
+
+export const UPGRADES: UpgradeSpec[] = [
+  {
+    id: 'long-reach',
+    name: 'LONG REACH',
+    effect: 'supply tubes stretch two metres further',
+    bill: { gear: 4 },
+  },
+  {
+    id: 'belt-pace',
+    name: 'BELT PACE',
+    effect: 'rails run a quarter faster',
+    bill: { gear: 8, cell: 6 },
+  },
+  {
+    id: 'quick-boxes',
+    name: 'QUICK BOXES',
+    effect: 'makers and combiners craft a quarter faster',
+    bill: { cell: 8, pump: 4 },
+  },
+  {
+    id: 'deep-crates',
+    name: 'DEEP CRATES',
+    effect: 'chests hold twice the parts',
+    bill: { chip: 6, lamp: 4 },
+  },
+];
 
 /* ────────────────────────────── THE ORDERS ───────────────────────────────
  * The work book: deliver 10 × the target, each sheet one verb deeper
@@ -569,10 +655,11 @@ export const BOARD = {
   pxH: 900,
   /** Where the board stands relative to spawn (m, forward is −Z). */
   position: [0, 1.32, -1.35] as [number, number, number],
-  /** The JOB CARD (pause) — small, dead ahead, below the eye line. */
+  /** The shift card (pause) — small, dead ahead, below the eye line.
+   *  Tall enough for the factory card's BUILD/SUPPLY pages. */
   cardW: 0.56,
-  cardH: 0.42,
-  cardPx: [560, 420] as [number, number],
+  cardH: 0.5,
+  cardPx: [560, 500] as [number, number],
   cardPosition: [0, 1.24, -1.0] as [number, number, number],
 };
 

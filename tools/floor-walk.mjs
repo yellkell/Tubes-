@@ -70,6 +70,7 @@ await enterFloor();
 // The default rectangle: the fallback room's walls (4.6 × 3.6 around the
 // player), inset by FLOOR.inset — the tape starts AT your walls.
 let s = await state();
+check(s.tapeUp === true, 'the tape stands while the floor is being marked');
 check(near(s.layout.left, -2.05) && near(s.layout.right, 2.05), `default sides sit at the walls, inset (left ${s.layout.left.toFixed(2)}, right ${s.layout.right.toFixed(2)})`);
 check(near(s.layout.far, -1.55) && near(s.layout.near, 1.55), `default ends too (far ${s.layout.far.toFixed(2)}, near ${s.layout.near.toFixed(2)})`);
 
@@ -137,10 +138,13 @@ await dragTo('near', 1.2);
 s = await state();
 const kept = { ...s.layout };
 
-// Ⓐ — done: the board comes back, the layout is on the shelf.
+// Ⓐ — done: the board comes back, the layout is on the shelf — and the
+// TAPE COMES DOWN: barricade tape is site dressing, not furniture.
 await page.evaluate(() => window.__tubes.floor.exit());
 await page.waitForFunction(() => window.__tubes.site.screen === 'board', undefined, { timeout: 4000 });
 check(true, 'DONE returns the board');
+s = await state();
+check(s.tapeUp === false, 'the tape came down with the setup');
 
 console.log('THE SHELF (reload)');
 await clockIn();

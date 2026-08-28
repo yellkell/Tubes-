@@ -54,7 +54,12 @@ export const floorView: {
   /** Raw set, clamp only (SLUGFEST's moveSide). */
   moveSide?: (side: FloorSide, value: number) => number;
   reset?: () => void;
-  state?: () => { initialized: boolean; grabbed: FloorSide | null; layout: FloorLayout };
+  state?: () => {
+    initialized: boolean;
+    grabbed: FloorSide | null;
+    layout: FloorLayout;
+    tapeUp: boolean;
+  };
 } = {};
 
 const _hand = new Vector3();
@@ -94,6 +99,7 @@ export class FloorSystem extends createSystem({}) {
       initialized: floorAdjust.initialized,
       grabbed: floorAdjust.grabbed,
       layout: { ...floorLayout },
+      tapeUp: this.rig?.group.visible ?? false,
     });
   }
 
@@ -108,10 +114,13 @@ export class FloorSystem extends createSystem({}) {
       initLayout(walls, _cam.x, _cam.z);
     }
 
-    rig.group.visible = floorAdjust.initialized;
+    // THE TAPE COMES DOWN once you're set up: barricade tape is site
+    // dressing, not furniture — it stands only while the floor is being
+    // marked out. The boundary lives on in the lattice and the feeds.
+    const adjusting = site.screen === 'floor';
+    rig.group.visible = floorAdjust.initialized && adjusting;
     if (!floorAdjust.initialized) return;
 
-    const adjusting = site.screen === 'floor';
     rig.setMode(adjusting ? 'adjust' : 'idle');
 
     if (adjusting) {

@@ -4,7 +4,7 @@
  * because there is no network: TUBES is a shop, not a service.
  */
 
-import { JOBS, ORDERS, type ItemId } from '../config.js';
+import { JOBS, ORDERS, UPGRADES, type ItemId, type UpgradeId } from '../config.js';
 
 const KEY = 'tubes-progress';
 
@@ -13,13 +13,15 @@ interface Stored {
   unlocked: number;
   /** Best completion, ms, by job id. */
   best: Record<string, number>;
-  /** The factory's book: sheets open, best per sheet, the banked parts. */
+  /** The factory's book: sheets open, best per sheet, the banked parts,
+   *  and the fittings bought with them. */
   orders: number;
   orderBest: Record<string, number>;
   bank: Record<string, number>;
+  upgrades: string[];
 }
 
-let stored: Stored = { unlocked: 1, best: {}, orders: 1, orderBest: {}, bank: {} };
+let stored: Stored = { unlocked: 1, best: {}, orders: 1, orderBest: {}, bank: {}, upgrades: [] };
 
 function readTimes(into: Record<string, number>, from: unknown): void {
   if (!from || typeof from !== 'object') return;
@@ -45,6 +47,11 @@ function readTimes(into: Record<string, number>, from: unknown): void {
       for (const [item, n] of Object.entries(parsed.bank)) {
         if (typeof n === 'number' && Number.isFinite(n) && n > 0) stored.bank[item] = Math.floor(n);
       }
+    }
+    if (Array.isArray(parsed.upgrades)) {
+      stored.upgrades = parsed.upgrades.filter(
+        (u): u is string => typeof u === 'string' && UPGRADES.some((s) => s.id === u),
+      );
     }
   } catch {
     /* fine — a fresh sheet */
@@ -118,8 +125,37 @@ export function saveBank(bank: Partial<Record<ItemId, number>>): void {
   save();
 }
 
+/* ── the fittings (bought upgrades) ──────────────────────────────────────── */
+
+export function upgradeOwned(id: UpgradeId): boolean {
+  return stored.upgrades.includes(id);
+}
+
+export function ownedUpgrades(): string[] {
+  return [...stored.upgrades];
+}
+
+export function recordUpgrade(id: UpgradeId): void {
+  if (!stored.upgrades.includes(id)) stored.upgrades.push(id);
+  save();
+}
+
+/** The fittings' effects — read live by the sim and the pull. */
+export function craftFactor(): number {
+  return upgradeOwned('quick-boxes') ? 0.75 : 1;
+}
+export function railFactor(): number {
+  return upgradeOwned('belt-pace') ? 1.25 : 1;
+}
+export function chestBonus(): number {
+  return upgradeOwned('deep-crates') ? 12 : 0;
+}
+export function reachBonus(): number {
+  return upgradeOwned('long-reach') ? 2 : 0;
+}
+
 /** SYSTEM tab: tear the sheet up and start the trade again. */
 export function resetProgress(): void {
-  stored = { unlocked: 1, best: {}, orders: 1, orderBest: {}, bank: {} };
+  stored = { unlocked: 1, best: {}, orders: 1, orderBest: {}, bank: {}, upgrades: [] };
   save();
 }

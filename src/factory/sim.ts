@@ -23,6 +23,7 @@ import {
   type UnitType,
 } from '../config.js';
 import { CELL, cellCenter, cellInFloor, occupy, vacate } from '../floor/grid.js';
+import { chestBonus, craftFactor, railFactor } from '../game/progress.js';
 import {
   DIRS,
   beltPart,
@@ -123,7 +124,7 @@ export function removeUnit(unit: Unit): void {
       part.at.unit === unit.id
     ) {
       partPose(part, spill);
-      part.at = { kind: 'loose', x: spill.x, y: 0.03, z: spill.z };
+      part.at = { kind: 'loose', x: spill.x, y: 0.05, z: spill.z };
       part.p = 0;
     }
   }
@@ -188,7 +189,10 @@ export function simTick(dt: number): void {
     }
   }
 
-  // MAKERS drink and stamp.
+  // MAKERS drink and stamp. QUICK BOXES (a paid fitting) shortens every
+  // craft.
+  const makerS = FACTORY.makerS * craftFactor();
+  const combinerS = FACTORY.combinerS * craftFactor();
   for (const unit of plant.units) {
     if (unit.type !== 'maker') continue;
     const run = runSeatedAt(unit.id);
@@ -197,12 +201,12 @@ export function simTick(dt: number): void {
     if (unit.craftT < 0 && supplied && space) unit.craftT = 0;
     else if (unit.craftT >= 0) {
       if (supplied || unit.craftT > 0) unit.craftT += dt;
-      if (unit.craftT >= FACTORY.makerS) {
+      if (unit.craftT >= makerS) {
         if (space && run) {
           spawnPart(MAKES[run.line.id], unit);
           unit.craftT = supplied ? 0 : -1;
         } else {
-          unit.craftT = FACTORY.makerS; // done, waiting on the chute
+          unit.craftT = makerS; // done, waiting on the chute
         }
       }
     }
@@ -218,7 +222,7 @@ export function simTick(dt: number): void {
     if (unit.craftT < 0 && out && space) unit.craftT = 0;
     else if (unit.craftT >= 0) {
       unit.craftT += dt;
-      if (unit.craftT >= FACTORY.combinerS) {
+      if (unit.craftT >= combinerS) {
         if (out && space && a && b) {
           plant.parts.splice(plant.parts.indexOf(a), 1);
           plant.parts.splice(plant.parts.indexOf(b), 1);
@@ -227,7 +231,7 @@ export function simTick(dt: number): void {
           spawnPart(out, unit);
           unit.craftT = -1;
         } else {
-          unit.craftT = FACTORY.combinerS;
+          unit.craftT = combinerS;
         }
       }
     }
@@ -247,12 +251,13 @@ export function simTick(dt: number): void {
     }
   }
 
-  // BELTS carry, and hand off at the end of each piece.
+  // BELTS carry (BELT PACE quickens them), and hand off at each end.
+  const railSpeed = FACTORY.railSpeed * railFactor();
   for (const part of [...plant.parts]) {
     if (part.at.kind !== 'belt') continue;
     const belt = unitById(part.at.unit);
     if (!belt) continue;
-    part.p += (dt * FACTORY.railSpeed) / CELL;
+    part.p += (dt * railSpeed) / CELL;
     if (part.p < 1) continue;
     part.p = 1;
     const dir = DIRS[belt.rot];
@@ -276,7 +281,7 @@ function acceptPart(part: Part, into: Unit, travel: Rot): boolean {
   }
   if (into.type === 'chest') {
     const held = chestParts(into.id);
-    if (held.length >= FACTORY.chestCap) return false;
+    if (held.length >= FACTORY.chestCap + chestBonus()) return false;
     part.at = { kind: 'chest', unit: into.id, index: held.length };
     return true;
   }

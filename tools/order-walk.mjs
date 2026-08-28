@@ -166,21 +166,33 @@ await page.waitForFunction(
 );
 check(true, 'the amber tube telescoped home to its stub');
 await seatRun('far', makerId);
-// You are the first conveyor: carry each gear off the chute to the dock.
+// You are the first conveyor: carry each gear off the chute to the dock
+// — ten for the sheet, five more for the bank (bills want paying).
 let carried = 0;
-for (let tries = 0; tries < 200 && carried < 11; tries++) {
+for (let tries = 0; tries < 300 && carried < 15; tries++) {
   const moved = await carry(0.175, 0.9, -0.42, 0.175, 0.9, 0.175);
   if (moved) carried++;
   else await page.waitForTimeout(300);
 }
-check(carried >= 11, `the fist ran the line (${carried} parts carried)`);
+check(carried >= 15, `the fist ran the line (${carried} parts carried)`);
 await waitOrder(2);
 s = await state();
-check((s.bank.gear ?? 0) >= 1, `the eleventh gear banked (bank holds ${s.bank.gear ?? 0})`);
+check((s.bank.gear ?? 0) >= 5, `the surplus banked (bank holds ${s.bank.gear ?? 0} gears)`);
 
 console.log('SHEET 3 — THE LINE');
 s = await state();
 check(s.feeds.left === true, 'the cyan feed woke with the sheet');
+
+// THE BANK IS FOR SOMETHING: pay LONG REACH's bill (4 gears) off the
+// card's SUPPLY page — the fitting is live the moment the stamp lands.
+const gearsBefore = s.bank.gear ?? 0;
+await page.evaluate(() => window.__tubes.menu.act('buy:long-reach'));
+s = await state();
+check(s.upgrades.includes('long-reach'), 'LONG REACH fitted off the SUPPLY page');
+check(
+  (s.bank.gear ?? 0) === gearsBefore - 4,
+  `the bill came out of the bank (${gearsBefore} → ${s.bank.gear ?? 0} gears)`,
+);
 check(await place(-4, -1, 'maker', 1), 'the cell maker stands');
 check(await place(-3, -1, 'belt', 1), 'rails stand');
 await place(-2, -1, 'belt', 1);
@@ -240,8 +252,12 @@ mkdirSync('shots', { recursive: true });
 await page.evaluate(() => window.__tubes.rig(0, 1.35, 0));
 await page.waitForTimeout(300);
 await page.screenshot({ path: 'shots/order-walk.png' });
+// And a closer look at the parts themselves — the kits are the point.
+await page.evaluate(() => window.__tubes.rig(0.15, 1.05, 0));
+await page.waitForTimeout(300);
+await page.screenshot({ path: 'shots/order-walk-parts.png' });
 await page.evaluate(() => window.__tubes.rig(0, 0, 0));
-console.log('  · shots/order-walk.png');
+console.log('  · shots/order-walk.png · shots/order-walk-parts.png');
 
 await setScale(14);
 await page.waitForFunction(() => window.__tubes.site.screen === 'ceremony', undefined, {

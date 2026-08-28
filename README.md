@@ -168,8 +168,9 @@ src/
                          speaker: feeds pour, makers stamp, belts carry,
                          combiners fit, the dock counts
   factory/units.ts       bench hardware: maker/combiner/rail/chest/dock,
-                         the gland (a socket on legs), feed pillars,
-                         part silhouettes per lineage
+                         the gland (a socket on legs), feed pillars, and
+                         the part KITS — every item a little assembly in
+                         its lineage's plate language, instanced
   tube/geometry.ts       telescoping maths: cubic path, root-first
                          section fill, spans, stops
   tube/build.ts          the hardware: flange / socket / segments /
@@ -210,11 +211,13 @@ tools/
 
 `DESIGN.md` has the full design notes and the roadmap. `FACTORY.md`
 carries the factory direction — PIECEWORK: the genre research, the whole
-design, and the phased build. Phases 0–2 are in: mark the floor out in
-hazard tape, and the board's ORDERS tab opens a five-sheet work book —
-feeds on the tape's sides, the two-handed pull re-aimed at bench
+design, and the phased build. Phases 0–2 are in (plus the bank's BILLS
+from phase 3): mark the floor out in hazard tape — it comes down once
+you're set up — and the board's ORDERS tab opens a five-sheet work book:
+feeds on the floor's sides, the two-handed pull re-aimed at bench
 machines, rails, the combiner, the chest, the dock counting every
-delivery and banking the surplus.
+delivery, and the bank spending its surplus on fittings from the shift
+card's SUPPLY page.
 
 ## Checks
 

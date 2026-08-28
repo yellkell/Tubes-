@@ -39,6 +39,7 @@ import { FACTORY, FLOW, ITEMS, LINES, SEAT, TUBE, UNITS, type ItemId } from '../
 import * as sfx from '../audio/sfx.js';
 import { buzz } from '../game/haptics.js';
 import { orderComplete } from '../game/flow.js';
+import { chestBonus, ownedUpgrades, reachBonus } from '../game/progress.js';
 import { site } from '../game/state.js';
 import { font } from '../ui/fonts.js';
 import { cellCenter } from '../floor/grid.js';
@@ -55,14 +56,7 @@ import {
   type Part,
 } from '../factory/state.js';
 import { deliverPart, glandPose, partPose, retractRun, simTick } from '../factory/sim.js';
-import {
-  buildFeed,
-  buildUnit,
-  partGeometry,
-  partMaterial,
-  type FeedRefs,
-  type UnitRefs,
-} from '../factory/units.js';
+import { buildFeed, buildUnit, partKit, type FeedRefs, type UnitRefs } from '../factory/units.js';
 import { buildCollar, buildSegment, type CollarRefs, type SegmentRefs } from '../tube/build.js';
 import {
   bendControl,
@@ -138,6 +132,7 @@ const _g = new Vector3();
 const _gn = new Vector3();
 const _c = { x: 0, z: 0 };
 const _m4 = new Matrix4();
+const _m4b = new Matrix4();
 const _cam = new Vector3();
 
 interface RunHw {
@@ -161,7 +156,10 @@ export class FactorySystem extends createSystem({}) {
   private feedFlash = new Map<FloorSide, number>();
   private runHw = new Map<FloorSide, RunHw>();
   private unitRefs = new Map<number, UnitRefs>();
-  private partPools = new Map<ItemId, InstancedMesh>();
+  /** One InstancedMesh per item COMPONENT (parts are little assemblies —
+   *  see factory/units.ts partKit). Indexed in lockstep with partLocals. */
+  private partPools = new Map<ItemId, InstancedMesh[]>();
+  private partLocals = new Map<ItemId, Matrix4[]>();
   private carried: Partial<Record<'left' | 'right', number>> = {};
   /** A tool's carry (factoryView.take) — the real grip's open hand must
    *  not drop it between the tool's two calls. */
@@ -190,6 +188,7 @@ export class FactorySystem extends createSystem({}) {
         parts: plant.parts.length,
         units: plant.units.length,
         bank: { ...plant.bank },
+        upgrades: ownedUpgrades(),
       };
     };
     factoryView.glands = () =>
@@ -299,8 +298,11 @@ export class FactorySystem extends createSystem({}) {
       this.runHw.clear();
       for (const refs of this.unitRefs.values()) this.dropUnitRefs(refs);
       this.unitRefs.clear();
-      for (const pool of this.partPools.values()) pool.removeFromParent();
+      for (const pools of this.partPools.values()) {
+        for (const pool of pools) pool.removeFromParent();
+      }
       this.partPools.clear();
+      this.partLocals.clear();
       this.carried = {};
       this.driven.active = false;
       if (this.plate) {
@@ -359,14 +361,22 @@ export class FactorySystem extends createSystem({}) {
       }
     }
 
-    // Part pools once.
+    // Part pools once — one instanced mesh per component of each kit.
     if (this.partPools.size === 0) {
       for (const item of Object.keys(ITEMS) as ItemId[]) {
-        const pool = new InstancedMesh(partGeometry(item), partMaterial(item), 64);
-        pool.count = 0;
-        pool.frustumCulled = false;
-        this.scene.add(pool);
-        this.partPools.set(item, pool);
+        const kit = partKit(item);
+        const pools: InstancedMesh[] = [];
+        const locals: Matrix4[] = [];
+        for (const part of kit) {
+          const pool = new InstancedMesh(part.geometry, part.material, 64);
+          pool.count = 0;
+          pool.frustumCulled = false;
+          this.scene.add(pool);
+          pools.push(pool);
+          locals.push(part.local);
+        }
+        this.partPools.set(item, pools);
+        this.partLocals.set(item, locals);
       }
     }
   }
@@ -525,7 +535,7 @@ export class FactorySystem extends createSystem({}) {
         buzz(this.world, hand, 0.5, 40);
         return true;
       }
-      if (unit.type === 'chest' && chestParts(unit.id).length < FACTORY.chestCap) {
+      if (unit.type === 'chest' && chestParts(unit.id).length < FACTORY.chestCap + chestBonus()) {
         part.at = { kind: 'chest', unit: unit.id, index: chestParts(unit.id).length };
         sfx.uiClick();
         return true;
@@ -541,7 +551,7 @@ export class FactorySystem extends createSystem({}) {
         }
       }
     }
-    part.at = { kind: 'loose', x: pos.x, y: 0.03, z: pos.z };
+    part.at = { kind: 'loose', x: pos.x, y: 0.05, z: pos.z };
     sfx.droopSettle();
     return true;
   }
@@ -572,7 +582,7 @@ export class FactorySystem extends createSystem({}) {
     _mouth.copy(run.pointA).addScaledVector(run.normalA, 0);
     run.rattleCool = Math.max(0, run.rattleCool - delta);
     run.strainCool = Math.max(0, run.strainCool - delta);
-    const maxExt = TUBE.maxLength;
+    const maxExt = TUBE.maxLength + reachBonus(); // LONG REACH, if fitted
 
     const hands = this.readHands(run);
     if (hands.aim) run.aim.copy(hands.aim);
@@ -842,7 +852,7 @@ export class FactorySystem extends createSystem({}) {
   /** TubeSystem.layTube, forked verbatim onto the FactoryRun record. */
   private layTube(run: FactoryRun, hw: RunHw, ext: number, entering: boolean): void {
     _mouth.copy(run.pointA);
-    const maxExt = TUBE.maxLength;
+    const maxExt = TUBE.maxLength + reachBonus();
     bendControl(_mouth, run.normalA, ext, _p1);
     if (entering) {
       _entry.copy(run.normalB);
@@ -963,24 +973,35 @@ export class FactorySystem extends createSystem({}) {
     const counts = new Map<ItemId, number>();
     const grips = this.world.playerSpaceEntities?.gripSpaces;
     for (const part of plant.parts) {
-      const pool = this.partPools.get(part.item);
-      if (!pool) continue;
+      const pools = this.partPools.get(part.item);
+      const locals = this.partLocals.get(part.item);
+      if (!pools || !locals) continue;
       const idx = counts.get(part.item) ?? 0;
       if (idx >= 64) continue;
       counts.set(part.item, idx + 1);
-      if (part.at.kind === 'hand') {
-        const obj = grips?.[part.at.hand]?.object3D;
+      const inHand = part.at.kind === 'hand';
+      if (inHand) {
+        const obj = grips?.[(part.at as { hand: 'left' | 'right' }).hand]?.object3D;
         if (obj) obj.getWorldPosition(_pA);
         else partPose(part, _pA);
       } else {
         partPose(part, _pA);
       }
-      _m4.makeTranslation(_pA.x, _pA.y, _pA.z);
-      pool.setMatrixAt(idx, _m4);
+      // A slow idle turn, offset per part — parts at rest read as alive;
+      // a part in the fist holds still.
+      const spin = inHand ? 0 : this.clock * 0.7 + part.id * 1.3;
+      _m4.makeRotationY(spin).setPosition(_pA.x, _pA.y, _pA.z);
+      for (let c = 0; c < pools.length; c++) {
+        _m4b.multiplyMatrices(_m4, locals[c]);
+        pools[c].setMatrixAt(idx, _m4b);
+      }
     }
-    for (const [item, pool] of this.partPools) {
-      pool.count = counts.get(item) ?? 0;
-      pool.instanceMatrix.needsUpdate = true;
+    for (const [item, pools] of this.partPools) {
+      const n = counts.get(item) ?? 0;
+      for (const pool of pools) {
+        pool.count = n;
+        pool.instanceMatrix.needsUpdate = true;
+      }
     }
   }
 

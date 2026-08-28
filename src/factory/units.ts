@@ -20,15 +20,16 @@ import {
   Group,
   LineBasicMaterial,
   LineSegments,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  Quaternion,
   RingGeometry,
   TorusGeometry,
-  Color,
+  Vector3,
 } from 'three';
 import { FACTORY, LINES, UNITS, type ItemId, type LineSpec, type UnitType } from '../config.js';
-import { ITEMS } from '../config.js';
 
 /* ── shared geometry / materials ────────────────────────────────────────── */
 
@@ -317,46 +318,153 @@ export function buildFeed(line: LineSpec | null): FeedRefs {
   return { group, glowMat, mouthOffset: 0.17, awakeVisual: false };
 }
 
-/* ── the parts ──────────────────────────────────────────────────────────── */
+/* ── the parts ──────────────────────────────────────────────────────────
+ * Every item is a little ASSEMBLY, not a token: a handful of components
+ * over shared unit geometries, each wearing its lineage's plate language
+ * — and per law 3, a tier-2 part visibly CONTAINS its ingredients (the
+ * pump is an eight-sided iron body with a smooth alloy throat; you can
+ * read the gear and the cell in it from across the bench). Rendered
+ * instanced per component: a floor full of parts is a dozen draw calls.
+ */
 
-const _partGeos = new Map<ItemId, CylinderGeometry>();
-const _partMats = new Map<ItemId, MeshStandardMaterial>();
+export interface PartComponent {
+  geometry: CylinderGeometry;
+  material: MeshStandardMaterial | MeshBasicMaterial;
+  local: Matrix4;
+}
 
-/** Silhouette per item: the lineage's plate language in the hand. */
-export function partGeometry(item: ItemId): CylinderGeometry {
-  let geo = _partGeos.get(item);
-  if (geo) return geo;
-  const make = (r: number, h: number, sides: number): CylinderGeometry =>
-    new CylinderGeometry(r, r, h, sides);
-  geo =
-    item === 'gear'
-      ? make(0.055, 0.032, 8)
-      : item === 'cell'
-        ? make(0.04, 0.078, 20)
-        : item === 'chip'
-          ? make(0.05, 0.018, 6)
-          : item === 'pump'
-            ? make(0.055, 0.082, 8)
-            : item === 'lamp'
-              ? make(0.042, 0.09, 20)
-              : make(0.055, 0.045, 6); // servo
-  _partGeos.set(item, geo);
+const _sideGeos = new Map<number, CylinderGeometry>();
+function sided(sides: number): CylinderGeometry {
+  let geo = _sideGeos.get(sides);
+  if (!geo) {
+    geo = new CylinderGeometry(1, 1, 1, sides);
+    _sideGeos.set(sides, geo);
+  }
   return geo;
 }
 
-export function partMaterial(item: ItemId): MeshStandardMaterial {
-  let mat = _partMats.get(item);
-  if (mat) return mat;
-  const spec = ITEMS[item];
-  const body = LINES[spec.lineage[0]];
-  const light = LINES[spec.lineage[spec.lineage.length - 1]];
-  mat = new MeshStandardMaterial({
-    color: body.shell,
-    roughness: body.roughness,
-    metalness: body.metalness,
-    emissive: new Color(light.glow),
-    emissiveIntensity: spec.tier === 2 ? 0.5 : 0.28,
-  });
-  _partMats.set(item, mat);
-  return mat;
+const _bodyMats = new Map<string, MeshStandardMaterial>();
+function bodyMat(lineId: 'mains' | 'coolant' | 'volt'): MeshStandardMaterial {
+  let m = _bodyMats.get(lineId);
+  if (!m) {
+    const line = LINES[lineId];
+    m = new MeshStandardMaterial({
+      color: line.shell,
+      roughness: line.roughness,
+      metalness: line.metalness,
+    });
+    _bodyMats.set(lineId, m);
+  }
+  return m;
+}
+
+const _glowMats = new Map<string, MeshBasicMaterial>();
+function glowFor(lineId: 'mains' | 'coolant' | 'volt'): MeshBasicMaterial {
+  let m = _glowMats.get(lineId);
+  if (!m) {
+    m = new MeshBasicMaterial({
+      color: LINES[lineId].glow,
+      transparent: true,
+      opacity: 0.85,
+      blending: AdditiveBlending,
+      depthWrite: false,
+    });
+    _glowMats.set(lineId, m);
+  }
+  return m;
+}
+
+const hubMat = new MeshStandardMaterial({ color: 0x231e19, roughness: 0.45, metalness: 0.85 });
+
+const _q = new Quaternion();
+const _s = new Vector3();
+const _p = new Vector3();
+
+function comp(
+  geometry: CylinderGeometry,
+  material: MeshStandardMaterial | MeshBasicMaterial,
+  sx: number,
+  sy: number,
+  sz: number,
+  y = 0,
+  ry = 0,
+): PartComponent {
+  _q.setFromAxisAngle(new Vector3(0, 1, 0), ry);
+  return {
+    geometry,
+    material,
+    local: new Matrix4().compose(_p.set(0, y, 0), _q.clone(), _s.set(sx, sy, sz)),
+  };
+}
+
+const _kits = new Map<ItemId, PartComponent[]>();
+
+/** The item's component kit — local matrices over shared geometry. */
+export function partKit(item: ItemId): PartComponent[] {
+  let kit = _kits.get(item);
+  if (kit) return kit;
+  const iron = bodyMat('mains');
+  const alloy = bodyMat('coolant');
+  const glass = bodyMat('volt');
+  const amber = glowFor('mains');
+  const cyan = glowFor('coolant');
+  const violet = glowFor('volt');
+  const c8 = sided(8);
+  const c6 = sided(6);
+  const c20 = sided(20);
+
+  if (item === 'gear') {
+    // Two eight-sided plates a half-tooth apart: a sixteen-point toothed
+    // disc, dark hub, lit amber axle.
+    kit = [
+      comp(c8, iron, 0.052, 0.026, 0.052),
+      comp(c8, iron, 0.052, 0.013, 0.052, 0, Math.PI / 8),
+      comp(c20, hubMat, 0.017, 0.03, 0.017),
+      comp(c20, amber, 0.008, 0.034, 0.008),
+    ];
+  } else if (item === 'cell') {
+    // A machined canister: alloy body, dark cap rings, a lit charge band
+    // round its waist.
+    kit = [
+      comp(c20, alloy, 0.038, 0.072, 0.038),
+      comp(c20, hubMat, 0.041, 0.008, 0.041, 0.033),
+      comp(c20, hubMat, 0.041, 0.008, 0.041, -0.033),
+      comp(c20, cyan, 0.0392, 0.016, 0.0392),
+    ];
+  } else if (item === 'chip') {
+    // A hex wafer of dark glass, violet traces lit inside, one pin.
+    kit = [
+      comp(c6, glass, 0.05, 0.012, 0.05),
+      comp(c6, violet, 0.036, 0.015, 0.036),
+      comp(c20, hubMat, 0.007, 0.024, 0.007),
+    ];
+  } else if (item === 'pump') {
+    // GEAR + CELL, readable: eight-sided iron body, smooth alloy throat,
+    // the joint lit cyan, the base lit amber.
+    kit = [
+      comp(c8, iron, 0.048, 0.06, 0.048),
+      comp(c20, alloy, 0.022, 0.032, 0.022, 0.043),
+      comp(c20, cyan, 0.0252, 0.009, 0.0252, 0.029),
+      comp(c8, amber, 0.049, 0.008, 0.049, -0.029),
+    ];
+  } else if (item === 'lamp') {
+    // CELL + CHIP: the canister wearing a hex-glass crown, lit violet on
+    // top and cyan at the waist.
+    kit = [
+      comp(c20, alloy, 0.036, 0.055, 0.036, -0.008),
+      comp(c6, glass, 0.042, 0.018, 0.042, 0.03),
+      comp(c6, violet, 0.03, 0.015, 0.03, 0.047),
+      comp(c20, cyan, 0.037, 0.012, 0.037, -0.02),
+    ];
+  } else {
+    // servo — GEAR + CHIP: an eight-sided iron ring round a hex glass
+    // core, violet at the crown.
+    kit = [
+      comp(c8, iron, 0.05, 0.028, 0.05),
+      comp(c6, glass, 0.027, 0.052, 0.027),
+      comp(c6, violet, 0.018, 0.01, 0.018, 0.031),
+    ];
+  }
+  _kits.set(item, kit);
+  return kit;
 }

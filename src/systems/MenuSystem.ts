@@ -26,12 +26,24 @@
 
 import { InputComponent, createSystem } from '@iwsdk/core';
 import { Raycaster, Vector3, type Intersection, type Object3D } from 'three';
-import { BOARD, GAME_TITLE, ITEMS, JOBS, LINES, ORDERS, type UnitType } from '../config.js';
+import {
+  BOARD,
+  GAME_TITLE,
+  ITEMS,
+  JOBS,
+  LINES,
+  ORDERS,
+  UPGRADES,
+  type ItemId,
+  type UnitType,
+  type UpgradeId,
+} from '../config.js';
 import * as sfx from '../audio/sfx.js';
 import { setSfxVolume, sfxVolume } from '../audio/sfx.js';
 import {
   abandonFactory,
   abandonShift,
+  buyUpgrade,
   enterFloorSetup,
   startJob,
   startOrder,
@@ -40,8 +52,10 @@ import {
   bestMs,
   orderBestMs,
   ordersUnlocked,
+  ownedUpgrades,
   resetProgress,
   unlockedJobs,
+  upgradeOwned,
 } from '../game/progress.js';
 import { site } from '../game/state.js';
 import { bankTotal, orderSpec, plant } from '../factory/state.js';
@@ -109,6 +123,8 @@ export class MenuSystem extends createSystem({}) {
   private lastScreen = '';
   /** The ORDERS tab's selected sheet. */
   private orderSel = 0;
+  /** The factory card's page: the catalogue, or the bank's bills. */
+  private cardMode: 'build' | 'supply' = 'build';
 
   init(): void {
     this.board = new Panel(BOARD.widthM, BOARD.heightM, W, H);
@@ -299,6 +315,12 @@ export class MenuSystem extends createSystem({}) {
       // Arm the hologram and put the card away — the hands do the rest.
       buildView.arm?.(id.slice(6) as UnitType);
       site.paused = false;
+    } else if (id === 'card:build') {
+      this.cardMode = 'build';
+    } else if (id === 'card:supply') {
+      this.cardMode = 'supply';
+    } else if (id.startsWith('buy:')) {
+      buyUpgrade(id.slice(4) as UpgradeId);
     } else if (id === 'sfx:down') {
       setSfxVolume(Math.max(0, Math.round((sfxVolume() - 0.1) * 10) / 10));
     } else if (id === 'sfx:up') {
@@ -349,6 +371,8 @@ export class MenuSystem extends createSystem({}) {
       plant.count,
       bankTotal(),
       buildView.armed?.() ?? '',
+      this.cardMode,
+      ownedUpgrades().join(','),
       cardUp
         ? Math.floor((site.screen === 'factory' ? plant.elapsedMs : site.elapsedMs) / 100)
         : 0,
@@ -591,13 +615,25 @@ export class MenuSystem extends createSystem({}) {
 
   /* ── ORDERS tab (the factory's book) ──────────────────────────────────── */
 
-  private targetOf(spec: (typeof ORDERS)[number]): { name: string; dots: string[] } {
+  private targetOf(spec: (typeof ORDERS)[number]): {
+    name: string;
+    dots: string[];
+    docket: string;
+  } {
     if (spec.target.kind === 'fluid') {
       const line = LINES[spec.target.line];
-      return { name: `${line.name} DRAUGHTS`, dots: [line.hex] };
+      return {
+        name: `${line.name} DRAUGHTS`,
+        dots: [line.hex],
+        docket: 'the works drinks straight from its own wall — and remembers the taste',
+      };
     }
     const item = ITEMS[spec.target.item];
-    return { name: item.name, dots: item.lineage.map((l) => LINES[l].hex) };
+    return {
+      name: item.name,
+      dots: item.lineage.map((l) => LINES[l].hex),
+      docket: item.docket,
+    };
   }
 
   private paintOrders(buttons: PanelButton[]): void {
@@ -718,25 +754,29 @@ export class MenuSystem extends createSystem({}) {
         SHEET_X + 142 + target.dots.length * 30 + 12,
         ROW_Y0 + 266,
       );
+      // THE DOCKET — what the works is going to DO with them.
+      g.font = font(500, 22);
+      g.fillStyle = UI.faint;
+      wrapText(g, `docket: ${target.docket}`, SHEET_X + 26, ROW_Y0 + 312, SHEET_W - 52, 28, font(500, 22), UI.faint);
       const best = orderBestMs(sheet.id);
       g.font = font(500, 24);
       g.fillStyle = UI.faint;
-      g.fillText('BEST', SHEET_X + 26, ROW_Y0 + 330);
+      g.fillText('BEST', SHEET_X + 26, ROW_Y0 + 386);
       g.font = font(600, 34);
       g.fillStyle = best === null ? UI.faint : UI.text;
-      g.fillText(best === null ? 'no time on the sheet' : fmtMs(best), SHEET_X + 108, ROW_Y0 + 330);
+      g.fillText(best === null ? 'no time on the sheet' : fmtMs(best), SHEET_X + 108, ROW_Y0 + 386);
       const banked = bankTotal();
       g.font = font(500, 23);
       g.fillStyle = banked > 0 ? UI.dim : UI.faint;
       g.fillText(
-        banked > 0 ? `the bank holds ${banked} surplus part${banked === 1 ? '' : 's'}` : 'the bank stands empty — surplus deliveries keep',
+        banked > 0 ? `the bank holds ${banked} surplus part${banked === 1 ? '' : 's'} — the card's SUPPLY page spends them` : 'the bank stands empty — surplus deliveries keep',
         SHEET_X + 26,
-        ROW_Y0 + 392,
+        ROW_Y0 + 440,
       );
       if (!site.wallsReady) {
         g.font = font(500, 23);
         g.fillStyle = UI.warn;
-        g.fillText('waiting for walls — look around the room', SHEET_X + 26, ROW_Y0 + 448);
+        g.fillText('waiting for walls — look around the room', SHEET_X + 26, ROW_Y0 + 488);
       }
     };
   }
@@ -899,82 +939,171 @@ export class MenuSystem extends createSystem({}) {
     );
   }
 
-  /** THE SHIFT CARD — the job card, promoted for the factory: the live
-   *  sheet, the bank, and the BUILD catalogue. Picking a unit arms the
-   *  hologram and drops the card — the hands do the rest. */
+  /** Can the live bank cover a bill? */
+  private canAfford(id: UpgradeId): boolean {
+    const spec = UPGRADES.find((u) => u.id === id);
+    if (!spec) return false;
+    for (const [item, n] of Object.entries(spec.bill)) {
+      if ((plant.bank[item as ItemId] ?? 0) < (n ?? 0)) return false;
+    }
+    return true;
+  }
+
+  private billText(id: UpgradeId): string {
+    const spec = UPGRADES.find((u) => u.id === id);
+    if (!spec) return '';
+    return Object.entries(spec.bill)
+      .map(([item, n]) => `${n} ${ITEMS[item as ItemId].name}`)
+      .join(' + ');
+  }
+
+  /** THE SHIFT CARD — the job card, promoted for the factory. Two pages:
+   *  BUILD (pick a unit; the hologram arms and the card drops) and
+   *  SUPPLY (the bank's bills — pay one and the fitting is yours for
+   *  good). The clock and the sheet's live count ride the header. */
   private paintFactoryCard(): void {
     const [cw, ch] = BOARD.cardPx;
     const spec = orderSpec();
     const armed = buildView.armed?.() ?? null;
-    const catalogue: Array<{ type: UnitType; label: string }> = [
-      { type: 'dock', label: 'DOCK' },
-      { type: 'maker', label: 'MAKER' },
-      { type: 'belt', label: 'RAIL' },
-      { type: 'combiner', label: 'COMBINER' },
-      { type: 'chest', label: 'CHEST' },
-    ];
-    const buttons: PanelButton[] = [];
-    const bw = (cw - 68 - 2 * 12) / 3;
-    catalogue.forEach((entry, i) => {
-      const row = Math.floor(i / 3);
-      const col = i % 3;
-      buttons.push({
-        id: `build:${entry.type}`,
-        label: entry.label,
+    const buttons: PanelButton[] = [
+      {
+        id: 'card:build',
+        label: 'BUILD',
         small: true,
-        disabled: !typeAvailable(entry.type),
-        selected: armed === entry.type,
-        x: 34 + col * (bw + 12),
-        y: 168 + row * 74,
-        w: bw,
-        h: 62,
-      });
-    });
-    buttons.push(
+        selected: this.cardMode === 'build',
+        x: 34,
+        y: 158,
+        w: 150,
+        h: 44,
+      },
+      {
+        id: 'card:supply',
+        label: 'SUPPLY',
+        small: true,
+        selected: this.cardMode === 'supply',
+        x: 196,
+        y: 158,
+        w: 150,
+        h: 44,
+      },
       {
         id: 'resume',
         label: 'BACK TO IT',
         primary: true,
         x: 34,
-        y: ch - 100,
+        y: ch - 84,
         w: cw / 2 - 46,
-        h: 76,
+        h: 64,
       },
       {
         id: 'quit',
         label: 'DOWN TOOLS',
         tone: UI.danger,
         x: cw / 2 + 12,
-        y: ch - 100,
+        y: ch - 84,
         w: cw / 2 - 46,
-        h: 76,
+        h: 64,
         small: true,
       },
-    );
+    ];
+
+    if (this.cardMode === 'build') {
+      const catalogue: Array<{ type: UnitType; label: string }> = [
+        { type: 'dock', label: 'DOCK' },
+        { type: 'maker', label: 'MAKER' },
+        { type: 'belt', label: 'RAIL' },
+        { type: 'combiner', label: 'COMBINER' },
+        { type: 'chest', label: 'CHEST' },
+      ];
+      const bw = (cw - 68 - 2 * 12) / 3;
+      catalogue.forEach((entry, i) => {
+        const row = Math.floor(i / 3);
+        const col = i % 3;
+        buttons.push({
+          id: `build:${entry.type}`,
+          label: entry.label,
+          small: true,
+          disabled: !typeAvailable(entry.type),
+          selected: armed === entry.type,
+          x: 34 + col * (bw + 12),
+          y: 218 + row * 70,
+          w: bw,
+          h: 60,
+        });
+      });
+    } else {
+      UPGRADES.forEach((u, i) => {
+        buttons.push({
+          id: `buy:${u.id}`,
+          label: '',
+          ghost: true,
+          disabled: upgradeOwned(u.id) || !this.canAfford(u.id),
+          x: 34,
+          y: 214 + i * 48,
+          w: cw - 68,
+          h: 44,
+        });
+      });
+    }
+
     this.card.paint(
       spec?.name ?? 'THE SHOP',
       (g) => {
         g.textBaseline = 'middle';
-        // The clock and the sheet's live count.
         g.textAlign = 'left';
         g.font = font(500, 24);
         g.fillStyle = UI.dim;
         g.fillText(fmtMs(plant.elapsedMs), 36, 118);
+        const banked = bankTotal();
+        g.font = font(500, 21);
+        g.fillStyle = banked > 0 ? UI.dim : UI.faint;
+        g.fillText(`bank · ${banked}`, 150, 118);
         if (spec) {
           const target = this.targetOf(spec);
           g.textAlign = 'right';
           g.font = font(700, 34);
           g.fillStyle = UI.accent;
-          g.fillText(`${plant.count} / ${spec.goal}`, cw - 40, 116);
+          g.fillText(`${plant.count} / ${spec.goal}`, cw - 40, 114);
           g.font = font(500, 21);
           g.fillStyle = UI.faint;
-          g.fillText(target.name, cw - 40, 144);
+          g.fillText(target.name, cw - 40, 142);
         }
-        const banked = bankTotal();
-        g.textAlign = 'left';
-        g.font = font(500, 21);
-        g.fillStyle = banked > 0 ? UI.dim : UI.faint;
-        g.fillText(`bank · ${banked}`, 36, 144);
+
+        if (this.cardMode === 'supply') {
+          // The bills: name + effect, the bill (or the stamp) on the right.
+          const hoverOf = (id: string): number => this.card.hoverOf(id);
+          UPGRADES.forEach((u, i) => {
+            const y = 214 + i * 48;
+            const owned = upgradeOwned(u.id);
+            const afford = this.canAfford(u.id);
+            const hov = hoverOf(`buy:${u.id}`);
+            g.fillStyle = `rgba(255,255,255,${(owned ? 0.02 : 0.04 + 0.05 * hov).toFixed(3)})`;
+            g.beginPath();
+            g.roundRect(34, y, cw - 68, 44, 10);
+            g.fill();
+            g.strokeStyle = owned
+              ? 'rgba(255,162,46,0.35)'
+              : `rgba(255,255,255,${(0.08 + 0.18 * hov).toFixed(3)})`;
+            g.lineWidth = 2;
+            g.stroke();
+            g.textAlign = 'left';
+            g.font = font(600, 21);
+            g.fillStyle = owned ? UI.dim : afford ? UI.text : UI.disabled;
+            g.fillText(u.name, 50, y + 15);
+            g.font = font(500, 16);
+            g.fillStyle = UI.faint;
+            g.fillText(u.effect, 50, y + 33);
+            g.textAlign = 'right';
+            g.font = font(600, 18);
+            if (owned) {
+              g.fillStyle = UI.accent;
+              g.fillText('FITTED', cw - 50, y + 22);
+            } else {
+              g.fillStyle = afford ? UI.positive : UI.faint;
+              g.fillText(this.billText(u.id), cw - 50, y + 22);
+            }
+          });
+        }
       },
       buttons,
       this.hover,

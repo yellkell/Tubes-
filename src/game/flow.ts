@@ -6,15 +6,17 @@
  * brings the board back with the sheet stamped.
  */
 
-import { CEREMONY_S, JOBS, ORDERS } from '../config.js';
+import { CEREMONY_S, JOBS, ORDERS, UPGRADES, type ItemId, type UpgradeId } from '../config.js';
 import { freshSeed } from './rng.js';
 import {
   loadBank,
   ordersUnlocked,
   recordJobDone,
   recordOrderDone,
+  recordUpgrade,
   saveBank,
   unlockedJobs,
+  upgradeOwned,
 } from './progress.js';
 import { buildRuns, site } from './state.js';
 import { clearPlant, orderSpec, plant, postOrder } from '../factory/state.js';
@@ -115,6 +117,24 @@ export function orderComplete(): void {
   sfx.stopAllHums();
   sfx.stampDone();
   site.generation++;
+}
+
+/** Pay a bill: the fitting is bought with banked parts, kept for good,
+ *  live the moment the stamp lands. False when the bank can't cover it
+ *  (or it's already fitted). */
+export function buyUpgrade(id: UpgradeId): boolean {
+  const spec = UPGRADES.find((u) => u.id === id);
+  if (!spec || upgradeOwned(id)) return false;
+  for (const [item, n] of Object.entries(spec.bill)) {
+    if ((plant.bank[item as ItemId] ?? 0) < (n ?? 0)) return false;
+  }
+  for (const [item, n] of Object.entries(spec.bill)) {
+    plant.bank[item as ItemId] = (plant.bank[item as ItemId] ?? 0) - (n ?? 0);
+  }
+  recordUpgrade(id);
+  saveBank(plant.bank);
+  sfx.stampDone();
+  return true;
 }
 
 /** THE FLOOR (FACTORY.md, phase 0): step off the board and mark the

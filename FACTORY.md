@@ -230,6 +230,10 @@ inside it, and in adjust mode each side grows a glowing grab ring —
 - once plant is standing, a side **refuses to cross it** — the clamp
   extends to occupied cells, so re-planning the floor can never orphan a
   machine outside the boundary.
+- and once you're set up, **the tape comes down**: barricade tape is site
+  dressing, not furniture. It stands only while the floor is being marked
+  out; the boundary lives on in the lattice and the feeds standing on its
+  sides, and SET THE FLOOR raises it again any time.
 
 ### THE FEEDS — tube spawners on every side
 
@@ -316,6 +320,16 @@ CORE has an engine block and an arm articulation readable at arm's length
 — so a target on the sheet is reverse-engineerable by looking at it,
 never by reading a recipe menu.
 
+Every item is built as a little **assembly** (a component kit over shared
+geometry, instanced — a floor of parts is a dozen draw calls): the gear
+is a sixteen-tooth double plate on a lit amber axle, the cell a machined
+canister with a glowing charge band, the chip a dark hex wafer with
+violet traces inside — and the tier-2 kits wear both parents. Parts at
+rest turn slowly on the bench; a part in your fist holds still. And every
+item carries a **works docket** — one line of what the machine behind
+your walls DOES with it, printed on the order sheet — so nothing you
+make is ever just a token.
+
 | Tier | Item | Recipe | Silhouette (free identity, per the lines' plate language) |
 | --- | --- | --- | --- |
 | 0 | AMBER · CYAN · VIOLET | feeds | the pours themselves |
@@ -380,15 +394,17 @@ strongest factory economy is **no abstract currency at all**. So:
   the wrist card. A running factory is never wasted.
 - **Upgrades are bills of banked parts,** exactly like milestones — which
   keeps old lines alive (law 8) and makes overproducing *specific* items
-  a decision, not noise:
+  a decision, not noise. **Shipped:** the shift card's SUPPLY page lists
+  the bills; pay one and the fitting is yours for good, live immediately
+  (five-sheet-book pricing below — the numbers grow with sheets 6–10):
 
-| Upgrade | Effect | Bill (first useful) |
+| Upgrade | Effect | Bill |
 | --- | --- | --- |
-| SECOND SPOUT (per feed) | +1 tube run, colour-dialable | 30 GEAR + 10 PUMP (order 7) |
-| BELT PACE | rail speed +25% | 25 GEAR + 25 CELL (order 6+) |
-| QUICK BOXES | maker/combiner craft −25% | 20 CELL + 8 LAMP (order 6+) |
-| LONG REACH | tube max length +2 m | 15 GEAR (big rooms, any time) |
-| DEEP CRATES | chest 12 → 24 | 10 SERVO + 5 LAMP (order 8+) |
+| LONG REACH ✅ | tube max length +2 m | 4 GEAR |
+| BELT PACE ✅ | rail speed +25% | 8 GEAR + 6 CELL |
+| QUICK BOXES ✅ | maker/combiner craft −25% | 8 CELL + 4 PUMP |
+| DEEP CRATES ✅ | chest 12 → 24 | 6 CHIP + 4 LAMP |
+| SECOND SPOUT (per feed) | +1 tube run, colour-dialable | phase 3 — the big physical one |
 
 ### THE CATALOGUE — the wrist menu
 
@@ -518,8 +534,11 @@ Five phases, each ending green on `npm run typecheck` + a headless walk.
   the hand-carried gears, cells riding unattended, pumps from two lines,
   the mid-shift re-plumb to lamps, the chest, the bank — with the floor
   and job walks still green beside it.
-- **Phase 3 — ECONOMY.** The bank, upgrade bills, SECOND SPOUT with the
-  colour dial. *Orders 6–7, both ENGINE solutions walk green.*
+- **Phase 3 — ECONOMY.** ◐ **Half in.** The bank and its BILLS shipped
+  early (the SUPPLY page, four fittings live: reach, pace, quick boxes,
+  deep crates — the walk pays one and asserts the deduction). Remaining:
+  the SECOND SPOUT with its grab-and-twist colour dial, and sheets 6–7
+  built on it. *Check: both ENGINE solutions walk green.*
 - **Phase 4 — DEPTH & POLISH.** Tiers 3–4, two-target sheets, the finale
   ceremony, perf pass, preview shots. *The full ten-sheet ladder walks.*
 - **Roadmap (post-v1),** each item genre-sourced:
