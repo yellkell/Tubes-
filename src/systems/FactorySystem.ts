@@ -22,7 +22,17 @@
  */
 
 import { InputComponent, createSystem } from '@iwsdk/core';
-import { Group, InstancedMesh, Matrix4, Quaternion, Vector3 } from 'three';
+import {
+  AdditiveBlending,
+  BufferGeometry,
+  Float32BufferAttribute,
+  Group,
+  InstancedMesh,
+  Matrix4,
+  MeshBasicMaterial,
+  Quaternion,
+  Vector3,
+} from 'three';
 import { FACTORY, FLOW, ITEMS, LINES, SEAT, TUBE, UNITS, type ItemId } from '../config.js';
 import * as sfx from '../audio/sfx.js';
 import { buzz } from '../game/haptics.js';
@@ -43,7 +53,7 @@ import {
   type FactoryRun,
   type Part,
 } from '../factory/state.js';
-import { deliverPart, glandPose, partPose, retractRun, simTick } from '../factory/sim.js';
+import { deliverPart, glandPose, linkAhead, partPose, retractRun, simTick } from '../factory/sim.js';
 import {
   buildFeed,
   buildUnit,
@@ -131,6 +141,10 @@ const _gn = new Vector3();
 const _c = { x: 0, z: 0 };
 const _m4 = new Matrix4();
 const _m4b = new Matrix4();
+const _v3 = new Vector3();
+const _v3b = new Vector3();
+/** Own scratch: layTube's _quat is live across its whole pass. */
+const _q = new Quaternion();
 
 interface RunHw {
   root: Group;
@@ -164,6 +178,12 @@ export class FactorySystem extends createSystem({}) {
   private driven = { active: false, side: 'far' as FloorSide, pos: new Vector3() };
   /** The dock halo's delivery flash (decays in the dressing tick). */
   private dockFlash = 0;
+  /** THE LINKS, drawn: a chevron on every live join, so a chain reads as
+   *  a chain from across the room instead of as a row of boxes. */
+  private linkMesh: InstancedMesh | null = null;
+  /** When each part first appeared — a new one POPS, so "something came
+   *  out of the maker" is impossible to miss. */
+  private partSeen = new Map<number, number>();
 
   init(): void {
     factoryView.state = () => {
@@ -304,6 +324,11 @@ export class FactorySystem extends createSystem({}) {
       }
       this.partPools.clear();
       this.partLocals.clear();
+      this.partSeen.clear();
+      if (this.linkMesh) {
+        this.linkMesh.removeFromParent();
+        this.linkMesh = null;
+      }
       this.carried = {};
       this.driven.active = false;
       sfx.stopAllHums();
@@ -376,6 +401,51 @@ export class FactorySystem extends createSystem({}) {
         this.partLocals.set(item, locals);
       }
     }
+
+    if (!this.linkMesh) {
+      const geo = new BufferGeometry();
+      const v: number[] = [];
+      for (const z of [-0.4, 0.15]) v.push(-0.5, 0, z, 0.5, 0, z, 0, 0, z + 0.45);
+      geo.setAttribute('position', new Float32BufferAttribute(v, 3));
+      const mat = new MeshBasicMaterial({
+        color: 0xffb85c,
+        transparent: true,
+        opacity: 0.5,
+        blending: AdditiveBlending,
+        depthWrite: false,
+        side: 2,
+      });
+      this.linkMesh = new InstancedMesh(geo, mat, 96);
+      this.linkMesh.count = 0;
+      this.linkMesh.frustumCulled = false;
+      this.linkMesh.renderOrder = 12;
+      this.scene.add(this.linkMesh);
+    }
+    this.relayLinks();
+  }
+
+  /** One chevron per live join, midway between the two cells. */
+  private relayLinks(): void {
+    const mesh = this.linkMesh;
+    if (!mesh) return;
+    let n = 0;
+    for (const unit of plant.units) {
+      const ahead = linkAhead(unit);
+      if (!ahead || n >= 96) continue;
+      cellCenter(unit.i, unit.j, _c);
+      const ax = _c.x;
+      const az = _c.z;
+      cellCenter(ahead.i, ahead.j, _c);
+      _q.setFromAxisAngle(UP_Y, Math.atan2(_c.x - ax, _c.z - az));
+      _m4.compose(
+        _v3.set((ax + _c.x) / 2, UNITS.railTop + 0.1, (az + _c.z) / 2),
+        _q,
+        _v3b.set(0.09, 1, 0.12),
+      );
+      mesh.setMatrixAt(n++, _m4);
+    }
+    mesh.count = n;
+    mesh.instanceMatrix.needsUpdate = true;
   }
 
   private dropRunHw(hw: RunHw): void {
@@ -1016,6 +1086,15 @@ export class FactorySystem extends createSystem({}) {
       const idx = counts.get(part.item) ?? 0;
       if (idx >= 64) continue;
       counts.set(part.item, idx + 1);
+      let born = this.partSeen.get(part.id);
+      if (born === undefined) {
+        born = this.clock;
+        this.partSeen.set(part.id, born);
+      }
+      const age = this.clock - born;
+      // A part is BORN with a punch — the one moment that says "the
+      // maker made something", which playtest never once saw.
+      const punch = age < 0.4 ? 1 + 1.4 * (1 - age / 0.4) ** 3 : 1;
       const inHand = part.at.kind === 'hand';
       if (inHand) {
         const obj = grips?.[(part.at as { hand: 'left' | 'right' }).hand]?.object3D;
@@ -1027,11 +1106,16 @@ export class FactorySystem extends createSystem({}) {
       // A slow idle turn, offset per part — parts at rest read as alive;
       // a part in the fist holds still.
       const spin = inHand ? 0 : this.clock * 0.7 + part.id * 1.3;
-      _m4.makeRotationY(spin).setPosition(_pA.x, _pA.y, _pA.z);
+      _q.setFromAxisAngle(UP_Y, spin);
+      _m4.compose(_pA, _q, _v3.set(punch, punch, punch));
       for (let c = 0; c < pools.length; c++) {
         _m4b.multiplyMatrices(_m4, locals[c]);
         pools[c].setMatrixAt(idx, _m4b);
       }
+    }
+    if (this.partSeen.size > 256) {
+      const live = new Set(plant.parts.map((p) => p.id));
+      for (const id of [...this.partSeen.keys()]) if (!live.has(id)) this.partSeen.delete(id);
     }
     for (const [item, pools] of this.partPools) {
       const n = counts.get(item) ?? 0;

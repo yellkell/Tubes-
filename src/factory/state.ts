@@ -107,14 +107,18 @@ export interface PlantEvent {
 
 export type PlantMode =
   | 'idle' // no shift — the board is up
-  | 'order' // a sheet from the work book is live
-  | 'free'; // FREE PLAY: every feed, every box, no one asking for ten
+  | 'shop'; // THE SHOP is open: goals advance in place, and keep going
+              // after the last one is filled (there is no separate free
+              // play — playtest wanted one continuous session, not a
+              // mode switch and a trip back to the menu)
 
 export interface Plant {
   /** What kind of shift this is. */
   mode: PlantMode;
-  /** Index into ORDERS of the live sheet; −1 = free play or no shift. */
+  /** Index into ORDERS of the live goal; −1 = every goal filled. */
   orderIndex: number;
+  /** The book is done — the shop stays open with nothing left to ask. */
+  goalsDone: boolean;
   /** Delivered toward the live sheet (fluid sheets count draughts). */
   count: number;
   /** Fluid accumulator (whole draughts peel off into `count`). */
@@ -141,6 +145,7 @@ export interface Plant {
 export const plant: Plant = {
   mode: 'idle',
   orderIndex: -1,
+  goalsDone: false,
   count: 0,
   fluidAcc: 0,
   units: [],
@@ -239,6 +244,7 @@ export function freshRun(side: FloorSide, line: LineSpec, spout: Vector3, normal
 export function clearPlant(): void {
   plant.mode = 'idle';
   plant.orderIndex = -1;
+  plant.goalsDone = false;
   plant.count = 0;
   plant.fluidAcc = 0;
   plant.units = [];
@@ -255,8 +261,9 @@ export function clearPlant(): void {
 /** Post a sheet into the live shift: wake its feeds, open its catalogue. */
 export function postOrder(index: number): void {
   const spec = ORDERS[index];
-  plant.mode = 'order';
+  plant.mode = 'shop';
   plant.orderIndex = index;
+  plant.goalsDone = false;
   plant.count = 0;
   plant.fluidAcc = 0;
   plant.elapsedMs = 0;
@@ -278,17 +285,16 @@ export function postOrder(index: number): void {
 }
 
 /**
- * FREE PLAY — the shop with nobody asking for ten of anything. Every
- * feed is awake, every box is in the catalogue, and every delivery
- * simply BANKS. The work book teaches; this is where you just build,
- * and it is the mode most factory players end up living in.
+ * THE BOOK IS DONE — but the shop doesn't close. Every feed opens, the
+ * catalogue opens with it, and you keep building with nobody asking for
+ * ten of anything. (This is what used to be a separate FREE PLAY mode
+ * you had to back out to the board to choose. One session, always.)
  */
-export function openFreeplay(): void {
-  plant.mode = 'free';
+export function openShopFully(): void {
   plant.orderIndex = -1;
+  plant.goalsDone = true;
   plant.count = 0;
   plant.fluidAcc = 0;
-  plant.elapsedMs = 0;
   for (const [side, line] of Object.entries(FACTORY.sides) as Array<
     [FloorSide, 'mains' | 'coolant' | 'volt' | null]
   >) {

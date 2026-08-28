@@ -45,9 +45,8 @@ import {
   abandonShift,
   buyUpgrade,
   enterFloorSetup,
-  startFreeplay,
   startJob,
-  startOrder,
+  startShop,
 } from '../game/flow.js';
 import {
   bestMs,
@@ -60,7 +59,7 @@ import {
 } from '../game/progress.js';
 import { site } from '../game/state.js';
 import { bankTotal, orderSpec, plant } from '../factory/state.js';
-import { buildView, typeAvailable } from './BuildSystem.js';
+import { buildView, typeAvailable, type BuildTool } from './BuildSystem.js';
 import { font } from '../ui/fonts.js';
 import { Panel, UI, type PanelButton } from '../ui/panel.js';
 import { PointerRay } from '../ui/pointer.js';
@@ -125,7 +124,9 @@ export class MenuSystem extends createSystem({}) {
   /** The ORDERS tab's selected sheet. */
   private orderSel = 0;
   /** The factory card's page: the catalogue, or the bank's bills. */
-  private cardMode: 'build' | 'supply' = 'build';
+  private cardMode: 'build' | 'goals' | 'supply' = 'build';
+  /** The GOALS page's open sheet (null = the list). */
+  private goalOpen: number | null = null;
 
   init(): void {
     this.board = new Panel(BOARD.widthM, BOARD.heightM, W, H);
@@ -148,7 +149,7 @@ export class MenuSystem extends createSystem({}) {
       this.lastKey = '';
     };
     menuView.setPause = (on) => {
-      site.paused = on && site.screen === 'shift';
+      site.paused = on && (site.screen === 'shift' || site.screen === 'factory');
       this.lastKey = '';
     };
     menuView.act = (id) => this.action(id);
@@ -311,17 +312,21 @@ export class MenuSystem extends createSystem({}) {
       const i = Number(id.slice(6));
       if (i < ordersUnlocked()) this.orderSel = i;
     } else if (id === 'start-order') {
-      startOrder(this.orderSel);
-    } else if (id === 'free-play') {
-      startFreeplay();
+      startShop(this.orderSel);
     } else if (id.startsWith('build:')) {
-      // Arm the hologram and put the card away — the hands do the rest.
-      buildView.arm?.(id.slice(6) as UnitType);
+      // Arm the tool and put the card away — the hands do the rest.
+      buildView.arm?.(id.slice(6) as BuildTool);
       site.paused = false;
     } else if (id === 'card:build') {
       this.cardMode = 'build';
+    } else if (id === 'card:goals') {
+      this.cardMode = 'goals';
     } else if (id === 'card:supply') {
       this.cardMode = 'supply';
+    } else if (id.startsWith('goal:')) {
+      this.goalOpen = Number(id.slice(5));
+    } else if (id === 'goal:back') {
+      this.goalOpen = null;
     } else if (id.startsWith('buy:')) {
       buyUpgrade(id.slice(4) as UpgradeId);
     } else if (id === 'sfx:down') {
@@ -376,6 +381,9 @@ export class MenuSystem extends createSystem({}) {
       bankTotal(),
       buildView.armed?.() ?? '',
       this.cardMode,
+      this.goalOpen,
+      plant.goalsDone,
+      buildView.armed?.() ?? '',
       ownedUpgrades().join(','),
       cardUp
         ? Math.floor((site.screen === 'factory' ? plant.elapsedMs : site.elapsedMs) / 100)
@@ -660,7 +668,7 @@ export class MenuSystem extends createSystem({}) {
     buttons.push(
       {
         id: 'start-order',
-        label: locked ? 'LOCKED' : 'START ORDER',
+        label: locked ? 'LOCKED' : 'OPEN THE SHOP',
         sub: locked ? 'fill the sheet above it' : sel.name,
         primary: !locked,
         disabled: locked || !site.wallsReady,
@@ -670,11 +678,9 @@ export class MenuSystem extends createSystem({}) {
         h: 96,
       },
       {
-        // The book teaches; FREE PLAY is where you just build.
-        id: 'free-play',
-        label: 'FREE PLAY',
-        sub: 'every feed, every box, no one asking for ten',
-        disabled: !site.wallsReady,
+        id: 'shop-note',
+        label: 'one shift — the goals advance as you build',
+        display: true,
         small: true,
         x: SHEET_X + 10,
         y: H - 76,
@@ -975,35 +981,31 @@ export class MenuSystem extends createSystem({}) {
       .join(' + ');
   }
 
-  /** THE SHIFT CARD — the job card, promoted for the factory. Two pages:
-   *  BUILD (pick a unit; the hologram arms and the card drops) and
-   *  SUPPLY (the bank's bills — pay one and the fitting is yours for
-   *  good). The clock and the sheet's live count ride the header. */
+  /**
+   * THE SHIFT CARD — Ⓐ, dead ahead, and the only menu a shift has.
+   * Three pages: BUILD (the plant, plus the wrecking bar), GOALS (the
+   * book, tappable for what a sheet actually asks of you) and SUPPLY
+   * (the bank's bills). The live goal rides the header, so the room
+   * floats nothing.
+   */
   private paintFactoryCard(): void {
     const [cw, ch] = BOARD.cardPx;
     const spec = orderSpec();
     const armed = buildView.armed?.() ?? null;
+    const tab = (id: string, label: string, on: boolean, x: number): PanelButton => ({
+      id,
+      label,
+      small: true,
+      selected: on,
+      x,
+      y: 162,
+      w: 158,
+      h: 42,
+    });
     const buttons: PanelButton[] = [
-      {
-        id: 'card:build',
-        label: 'BUILD',
-        small: true,
-        selected: this.cardMode === 'build',
-        x: 34,
-        y: 158,
-        w: 150,
-        h: 44,
-      },
-      {
-        id: 'card:supply',
-        label: 'SUPPLY',
-        small: true,
-        selected: this.cardMode === 'supply',
-        x: 196,
-        y: 158,
-        w: 150,
-        h: 44,
-      },
+      tab('card:build', 'BUILD', this.cardMode === 'build', 34),
+      tab('card:goals', 'GOALS', this.cardMode === 'goals', 200),
+      tab('card:supply', 'SUPPLY', this.cardMode === 'supply', 366),
       {
         id: 'resume',
         label: 'BACK TO IT',
@@ -1026,29 +1028,56 @@ export class MenuSystem extends createSystem({}) {
     ];
 
     if (this.cardMode === 'build') {
-      const catalogue: Array<{ type: UnitType; label: string }> = [
-        { type: 'dock', label: 'DOCK' },
-        { type: 'maker', label: 'MAKER' },
-        { type: 'belt', label: 'RAIL' },
-        { type: 'combiner', label: 'COMBINER' },
-        { type: 'chest', label: 'CHEST' },
+      // The wrecking bar sits in the catalogue like any other tool —
+      // playtest went looking for a delete and found nothing.
+      const kit: Array<{ tool: BuildTool; label: string }> = [
+        { tool: 'dock', label: 'DOCK' },
+        { tool: 'maker', label: 'MAKER' },
+        { tool: 'belt', label: 'RAIL' },
+        { tool: 'combiner', label: 'COMBINER' },
+        { tool: 'chest', label: 'CHEST' },
+        { tool: 'delete', label: 'DELETE' },
       ];
-      const bw = (cw - 68 - 2 * 12) / 3;
-      catalogue.forEach((entry, i) => {
+      kit.forEach((entry, i) => {
         const row = Math.floor(i / 3);
         const col = i % 3;
         buttons.push({
-          id: `build:${entry.type}`,
+          id: `build:${entry.tool}`,
           label: entry.label,
           small: true,
-          disabled: !typeAvailable(entry.type),
-          selected: armed === entry.type,
-          x: 34 + col * (bw + 12),
-          y: 218 + row * 70,
-          w: bw,
-          h: 60,
+          disabled: entry.tool === 'delete' ? false : !typeAvailable(entry.tool as UnitType),
+          selected: armed === entry.tool,
+          tone: entry.tool === 'delete' ? UI.danger : undefined,
+          x: 34 + col * 166,
+          y: 220 + row * 66,
+          w: 158,
+          h: 58,
         });
       });
+    } else if (this.cardMode === 'goals') {
+      if (this.goalOpen === null) {
+        ORDERS.forEach((_o, i) => {
+          buttons.push({
+            id: `goal:${i}`,
+            label: '',
+            ghost: true,
+            x: 34,
+            y: 216 + i * 38,
+            w: cw - 68,
+            h: 34,
+          });
+        });
+      } else {
+        buttons.push({
+          id: 'goal:back',
+          label: 'ALL GOALS',
+          small: true,
+          x: 34,
+          y: ch - 148,
+          w: 170,
+          h: 46,
+        });
+      }
     } else {
       UPGRADES.forEach((u, i) => {
         buttons.push({
@@ -1057,29 +1086,27 @@ export class MenuSystem extends createSystem({}) {
           ghost: true,
           disabled: upgradeOwned(u.id) || !this.canAfford(u.id),
           x: 34,
-          y: 214 + i * 48,
+          y: 214 + i * 46,
           w: cw - 68,
-          h: 44,
+          h: 42,
         });
       });
     }
 
+    const title = spec?.name ?? (plant.goalsDone ? 'THE SHOP IS YOURS' : 'THE SHOP');
     this.card.paint(
-      spec?.name ?? (plant.mode === 'free' ? 'FREE PLAY' : 'THE SHOP'),
+      title,
       (g) => {
         g.textBaseline = 'middle';
         g.textAlign = 'left';
         g.font = font(500, 24);
         g.fillStyle = UI.dim;
         g.fillText(fmtMs(plant.elapsedMs), 36, 118);
-        if (plant.mode !== 'free') {
-          const banked = bankTotal();
-          g.font = font(500, 21);
-          g.fillStyle = banked > 0 ? UI.dim : UI.faint;
-          g.fillText(`bank · ${banked}`, 150, 118);
-        }
+        const banked = bankTotal();
+        g.font = font(500, 21);
+        g.fillStyle = banked > 0 ? UI.dim : UI.faint;
+        g.fillText(`bank · ${banked}`, 150, 118);
         if (spec) {
-          // THE GOAL lives here now — the room floats nothing.
           const target = this.targetOf(spec);
           g.textAlign = 'right';
           g.font = font(700, 46);
@@ -1088,56 +1115,134 @@ export class MenuSystem extends createSystem({}) {
           g.font = font(600, 22);
           g.fillStyle = UI.dim;
           g.fillText(target.name, cw - 40, 144);
-        } else if (plant.mode === 'free') {
-          // Nothing to fill — so the bank is the number that matters.
+        } else if (plant.goalsDone) {
           g.textAlign = 'right';
-          g.font = font(700, 46);
+          g.font = font(600, 24);
           g.fillStyle = UI.accent;
-          g.fillText(String(bankTotal()), cw - 40, 112);
-          g.font = font(600, 22);
-          g.fillStyle = UI.dim;
-          g.fillText('BANKED', cw - 40, 144);
+          g.fillText('every sheet filled', cw - 40, 118);
+          g.font = font(500, 20);
+          g.fillStyle = UI.faint;
+          g.fillText('build whatever you like', cw - 40, 146);
         }
 
-        if (this.cardMode === 'supply') {
-          // The bills: name + effect, the bill (or the stamp) on the right.
-          const hoverOf = (id: string): number => this.card.hoverOf(id);
-          UPGRADES.forEach((u, i) => {
-            const y = 214 + i * 48;
-            const owned = upgradeOwned(u.id);
-            const afford = this.canAfford(u.id);
-            const hov = hoverOf(`buy:${u.id}`);
-            g.fillStyle = `rgba(255,255,255,${(owned ? 0.02 : 0.04 + 0.05 * hov).toFixed(3)})`;
-            g.beginPath();
-            g.roundRect(34, y, cw - 68, 44, 10);
-            g.fill();
-            g.strokeStyle = owned
-              ? 'rgba(255,162,46,0.35)'
-              : `rgba(255,255,255,${(0.08 + 0.18 * hov).toFixed(3)})`;
-            g.lineWidth = 2;
-            g.stroke();
-            g.textAlign = 'left';
-            g.font = font(600, 21);
-            g.fillStyle = owned ? UI.dim : afford ? UI.text : UI.disabled;
-            g.fillText(u.name, 50, y + 15);
-            g.font = font(500, 16);
-            g.fillStyle = UI.faint;
-            g.fillText(u.effect, 50, y + 33);
-            g.textAlign = 'right';
-            g.font = font(600, 18);
-            if (owned) {
-              g.fillStyle = UI.accent;
-              g.fillText('FITTED', cw - 50, y + 22);
-            } else {
-              g.fillStyle = afford ? UI.positive : UI.faint;
-              g.fillText(this.billText(u.id), cw - 50, y + 22);
-            }
-          });
+        if (this.cardMode === 'goals') this.paintGoals(g, cw, ch);
+        else if (this.cardMode === 'supply') this.paintBills(g, cw);
+        else if (armed) {
+          g.textAlign = 'center';
+          g.font = font(500, 20);
+          g.fillStyle = UI.faint;
+          g.fillText(
+            armed === 'delete'
+              ? 'point at plant and pull the trigger to take it out'
+              : 'aim at the floor — it turns itself to connect',
+            cw / 2,
+            ch - 108,
+          );
         }
       },
       buttons,
       this.hover,
     );
+  }
+
+  /** The book, in the card: the ladder, or one sheet opened up. */
+  private paintGoals(g: CanvasRenderingContext2D, cw: number, ch: number): void {
+    const live = plant.orderIndex;
+    if (this.goalOpen === null) {
+      const hoverOf = (id: string): number => this.card.hoverOf(id);
+      ORDERS.forEach((o, i) => {
+        const y = 216 + i * 38;
+        const done = plant.goalsDone || i < live;
+        const now = i === live;
+        const hov = hoverOf(`goal:${i}`);
+        g.fillStyle = now ? UI.accentFaint : `rgba(255,255,255,${(0.03 + 0.05 * hov).toFixed(3)})`;
+        g.beginPath();
+        g.roundRect(34, y, cw - 68, 34, 8);
+        g.fill();
+        if (now) {
+          g.fillStyle = UI.accent;
+          g.beginPath();
+          g.roundRect(40, y + 7, 4, 20, 2);
+          g.fill();
+        }
+        g.textAlign = 'left';
+        g.font = font(600, 20);
+        g.fillStyle = done ? UI.dim : now ? UI.textHi : UI.faint;
+        g.fillText(`${done ? '✓' : now ? '▸' : '·'}  ${o.name}`, 54, y + 18);
+        const t = this.targetOf(o);
+        g.textAlign = 'right';
+        g.font = font(500, 18);
+        g.fillStyle = UI.faint;
+        g.fillText(`${o.goal} × ${t.name}`, cw - 50, y + 18);
+      });
+      g.textAlign = 'center';
+      g.font = font(500, 18);
+      g.fillStyle = UI.faint;
+      g.fillText('tap a sheet for what it asks', cw / 2, ch - 108);
+      return;
+    }
+
+    // ONE SHEET, OPENED: what it wants, how you do it, what comes next.
+    const o = ORDERS[Math.min(this.goalOpen, ORDERS.length - 1)];
+    const t = this.targetOf(o);
+    g.textAlign = 'left';
+    g.font = font(700, 26);
+    g.fillStyle = UI.textHi;
+    g.fillText(o.name, 36, 226);
+    g.font = font(600, 20);
+    g.fillStyle = UI.accent;
+    g.fillText(`${o.goal} × ${t.name}`, 36, 254);
+    wrapText(g, t.docket, 36, 280, cw - 72, 24, font(500, 17), UI.faint);
+    let y = 316;
+    for (const step of o.steps) {
+      g.fillStyle = UI.accent;
+      g.beginPath();
+      g.arc(44, y - 5, 3.5, 0, Math.PI * 2);
+      g.fill();
+      const lines = wrapText(g, step, 58, y, cw - 96, 22, font(500, 17), UI.dim);
+      y += 22 * lines + 8;
+    }
+    const next = ORDERS[this.goalOpen + 1];
+    g.textAlign = 'right';
+    g.font = font(500, 17);
+    g.fillStyle = UI.faint;
+    g.fillText(next ? `next · ${next.name}` : 'last sheet — then the shop is yours', cw - 40, ch - 126);
+  }
+
+  /** The bank's bills (the SUPPLY page's body). */
+  private paintBills(g: CanvasRenderingContext2D, cw: number): void {
+    const hoverOf = (id: string): number => this.card.hoverOf(id);
+    UPGRADES.forEach((u, i) => {
+      const y = 214 + i * 46;
+      const owned = upgradeOwned(u.id);
+      const afford = this.canAfford(u.id);
+      const hov = hoverOf(`buy:${u.id}`);
+      g.fillStyle = `rgba(255,255,255,${(owned ? 0.02 : 0.04 + 0.05 * hov).toFixed(3)})`;
+      g.beginPath();
+      g.roundRect(34, y, cw - 68, 42, 10);
+      g.fill();
+      g.strokeStyle = owned
+        ? 'rgba(255,162,46,0.35)'
+        : `rgba(255,255,255,${(0.08 + 0.18 * hov).toFixed(3)})`;
+      g.lineWidth = 2;
+      g.stroke();
+      g.textAlign = 'left';
+      g.font = font(600, 20);
+      g.fillStyle = owned ? UI.dim : afford ? UI.text : UI.disabled;
+      g.fillText(u.name, 50, y + 15);
+      g.font = font(500, 15);
+      g.fillStyle = UI.faint;
+      g.fillText(u.effect, 50, y + 32);
+      g.textAlign = 'right';
+      g.font = font(600, 17);
+      if (owned) {
+        g.fillStyle = UI.accent;
+        g.fillText('FITTED', cw - 50, y + 22);
+      } else {
+        g.fillStyle = afford ? UI.positive : UI.faint;
+        g.fillText(this.billText(u.id), cw - 50, y + 22);
+      }
+    });
   }
 
   /* ── shared body dispatcher ───────────────────────────────────────────── */
@@ -1170,22 +1275,28 @@ function wrapText(
   lineH: number,
   fontStr: string,
   color: string,
-): void {
+): number {
   g.font = fontStr;
   g.fillStyle = color;
   g.textAlign = 'left';
   const words = text.split(' ');
   let line = '';
   let yy = y;
+  let lines = 0;
   for (const word of words) {
     const probe = line ? `${line} ${word}` : word;
     if (g.measureText(probe).width > maxW && line) {
       g.fillText(line, x, yy);
+      lines++;
       line = word;
       yy += lineH;
     } else {
       line = probe;
     }
   }
-  if (line) g.fillText(line, x, yy);
+  if (line) {
+    g.fillText(line, x, yy);
+    lines++;
+  }
+  return lines;
 }

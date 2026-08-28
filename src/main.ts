@@ -137,7 +137,7 @@ World.create(container, {
 // tool) without controllers — e.g. __tubes.menu.act('start'),
 // __tubes.place.mountAt(0, 0, 0), __tubes.tube.grab(), __tubes.tube.dragTo(...).
 import { site } from './game/state.js';
-import { abandonFactory, abandonShift, startJob, startOrder } from './game/flow.js';
+import { abandonFactory, abandonShift, startJob, startShop } from './game/flow.js';
 import { walls } from './systems/WallSystem.js';
 
 declare global {
@@ -159,7 +159,7 @@ declare global {
       build: typeof buildView;
       /** The factory: orders, runs, parts, the sim — drivable headlessly. */
       plant: typeof factoryView;
-      startOrder: typeof startOrder;
+      startShop: typeof startShop;
       abandonFactory: typeof abandonFactory;
       /** The tube: pull state, and the headless hands. */
       tube: typeof tubeView;
@@ -185,7 +185,7 @@ window.__tubes = {
   floor: floorView,
   build: buildView,
   plant: factoryView,
-  startOrder,
+  startShop,
   abandonFactory,
   tube: tubeView,
   flow: flowView,

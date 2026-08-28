@@ -599,6 +599,8 @@ export interface OrderSpec {
    *  the dock's own gland; item targets ride belts or hands. */
   target: { kind: 'fluid'; line: 'mains' | 'coolant' | 'volt' } | { kind: 'item'; item: ItemId };
   goal: number;
+  /** The GOALS page's deeper read: what this actually asks of you. */
+  steps: string[];
   /** What this sheet switches on the morning it's posted. */
   wakes: { feeds?: Array<'mains' | 'coolant' | 'volt'>; units?: UnitType[] };
 }
@@ -607,23 +609,39 @@ export const ORDERS: OrderSpec[] = [
   {
     id: 'first-draught',
     name: 'FIRST DRAUGHT',
-    brief: 'Stand the dock, then run a tube from the amber feed straight into its gland. The works pours; the dock drinks ten draughts.',
+    brief: 'Stand the dock, then run a tube from the amber feed into its collar — the collar turns to meet you, so just bring it near. The works pours; the dock drinks ten draughts.',
+    steps: [
+      'Ⓐ → BUILD → DOCK, then trigger on the floor to stand it',
+      'Grab the amber feed\u2019s tube with both grips',
+      'Carry the head to the dock\u2019s collar until it snaps home',
+    ],
     target: { kind: 'fluid', line: 'mains' },
     goal: 10,
-    wakes: { feeds: ['mains'], units: ['dock'] },
+    // Everything the first real chain needs, from the first minute —
+    // the shop is never a locked room.
+    wakes: { feeds: ['mains'], units: ['dock', 'maker', 'belt'] },
   },
   {
     id: 'piece-work',
     name: 'PIECE WORK',
-    brief: 'The MAKER box stamps GEARS out of amber — and RAILS to carry them. Feed the maker, run rails from its chute to the dock, and watch the first part ride home.',
+    brief: 'Now make something. A MAKER fed with amber stamps a GEAR every few seconds onto its chute; RAILS carry them to the dock.',
+    steps: [
+      'Stand a MAKER, and move the amber tube onto its collar',
+      'Stand RAILS from the maker\u2019s chute to the dock',
+      'Rails point themselves — they turn to feed whatever they touch',
+    ],
     target: { kind: 'item', item: 'gear' },
     goal: 10,
-    wakes: { units: ['maker', 'belt'] },
+    wakes: {},
   },
   {
     id: 'the-line',
     name: 'THE LINE',
-    brief: 'The cyan feed wakes. A second maker, a second line — CELLS this time, and two chains sharing one dock.',
+    brief: 'The cyan feed wakes. A second maker, a second lane — CELLS this time, and two chains sharing one dock.',
+    steps: [
+      'Stand a second MAKER near the cyan feed',
+      'Run its tube, and rail its chute into the line you already have',
+    ],
     target: { kind: 'item', item: 'cell' },
     goal: 10,
     wakes: { feeds: ['coolant'] },
@@ -631,7 +649,12 @@ export const ORDERS: OrderSpec[] = [
   {
     id: 'first-fitting',
     name: 'FIRST FITTING',
-    brief: 'The COMBINER: gears in one side, cells in the other, PUMPS out the front. Two lines becoming one is the whole trade.',
+    brief: 'The COMBINER: gears into one side, cells into the other, PUMPS out the front. Two lines becoming one is the whole trade.',
+    steps: [
+      'Stand a COMBINER where both lines can reach its two sides',
+      'Rail the gear line into one side, the cell line into the other',
+      'Rail its front chute onward to the dock',
+    ],
     target: { kind: 'item', item: 'pump' },
     goal: 10,
     wakes: { units: ['combiner'] },
@@ -640,6 +663,11 @@ export const ORDERS: OrderSpec[] = [
     id: 'night-shift',
     name: 'NIGHT SHIFT',
     brief: 'Violet wakes. CHIPS meet cells and make LAMPS — and the CHEST arrives to hold what runs ahead of the line.',
+    steps: [
+      'Move a maker\u2019s tube onto the violet feed — the same box now stamps CHIPS',
+      'Feed chips and cells to the combiner',
+      'Stand a CHEST anywhere a line runs ahead of itself',
+    ],
     target: { kind: 'item', item: 'lamp' },
     goal: 10,
     wakes: { feeds: ['volt'], units: ['chest'] },

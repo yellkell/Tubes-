@@ -200,9 +200,10 @@ tools/
                          headlessly, with phase/unlock/budget/joint asserts
   floor-walk.mjs         THE FLOOR: tape defaults, clamps, snap, lattice
                          stamping, the plant law, persistence — asserted
-  order-walk.mjs         THE WORK BOOK: all five factory sheets filled
-                         headlessly — the draught, the carry, the rails,
-                         the combiner, the re-plumb, the bank
+  order-walk.mjs         THE SHOP, built BY HAND: the same aim + trigger
+                         the controller runs — auto-facing, the link law,
+                         refusals, the delete tool, goals advancing in
+                         place, the card's three pages
   preview-shot.mjs       screenshots of the moments that carry the look
   socket-look.mjs        a socket from 14 angles — the anti-culling check
                          (open geometry looks whole from one viewpoint and
@@ -215,11 +216,11 @@ design, and the phased build. Phases 0–2 are in (plus the bank's BILLS
 from phase 3): mark the floor out in hazard tape — it comes down once
 you're set up — and the board's ORDERS tab opens a five-sheet work book:
 feeds on the floor's sides, the two-handed pull re-aimed at bench
-machines whose intakes SWIVEL to meet the tube, rails, the wall-bound
-combiner, the chest, the dock counting every delivery, and the bank
-spending its surplus on fittings from the shift card's SUPPLY page.
-There is a FREE PLAY mode beside the book: every feed, every box, no
-one asking for ten.
+machines whose intakes SWIVEL to meet the tube, rails and boxes that
+TURN THEMSELVES to connect, a chest, a combiner, and a dock counting
+every delivery. One entrance, one continuous session: goals advance in
+place on the Ⓐ card as you fill them, the catalogue grows with them,
+and when the book runs out the shop just stays open.
 
 ## Checks
 
@@ -228,7 +229,7 @@ npm run typecheck        # strict TS, no emit
 npm run dev &            # then:
 node tools/job-walk.mjs  # the whole ladder, asserted (exits non-zero on fail)
 node tools/floor-walk.mjs     # the factory floor: tape, clamps, lattice
-node tools/order-walk.mjs     # the factory book: all five sheets, filled
+node tools/order-walk.mjs     # the shop, built through the hands' own path
 node tools/preview-shot.mjs   # shots/ of the landing, board, pull, pour
 node tools/socket-look.mjs    # shots/socket/ — one socket, 14 angles
 ```

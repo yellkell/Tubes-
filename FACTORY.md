@@ -323,13 +323,30 @@ free cell inside reach is always offered (doorways, not keyholes).
 Boxes and rails are **free to craft** (law 6: never charge for trying).
 The bank buys **upgrades** only.
 
-**THE WALL LAW.** Two kinds of plant bolt to the site's edge and face
-inward: **the DOCK** (where the works reaches into your room) and **the
-COMBINER** (whose two feed ports then sit along the tape, one either
-side, its chute pushing into the floor). They take the edge's facing,
-not your hand's aim — one less thing to get wrong, and a floor that
-reads at a glance: sinks and merges at the walls, making in the middle.
-Makers, chests and rails stand wherever they like.
+**THE FACING IS THE GAME'S PROBLEM, NOT YOURS.** Every piece turns
+itself to connect: a rail swings to feed whatever it touches, a maker
+aims its chute at a rail, a combiner turns so its two ports face the
+lines that would fill them. Your aim only breaks ties. Lay rails
+*backward from the dock* and the whole run self-orients with no
+rotation input at all — which is the difference between laying a
+conveyor and solving a puzzle about laying a conveyor.
+
+**THE CONNECTION LAW, DRAWN BEFORE YOU COMMIT.** Rails feed rails,
+docks, chests and a combiner's two ports — never a maker, which drinks
+fluid off a tube and has no use for a part. While the ghost stands,
+amber chevrons show exactly what it will feed and what will feed it;
+aim a rail at a maker and no chevron appears. Standing plant keeps its
+chevrons too, so a chain reads as a chain across the room instead of a
+row of boxes.
+
+**DELETE IS A TOOL.** It sits in the card beside the boxes and paints
+its target red. (Ⓑ over plant still unbolts — but a verb nobody can
+find is a verb that doesn't exist.)
+
+*(An earlier cut split plant into "wall plant" — dock and combiner
+bolted to the site's edge. Playtest killed it: it turned every one of
+them into a hunt for a legal cell, for a tidiness nobody had asked for.
+Everything stands anywhere now.)*
 
 **Every role its own silhouette** (shipped): the MAKER is a solidifier
 drum with a working piston, the COMBINER twin lobes under one pressing
@@ -375,15 +392,25 @@ make is ever just a token.
 (PEARL and its SHELL part, plus an INFUSER box — part + fluid in — are the
 post-campaign expansion lane, deliberately outside v1's tree.)
 
-### FREE PLAY — the shop with nobody asking
+### ONE SHOP, ALWAYS OPEN
 
-The work book teaches; **FREE PLAY** is where factory players actually
-live. One button beside START ORDER on the board: every feed awake, the
-whole catalogue open, no goal and no clock — and every delivery simply
-banks, so the bills still pay and a free-play afternoon still buys
-fittings the book will feel. It shares every system with the book —
-same floor, same pull, same sim — because a mode that forks the code is
-a mode that rots.
+There is **one entrance and one session**. You open the shop and stay in
+it: goals advance in place as you fill them, the catalogue grows with
+them, and when the book runs out the shop simply stays open with every
+feed awake and nothing left to ask. No mode to choose, no trip back to
+the board between sheets.
+
+The first goal already hands you **dock, maker and rails** — enough to
+build a whole working chain in the first minute. (The bit-by-bit
+unlock was the other half of playtest's brick wall: gated to one box at
+a time, the shop read as a locked room, while starting with everything
+read as a pile of parts with no reason to touch any of them. Growing
+*while you play* is the only version that behaves like a factory game.)
+
+The Ⓐ card's **GOALS** page carries the book: the ladder with what's
+done, what's live and what's next — and tapping a sheet opens it up for
+the deeper read, the works docket it serves, and the actual steps it
+asks of you.
 
 ### THE ORDERS — the level ladder (ten sheets, one new verb each)
 
@@ -398,7 +425,7 @@ the line you built for order 4 is still earning in order 7.
 | # | Order | Target ×10 | What wakes / what it teaches |
 | --- | --- | --- | --- |
 | 1 | FIRST DRAUGHT | AMBER (fluid) | The floor, the dock, the pull: run one tube feed→dock. Pure TUBES, new destination |
-| 2 | PIECE WORK | GEAR | The MAKER **and the RAILS** together: tube→maker→rail→dock, and the first part you ever make rides home in front of you |
+| 2 | PIECE WORK | GEAR | Now MAKE something: tube→maker→rail→dock, and the first part you ever stamp POPS out of the chute and rides home in front of you |
 | 3 | THE LINE | CELL | CYAN wakes: a second maker, a second lane, two chains sharing one dock |
 | 4 | FIRST FITTING | PUMP | The COMBINER: two lines merging into a 2-in box — our Reinforced Iron Plate moment |
 | 5 | NIGHT SHIFT | LAMP | VIOLET wakes; the CHEST arrives to buffer the rate mismatch it creates |

@@ -19,7 +19,7 @@ import {
   upgradeOwned,
 } from './progress.js';
 import { buildRuns, site } from './state.js';
-import { clearPlant, openFreeplay, orderSpec, plant, postOrder } from '../factory/state.js';
+import { clearPlant, openShopFully, orderSpec, plant, postOrder } from '../factory/state.js';
 import * as sfx from '../audio/sfx.js';
 
 /** Clock in on a job. `seed` is for the tools — a layout replayed exactly. */
@@ -74,28 +74,19 @@ export function runLanded(runIndex: number): void {
 
 /* ── the factory (FACTORY.md phases 1–2) ─────────────────────────────────── */
 
-/** Clock in on a work order: a fresh plant, the sheet posted, the shift
- *  live on the FACTORY screen. The bank rides in from the shelf. */
-export function startOrder(index: number): void {
+/** OPEN THE SHOP. One entrance, one continuous session: the goals
+ *  advance in place as you fill them and the catalogue grows with them,
+ *  and when the book runs out the shop simply stays open. You never go
+ *  back to the board for the next thing. The bank rides in from the
+ *  shelf. */
+export function startShop(index = 0): void {
   if (site.screen !== 'board') return;
-  if (index < 0 || index >= ORDERS.length || index >= ordersUnlocked()) return;
+  const at = Math.max(0, Math.min(index, ORDERS.length - 1, ordersUnlocked() - 1));
   clearPlant();
   plant.bank = loadBank();
   site.paused = false;
   site.screen = 'factory';
-  postOrder(index);
-  site.generation++;
-}
-
-/** FREE PLAY: the shop, open, with nobody asking for ten of anything.
- *  Every feed awake, every box in the catalogue, deliveries all banking. */
-export function startFreeplay(): void {
-  if (site.screen !== 'board') return;
-  clearPlant();
-  plant.bank = loadBank();
-  site.paused = false;
-  site.screen = 'factory';
-  openFreeplay();
+  postOrder(at);
   site.generation++;
 }
 
@@ -110,9 +101,10 @@ export function abandonFactory(): void {
   site.generation++;
 }
 
-/** The sheet filled (the sim's 'complete' event lands here): stamp it,
- *  post the next one into the SAME shift — the plant persists, the
- *  factory grows — or, the book done, give the room its moment. */
+/** A goal filled (the sim's 'complete' event lands here): stamp it and
+ *  post the next one INTO THE SAME SHIFT — the plant persists, the
+ *  catalogue grows, and nothing kicks you out to a menu. The last goal
+ *  simply opens the shop the rest of the way. */
 export function orderComplete(): void {
   const spec = orderSpec();
   if (!spec || site.screen !== 'factory') return;
@@ -123,12 +115,9 @@ export function orderComplete(): void {
     postOrder(next);
     return;
   }
-  clearPlant();
-  site.screen = 'ceremony';
-  site.ceremonyT = CEREMONY_S;
-  sfx.stopAllHums();
+  openShopFully();
   sfx.stampDone();
-  site.generation++;
+  sfx.ceremonyChord();
 }
 
 /** Pay a bill: the fitting is bought with banked parts, kept for good,

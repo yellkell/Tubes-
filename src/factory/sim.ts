@@ -22,7 +22,7 @@ import {
   type ItemId,
   type UnitType,
 } from '../config.js';
-import { CELL, cellCenter, cellInFloor, edgeInward, occupy, vacate } from '../floor/grid.js';
+import { CELL, cellCenter, cellInFloor, occupy, vacate } from '../floor/grid.js';
 import { chestBonus, craftFactor, railFactor } from '../game/progress.js';
 import {
   DIRS,
@@ -119,22 +119,87 @@ export function dockUnit(): Unit | undefined {
   return plant.units.find((u) => u.type === 'dock');
 }
 
-/** WALL PLANT: these bolt to the site's edge and face inward. The dock
- *  is where the works reaches into the room, and the combiner wants its
- *  two feed sides clear — both read wrong marooned mid-floor. */
-export const WALL_BOUND: readonly UnitType[] = ['dock', 'combiner'];
-
-export function wallBound(type: UnitType): boolean {
-  return WALL_BOUND.includes(type);
+/**
+ * THE CONNECTION LAW — what one piece of plant MEANS to another.
+ *
+ * A part travelling `travel` into `into` has somewhere to go only if the
+ * two units actually relate: rails feed rails, docks, chests and a
+ * combiner's two side PORTS — and never a maker, which drinks fluid off
+ * a tube and has no use for a part at all. Occupancy is a separate
+ * question (a full rail still LINKS, it is just busy); this is about
+ * whether a join means anything.
+ */
+export function canLink(into: Unit, travel: Rot): boolean {
+  if (into.type === 'belt' || into.type === 'dock' || into.type === 'chest') return true;
+  if (into.type === 'combiner') {
+    const enterFrom = ((travel + 2) % 4) as Rot;
+    return enterFrom === portDir(into, 0) || enterFrom === portDir(into, 1);
+  }
+  return false; // makers take a tube, not a rail
 }
 
-/** Where a unit of this type may stand, and facing which way: null when
- *  the cell refuses it. Wall plant takes the edge's inward direction and
- *  ignores the hand's aim; free plant keeps whatever it was given. */
+/** Does this unit push parts out of its OUT face? */
+export function emits(unit: Unit): boolean {
+  return unit.type === 'maker' || unit.type === 'combiner' || unit.type === 'belt';
+}
+
+/** Is there a live link from `unit` into whatever stands ahead of it? */
+export function linkAhead(unit: Unit): Unit | null {
+  if (!emits(unit)) return null;
+  const d = DIRS[unit.rot];
+  const ahead = unitAtCell(unit.i + d.di, unit.j + d.dj);
+  return ahead && canLink(ahead, unit.rot) ? ahead : null;
+}
+
+/**
+ * THE FACING IS THE GAME'S PROBLEM, NOT YOURS. Given where your hand
+ * points, pick the facing that actually connects: a rail turns to feed
+ * the thing in front of it, a maker turns its chute toward a rail, a
+ * combiner turns so its two ports face the lines that would fill them.
+ * Your aim only breaks ties — which is exactly what a fitter would do
+ * with a piece of plant already surrounded by other plant.
+ */
+export function bestRot(type: UnitType, i: number, j: number, handRot: Rot): Rot {
+  // Sinks don't care which way they face; keep the hand honest.
+  if (type === 'dock' || type === 'chest') return handRot;
+  let best = handRot;
+  let bestScore = -Infinity;
+  for (let r = 0; r < 4; r++) {
+    const rot = r as Rot;
+    // A real link ahead is decisive; your aim beats everything else; a
+    // line continuing from behind is only a gentle nudge. (Get that
+    // order wrong and the piece fights you: an early cut let "carry on
+    // straight" outrank the hand, so a rail laid off the back of a
+    // maker refused to turn toward the dock.)
+    let score = rot === handRot ? 1.5 : 0;
+    const d = DIRS[rot];
+    const ahead = unitAtCell(i + d.di, j + d.dj);
+    if (ahead) score += canLink(ahead, rot) ? 3 : -1.5;
+    const b = DIRS[((rot + 2) % 4) as Rot];
+    const behind = unitAtCell(i + b.di, j + b.dj);
+    if (behind && emits(behind) && behind.rot === rot) score += 0.75;
+    if (type === 'combiner') {
+      for (const port of [0, 1] as const) {
+        const pd = DIRS[((rot + (port === 0 ? 3 : 1)) % 4) as Rot];
+        const side = unitAtCell(i + pd.di, j + pd.dj);
+        if (side && emits(side)) score += 1.5;
+      }
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = rot;
+    }
+  }
+  return best;
+}
+
+/** Where a unit may stand: null when the cell refuses it. (Plant used to
+ *  be split into "wall plant" that could only bolt to the site's edge —
+ *  playtest hated it, and rightly: it turned every dock and combiner
+ *  into a hunt for a legal cell. Everything stands anywhere now.) */
 export function placementFor(type: UnitType, i: number, j: number, rot: Rot): Rot | null {
-  if (!cellInFloor(i, j)) return null;
-  if (!wallBound(type)) return rot;
-  return edgeInward(i, j);
+  void type;
+  return cellInFloor(i, j) ? rot : null;
 }
 
 /** Stand a unit on a cell. The catalogue and the lattice both get a vote. */

@@ -1,28 +1,37 @@
 /**
- * BuildSystem — stamping plant onto the lattice.
+ * BuildSystem — stamping plant onto the lattice, and taking it off again.
  *
- * The flange's own grammar, aimed at the floor: arm a unit type from the
- * wrist card, and its ghost rides the right controller's ray onto the
- * grid cell under it — the ARROW on the ghost is the unit's OUT face,
- * quantized from where the controller points, so a belt runs the way
- * your hand says and a maker's chute faces where you'll stand. Trigger
- * stamps it on; an occupied or off-site cell refuses with the one-hand
- * rattle. Ⓑ over standing plant unbolts in two honest steps: a unit
- * with a seated supply run gives the run up first (it telescopes home),
- * a bare unit comes off the floor.
+ * The flange's own grammar, aimed at the floor: arm a tool from the Ⓐ
+ * card and its ghost rides the right controller's ray onto the grid cell
+ * under it. Trigger stamps; an occupied or off-site cell refuses with the
+ * one-hand rattle.
+ *
+ * THREE THINGS PLAYTEST TAUGHT THIS FILE:
+ *
+ *  1. THE FACING IS OURS, NOT YOURS. A rail turns itself to feed
+ *     whatever it touches, a maker turns its chute toward a rail, a
+ *     combiner turns so its ports face the lines that would fill them
+ *     (sim.bestRot). Your aim only breaks ties. Nobody should ever have
+ *     to solve a rotation puzzle to lay a conveyor.
+ *  2. THE LINK IS DRAWN BEFORE YOU COMMIT. While the ghost stands, amber
+ *     chevrons show exactly what it will feed and what will feed it —
+ *     and a rail pointed at something with no use for parts (a maker)
+ *     simply shows no chevron. "Only attaches where it has function",
+ *     made visible.
+ *  3. DELETE IS A TOOL, NOT A SECRET. Ⓑ still unbolts, but DELETE sits
+ *     in the card beside the boxes and paints its target red.
  *
  * This system MUTATES the plant only (factory/sim.ts's doors) — meshes
- * belong to FactorySystem. Placement is armed on the FACTORY screen;
- * the headless hooks work anywhere (the floor walk stamps site crates
- * before any shift exists, which the catalogue permits by design).
+ * belong to FactorySystem.
  */
 
 import { createSystem, InputComponent } from '@iwsdk/core';
 import {
   AdditiveBlending,
   BoxGeometry,
-  CircleGeometry,
+  BufferGeometry,
   EdgesGeometry,
+  Float32BufferAttribute,
   Group,
   LineBasicMaterial,
   LineSegments,
@@ -43,35 +52,68 @@ import {
   type Cell,
 } from '../floor/grid.js';
 import {
-  WALL_BOUND,
+  bestRot,
+  canLink,
+  emits,
   placeUnit,
-  placementFor,
   removeUnit,
   retractRun,
   unitAvailable,
 } from '../factory/sim.js';
-import { plant, runSeatedAt, unitAtCell, type Rot } from '../factory/state.js';
+import { DIRS, plant, runSeatedAt, unitAtCell, type Rot } from '../factory/state.js';
 import { PointerRay } from '../ui/pointer.js';
+
+/** What the hands can hold: a kind of plant, or the wrecking bar. */
+export type BuildTool = UnitType | 'delete';
 
 /** Headless/dev hooks (wired into __tubes in main.ts). */
 export const buildView: {
   /** The cell under the reticle right now (null = no honest aim). */
   aim?: () => (Cell & { free: boolean }) | null;
-  /** Arm a type for the hologram (null disarms). The card drives this. */
-  arm?: (type: UnitType | null) => void;
-  armed?: () => UnitType | null;
+  /** Arm a tool for the hologram (null disarms). The card drives this. */
+  arm?: (tool: BuildTool | null) => void;
+  armed?: () => BuildTool | null;
   placeAt?: (i: number, j: number, type?: UnitType, rot?: Rot) => boolean;
   removeAt?: (i: number, j: number) => boolean;
   count?: () => number;
   cells?: () => Cell[];
-  /** What the live catalogue offers, and which of it is wall plant. */
-  catalogue?: () => { available: UnitType[]; wallBound: UnitType[] };
+  catalogue?: () => { available: UnitType[] };
+  /**
+   * THE HANDS' OWN PATH, headless. `aimAt` puts the reticle on a world
+   * point exactly as the ray would; `trigger` presses. Everything the
+   * controller does — auto-facing, the link law, the refusals — runs
+   * here too, so a walk can prove the game is BUILDABLE, not merely
+   * that the sim is correct. (Every brick wall playtest hit lived in
+   * this gap: the old walks called placeAt directly and never touched
+   * the UX at all.)
+   */
+  aimAt?: (x: number, z: number, handRot?: Rot) => {
+    cell: Cell;
+    placeable: boolean;
+    rot: Rot;
+    feeds: Cell | null;
+    fedBy: Cell[];
+  } | null;
+  trigger?: () => boolean;
 } = {};
 
 const _origin = new Vector3();
 const _dir = new Vector3();
 const _hit = new Vector3();
 const _c = { x: 0, z: 0 };
+const _c2 = { x: 0, z: 0 };
+
+/** A flat chevron pair, unit-scaled, pointing along +Z. */
+function chevronGeometry(): BufferGeometry {
+  const g = new BufferGeometry();
+  const v: number[] = [];
+  for (const z of [-0.4, 0.15]) {
+    v.push(-0.5, 0, z, 0.5, 0, z, 0, 0, z + 0.45);
+  }
+  g.setAttribute('position', new Float32BufferAttribute(v, 3));
+  g.computeVertexNormals();
+  return g;
+}
 
 export class BuildSystem extends createSystem({}) {
   private pointer!: PointerRay;
@@ -79,16 +121,27 @@ export class BuildSystem extends createSystem({}) {
   private ghostMat!: MeshBasicMaterial;
   private arrowMat!: MeshBasicMaterial;
   private focus!: LineSegments;
-  private armed: UnitType | null = null;
+  private focusMat!: LineBasicMaterial;
+  /** Preview chevrons: [0] what we feed, [1..] what feeds us. */
+  private links: Mesh[] = [];
+  private linkMat!: MeshBasicMaterial;
+  private armed: BuildTool | null = null;
   private clock = 0;
   private lastAim: (Cell & { free: boolean }) | null = null;
+  /** The live aim, recomputed by both the ray and the headless hook. */
+  private view: {
+    cell: Cell;
+    placeable: boolean;
+    rot: Rot;
+    feeds: Cell | null;
+    fedBy: Cell[];
+  } | null = null;
+  /** The tools' last headless aim (see buildView.aimAt). */
+  private headless: { x: number; z: number; handRot: Rot } | null = null;
 
   init(): void {
     this.pointer = new PointerRay(this.scene);
 
-    // The ghost: a bench silhouette with the OUT arrow — one shape for
-    // every type (the stamp reveals the real chassis; the ghost's job is
-    // the cell and the facing).
     this.ghostMat = new MeshBasicMaterial({
       color: 0xffa22e,
       transparent: true,
@@ -97,42 +150,57 @@ export class BuildSystem extends createSystem({}) {
       depthWrite: false,
     });
     this.arrowMat = this.ghostMat.clone();
-    this.arrowMat.opacity = 0.5;
+    this.arrowMat.opacity = 0.85;
     this.ghost = new Group();
     const { size, height, benchTop } = UNITS.crate;
     const box = new Mesh(new BoxGeometry(size, height, size), this.ghostMat);
     box.position.y = benchTop - height / 2;
     this.ghost.add(box);
-    const arrow = new Mesh(new CircleGeometry(0.05, 3), this.arrowMat);
-    arrow.rotation.x = -Math.PI / 2;
-    arrow.rotation.z = Math.PI; // point along local +Z
-    arrow.position.set(0, benchTop + 0.01, size / 2 + 0.06);
+    // THE OUT ARROW — big, lifted, unmissable. The old one was a 5 cm
+    // triangle lying on the bench top; nobody ever saw which way a box
+    // was pointing.
+    const arrow = new Mesh(chevronGeometry(), this.arrowMat);
+    arrow.scale.set(0.17, 1, 0.19);
+    arrow.position.set(0, benchTop + 0.13, size / 2 + 0.02);
     this.ghost.add(arrow);
     this.ghost.visible = false;
     this.scene.add(this.ghost);
 
-    this.focus = new LineSegments(
-      new EdgesGeometry(new BoxGeometry(1, 1, 1)),
-      new LineBasicMaterial({
-        color: 0xffa22e,
-        transparent: true,
-        opacity: 0.9,
-        blending: AdditiveBlending,
-        depthWrite: false,
-      }),
-    );
+    this.focusMat = new LineBasicMaterial({
+      color: 0xffa22e,
+      transparent: true,
+      opacity: 0.9,
+      blending: AdditiveBlending,
+      depthWrite: false,
+    });
+    this.focus = new LineSegments(new EdgesGeometry(new BoxGeometry(1, 1, 1)), this.focusMat);
     this.focus.visible = false;
     this.scene.add(this.focus);
 
+    this.linkMat = new MeshBasicMaterial({
+      color: 0xffd79a,
+      transparent: true,
+      opacity: 0.75,
+      blending: AdditiveBlending,
+      depthWrite: false,
+      side: 2,
+    });
+    const chev = chevronGeometry();
+    for (let i = 0; i < 5; i++) {
+      const m = new Mesh(chev, this.linkMat);
+      m.scale.set(0.1, 1, 0.13);
+      m.visible = false;
+      m.renderOrder = 13;
+      this.scene.add(m);
+      this.links.push(m);
+    }
+
     buildView.aim = () => (this.lastAim ? { ...this.lastAim } : null);
-    buildView.arm = (type) => {
-      this.armed = type;
+    buildView.arm = (tool) => {
+      this.armed = tool;
     };
     buildView.armed = () => this.armed;
-    buildView.placeAt = (i, j, type = 'chest', rot = 0) => {
-      const unit = placeUnit(type, i, j, rot);
-      return unit !== null;
-    };
+    buildView.placeAt = (i, j, type = 'chest', rot = 0) => placeUnit(type, i, j, rot) !== null;
     buildView.removeAt = (i, j) => {
       const unit = unitAtCell(i, j);
       if (!unit) return false;
@@ -143,10 +211,89 @@ export class BuildSystem extends createSystem({}) {
       available: (['dock', 'maker', 'belt', 'combiner', 'chest'] as UnitType[]).filter((t) =>
         unitAvailable(t),
       ),
-      wallBound: [...WALL_BOUND],
     });
     buildView.count = () => occupiedCount();
     buildView.cells = () => occupiedCells();
+    // The headless aim REMEMBERS its arguments rather than parking a
+    // view the next frame's real ray would trample: trigger() re-resolves
+    // from the same spot, so a tool presses exactly what it aimed at.
+    buildView.aimAt = (x, z, handRot = 0) => {
+      this.headless = { x, z, handRot };
+      const v = this.resolve(worldToCell(x, z), handRot);
+      return v ? { ...v } : null;
+    };
+    buildView.trigger = () => {
+      const h = this.headless;
+      if (!h) return false;
+      return this.commit(this.resolve(worldToCell(h.x, h.z), h.handRot));
+    };
+  }
+
+  /** What the tool would do at this cell — the ONE place the rules live,
+   *  shared by the ray and the headless hook. */
+  private resolve(
+    cell: Cell,
+    handRot: Rot,
+  ): { cell: Cell; placeable: boolean; rot: Rot; feeds: Cell | null; fedBy: Cell[] } | null {
+    const occupied = unitAtCell(cell.i, cell.j);
+    const inFloor = cellInFloor(cell.i, cell.j);
+    if (this.armed === 'delete') {
+      return { cell, placeable: occupied !== undefined, rot: handRot, feeds: null, fedBy: [] };
+    }
+    if (!this.armed) return { cell, placeable: false, rot: handRot, feeds: null, fedBy: [] };
+    const rot = bestRot(this.armed, cell.i, cell.j, handRot);
+    const placeable = inFloor && occupied === undefined && unitAvailable(this.armed);
+
+    // What would this piece feed, and what would feed it?
+    let feeds: Cell | null = null;
+    const emitter = this.armed === 'maker' || this.armed === 'combiner' || this.armed === 'belt';
+    if (emitter) {
+      const d = DIRS[rot];
+      const ahead = unitAtCell(cell.i + d.di, cell.j + d.dj);
+      if (ahead && canLink(ahead, rot)) feeds = { i: ahead.i, j: ahead.j };
+    }
+    const fedBy: Cell[] = [];
+    const takesParts =
+      this.armed === 'belt' ||
+      this.armed === 'dock' ||
+      this.armed === 'chest' ||
+      this.armed === 'combiner';
+    if (takesParts) {
+      for (let r = 0; r < 4; r++) {
+        const d = DIRS[r as Rot];
+        const n = unitAtCell(cell.i + d.di, cell.j + d.dj);
+        if (!n || !emits(n)) continue;
+        // It feeds us only if it POINTS at us…
+        const nd = DIRS[n.rot];
+        if (n.i + nd.di !== cell.i || n.j + nd.dj !== cell.j) continue;
+        // …and we have a use for what arrives.
+        if (this.armed === 'combiner') {
+          const enterFrom = ((n.rot + 2) % 4) as Rot;
+          const p0 = ((rot + 3) % 4) as Rot;
+          const p1 = ((rot + 1) % 4) as Rot;
+          if (enterFrom !== p0 && enterFrom !== p1) continue;
+        }
+        fedBy.push({ i: n.i, j: n.j });
+      }
+    }
+    return { cell, placeable, rot, feeds, fedBy };
+  }
+
+  /** Press. Returns true when something actually happened. */
+  private commit(v: ReturnType<BuildSystem['resolve']>): boolean {
+    if (!v || !this.armed) return false;
+    if (this.armed === 'delete') {
+      const unit = unitAtCell(v.cell.i, v.cell.j);
+      if (!unit) return false;
+      removeUnit(unit);
+      sfx.boltSpin();
+      sfx.droopSettle();
+      return true;
+    }
+    if (!v.placeable) return false;
+    const ok = placeUnit(this.armed, v.cell.i, v.cell.j, v.rot) !== null;
+    if (ok) sfx.mountThunk();
+    return ok;
   }
 
   update(delta: number): void {
@@ -177,98 +324,112 @@ export class BuildSystem extends createSystem({}) {
         cell = worldToCell(_hit.x, _hit.z);
       }
     }
-    const occupied = cell ? unitAtCell(cell.i, cell.j) : undefined;
-    const inFloor = cell !== null && cellInFloor(cell.i, cell.j);
-    const free = inFloor && occupied === undefined;
-    this.lastAim = cell ? { ...cell, free } : null;
-
-    // Facing: the controller's yaw, quantized to the lattice — except for
-    // WALL PLANT (the dock, the combiner), which only stands on the
-    // site's edge and takes that edge's inward facing. Sweep the ray
-    // across open floor with a dock armed and no ghost appears: the
-    // refusal reads before the trigger ever does.
     const yaw = Math.atan2(_dir.x, _dir.z);
     const handRot = ((((2 - Math.round(yaw / (Math.PI / 2))) % 4) + 4) % 4) as Rot;
-    const facing =
-      this.armed && cell ? placementFor(this.armed, cell.i, cell.j, handRot) : null;
-    const rot = facing ?? handRot;
-    const placeable = free && facing !== null;
+    this.view = cell ? this.resolve(cell, handRot) : null;
 
-    // The ghost stands only when a type is armed and the cell is honest.
-    if (this.armed && cell && placeable) {
+    const occupied = cell ? unitAtCell(cell.i, cell.j) : undefined;
+    this.lastAim = cell
+      ? { ...cell, free: cellInFloor(cell.i, cell.j) && occupied === undefined }
+      : null;
+
+    const deleting = this.armed === 'delete';
+    const showGhost = Boolean(this.view?.placeable) && !deleting;
+
+    if (showGhost && cell && this.view) {
       cellCenter(cell.i, cell.j, _c);
       this.ghost.position.set(_c.x, 0, _c.z);
-      const d = [
-        { di: 0, dj: -1 },
-        { di: 1, dj: 0 },
-        { di: 0, dj: 1 },
-        { di: -1, dj: 0 },
-      ][rot];
+      const d = DIRS[this.view.rot];
       this.ghost.rotation.y = Math.atan2(d.di, d.dj);
       this.ghost.visible = true;
       const breathe = 0.5 + 0.5 * Math.sin(this.clock * 3.2);
       this.ghostMat.opacity = 0.12 + 0.08 * breathe;
+      this.arrowMat.opacity = 0.6 + 0.3 * breathe;
     } else {
       this.ghost.visible = false;
     }
 
-    // The focus frame marks standing plant under the reticle (Ⓑ's mark).
+    // The focus frame: amber over standing plant, RED under the bar.
     if (cell && occupied !== undefined) {
       const s = UNITS.crate.size + 0.03;
       cellCenter(cell.i, cell.j, _c);
       this.focus.position.set(_c.x, UNITS.crate.benchTop - UNITS.crate.height / 2, _c.z);
       this.focus.scale.set(s, UNITS.crate.height + 0.03, s);
+      this.focusMat.color.setHex(deleting ? 0xff4d3d : 0xffa22e);
       this.focus.visible = true;
     } else {
       this.focus.visible = false;
     }
 
-    const aiming = Boolean(this.armed && cell) || occupied !== undefined;
+    this.showLinks(cell);
+
+    const aiming = Boolean(this.armed && cell);
     this.pointer.update(
       delta,
       _origin,
       cell ? _hit : null,
-      aiming && (placeable || occupied !== undefined),
+      aiming && Boolean(this.view?.placeable),
     );
 
     if (pad?.getButtonDown(InputComponent.Trigger) && this.armed && cell) {
-      if (placeable && placeUnit(this.armed, cell.i, cell.j, rot)) {
+      if (this.commit(this.view)) {
         this.pointer.click();
-        sfx.mountThunk();
-        buzz(this.world, 'right', 0.6, 50);
+        buzz(this.world, 'right', deleting ? 0.4 : 0.6, deleting ? 40 : 50);
       } else {
         sfx.oneHandRattle();
         buzz(this.world, 'right', 0.25, 40);
       }
     }
+    // Ⓑ still unbolts whatever it points at, tool or no tool.
     if (pad?.getButtonDown(InputComponent.B_Button) && cell && occupied !== undefined) {
       const unit = unitAtCell(cell.i, cell.j);
       if (unit) {
         const run = runSeatedAt(unit.id);
-        if (run) {
-          // First press gives the supply back; the unit stands.
-          retractRun(run);
-          sfx.boltSpin();
-        } else {
-          removeUnit(unit);
-          sfx.boltSpin();
-        }
+        if (run) retractRun(run);
+        else removeUnit(unit);
+        sfx.boltSpin();
         buzz(this.world, 'right', 0.4, 40);
       }
+    }
+  }
+
+  /** Draw the chevrons for what the ghost would join. */
+  private showLinks(cell: Cell | null): void {
+    for (const m of this.links) m.visible = false;
+    const v = this.view;
+    if (!cell || !v || !v.placeable || this.armed === 'delete') return;
+    cellCenter(cell.i, cell.j, _c);
+    let n = 0;
+    const draw = (from: { x: number; z: number }, to: { x: number; z: number }): void => {
+      const m = this.links[n++];
+      if (!m) return;
+      m.position.set((from.x + to.x) / 2, UNITS.railTop + 0.11, (from.z + to.z) / 2);
+      m.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
+      m.visible = true;
+    };
+    if (v.feeds) {
+      cellCenter(v.feeds.i, v.feeds.j, _c2);
+      draw(_c, _c2);
+    }
+    for (const src of v.fedBy) {
+      cellCenter(src.i, src.j, _c2);
+      draw(_c2, _c);
     }
   }
 
   private hideAim(): void {
     this.ghost.visible = false;
     this.focus.visible = false;
+    for (const m of this.links) m.visible = false;
     this.pointer.hide();
     this.lastAim = null;
+    this.view = null;
   }
 }
 
 /** The catalogue's availability check, for the card's button states. */
 export function typeAvailable(type: UnitType): boolean {
-  if (plant.orderIndex < 0) return type === 'chest';
+  if (plant.mode === 'idle') return type === 'chest';
   if (type === 'dock' && plant.units.some((u) => u.type === 'dock')) return false;
   return plant.unitsAvailable.includes(type);
 }

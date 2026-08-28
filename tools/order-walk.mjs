@@ -1,27 +1,26 @@
 #!/usr/bin/env node
 /**
- * THE WORK BOOK — all five sheets, filled headlessly.
+ * THE SHOP — one continuous session, built BY HAND, headlessly.
  *
  *   npm run dev
  *   node tools/order-walk.mjs
  *
- * Boots the emulator, clocks in, forces the fallback room, and works the
- * factory's whole book through the REAL modules: the ORDERS tab, the
- * fluid draught, the maker BELTING its gears home, a second line, the
- * wall-bound combiner fed from both sides, a maker re-fed from a
- * different feed entirely (the swivel gland's hardest case), the chest,
- * the bank paying a bill — then FREE PLAY.
+ * The point of this walk changed after playtest. The old one called
+ * placeUnit directly and proved the SIM was correct while the game was
+ * unplayable — every brick wall lived in the gap between the two. This
+ * one builds the first chain through `build.aimAt` / `build.trigger`:
+ * the same resolve-and-commit the controller runs, auto-facing, link
+ * law, refusals and all. If a human can't build it, this fails.
  *
- * The floor is the fallback room's default: cells i ∈ [−5, 4],
- * j ∈ [−4, 3]. Feeds: amber far (x 0), cyan left, violet right.
- *
- * Exits non-zero if any of it fails.
+ * Floor: the fallback room's default, cells i ∈ [−5, 4], j ∈ [−4, 3].
+ * Feeds: amber far (x 0), cyan left, violet right.
  */
 
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const base = process.env.PREVIEW_BASE ?? 'http://localhost:5173';
+const CELL = 0.35;
 const fails = [];
 const check = (ok, what) => {
   console.log(`  ${ok ? '✓' : '✗'} ${what}`);
@@ -49,40 +48,35 @@ await page.waitForFunction(() => window.__tubes.site.wallsReady, { timeout: 5000
 
 const state = () => page.evaluate(() => window.__tubes.plant.state());
 const glands = (side) => page.evaluate((s) => window.__tubes.plant.glands(s), side);
-const place = (i, j, type, rot) =>
-  page.evaluate(({ i: ii, j: jj, t, r }) => window.__tubes.build.placeAt(ii, jj, t, r), {
-    i,
-    j,
-    t: type,
-    r: rot,
-  });
-const removeAt = (i, j) =>
-  page.evaluate(({ i: ii, j: jj }) => window.__tubes.build.removeAt(ii, jj), { i, j });
 const setScale = (s) => page.evaluate((v) => window.__tubes.plant.timeScale(v), s);
-/** A filled sheet posts the NEXT one in the same frame the tenth part
- *  lands (count resets with it), so the walk watches the ORDER advance. */
-const waitOrder = (idx, timeout = 90000) =>
+const waitOrder = (idx, timeout = 120000) =>
   page.waitForFunction((want) => window.__tubes.plant.state().order === want, idx, { timeout });
+const cellXZ = (i, j) => ({ x: (i + 0.5) * CELL, z: (j + 0.5) * CELL });
 
-/** Lay a run of rails: [[i, j, rot], …]. */
-async function rails(list) {
-  let laid = 0;
-  for (const [i, j, rot] of list) if (await place(i, j, 'belt', rot)) laid++;
-  return laid;
+/* ── THE HANDS' OWN PATH ─────────────────────────────────────────────── */
+
+const arm = (tool) => page.evaluate((t) => window.__tubes.build.arm(t), tool);
+/** Aim at a cell and report what the game says it would do. */
+const aim = (i, j, handRot = 0) =>
+  page.evaluate(
+    ({ x, z, r }) => window.__tubes.build.aimAt(x, z, r),
+    { ...cellXZ(i, j), r: handRot },
+  );
+const pull = () => page.evaluate(() => window.__tubes.build.trigger());
+/** Arm → aim → pull, the way a player does it. Returns the aim report. */
+async function handPlace(tool, i, j, handRot = 0) {
+  await arm(tool);
+  const view = await aim(i, j, handRot);
+  const ok = await pull();
+  return { view, ok };
 }
+const unitsAt = () => page.evaluate(() => window.__tubes.plant.state().units);
 
-/** Haul a feed's tube onto a gland: grab, stride the driven hands in,
- *  let the swivel and the magnet do the rest. */
 async function seatRun(side, glandUnit, label = '') {
   const target = (await glands(side)).find((g) => g.unit === glandUnit);
-  if (!target) {
-    check(false, `a gland stands ready on unit ${glandUnit}`);
-    return;
-  }
-  const grabbed = await page.evaluate((s) => window.__tubes.plant.grab(s), side);
-  if (!grabbed) {
-    check(false, `${side} collar taken`);
-    return;
+  if (!target) return check(false, `a gland stands ready on unit ${glandUnit}`);
+  if (!(await page.evaluate((s) => window.__tubes.plant.grab(s), side))) {
+    return check(false, `${side} collar taken`);
   }
   const seat = {
     x: target.x + target.nx * 0.1,
@@ -91,26 +85,32 @@ async function seatRun(side, glandUnit, label = '') {
   };
   const head = (await state()).runs.find((r) => r.side === side).head;
   for (let step = 1; step <= 6; step++) {
-    const k = step / 6;
+    const t = step / 6;
     await page.evaluate(
-      ({ from, to, t }) =>
+      ({ from, to, k }) =>
         window.__tubes.plant.dragTo(
-          from.x + (to.x - from.x) * t,
-          from.y + (to.y - from.y) * t,
-          from.z + (to.z - from.z) * t,
+          from.x + (to.x - from.x) * k,
+          from.y + (to.y - from.y) * k,
+          from.z + (to.z - from.z) * k,
         ),
-      { from: head, to: seat, t: k },
+      { from: head, to: seat, k: t },
     );
     await page.waitForTimeout(200);
   }
-  await page.waitForFunction(
-    ({ s, u }) => {
-      const run = window.__tubes.plant.state().runs.find((r) => r.side === s);
-      return run && (run.phase === 'seated' || run.phase === 'flowing') && run.target === u;
-    },
-    { s: side, u: glandUnit },
-    { timeout: 10000 },
-  );
+  try {
+    await page.waitForFunction(
+      ({ s, u }) => {
+        const r = window.__tubes.plant.state().runs.find((x) => x.side === s);
+        return r && (r.phase === 'seated' || r.phase === 'flowing') && r.target === u;
+      },
+      { s: side, u: glandUnit },
+      { timeout: 10000 },
+    );
+  } catch {
+    const r = (await state()).runs.find((x) => x.side === side);
+    await page.evaluate(() => window.__tubes.plant.release());
+    return check(false, `${side} should seat into ${glandUnit}, landed on ${r?.target} (${r?.phase})`);
+  }
   await page.evaluate(() => window.__tubes.plant.release());
   await page.waitForFunction(
     (s) => window.__tubes.plant.state().runs.find((r) => r.side === s)?.phase === 'flowing',
@@ -119,169 +119,199 @@ async function seatRun(side, glandUnit, label = '') {
   );
   check(true, `${side} seats into unit ${glandUnit}${label ? ` — ${label}` : ''}`);
 }
+const unseat = (u) => page.evaluate((x) => window.__tubes.plant.unseat(x), u);
 
-async function unseat(unitId) {
-  const ok = await page.evaluate((u) => window.__tubes.plant.unseat(u), unitId);
-  check(ok, `unit ${unitId} gives the supply back`);
-  await page.waitForTimeout(900); // the tube telescopes home
-}
+/* ── the shop ────────────────────────────────────────────────────────── */
 
-console.log('SHEET 1 — FIRST DRAUGHT');
+console.log('OPEN THE SHOP');
 await page.evaluate(() => window.__tubes.menu.act('tab:orders'));
 const offered = await page.evaluate(() => window.__tubes.menu.boardButtons());
-check(offered.includes('start-order'), 'the ORDERS tab offers the book');
-check(offered.includes('free-play'), 'and FREE PLAY beside it');
+check(offered.includes('start-order'), 'the board offers one entrance');
+check(!offered.includes('free-play'), 'and no separate free-play mode to choose');
 await page.evaluate(() => window.__tubes.menu.act('start-order'));
 await page.waitForFunction(() => window.__tubes.site.screen === 'factory', undefined, { timeout: 5000 });
 let s = await state();
-check(s.mode === 'order' && s.order === 0 && s.goal === 10, `the first sheet is live (×${s.goal})`);
-check(s.feeds.far === true && !s.feeds.left, 'the amber feed woke alone');
-
-// THE WALL LAW: the dock is wall plant — open floor refuses it.
-check((await place(0, 0, 'dock', 0)) === false, 'the dock refuses open floor');
-check(await place(4, 1, 'dock', 0), 'the dock bolts to the site edge');
-const dockId = (await glands('far')).find((g) => g.type === 'dock').unit;
-await seatRun('far', dockId, 'the swivel took it side-on');
-await setScale(10);
-await waitOrder(1);
-check(true, 'ten draughts drunk — sheet 2 posts into the same shift');
-
-console.log('SHEET 2 — PIECE WORK');
-await setScale(6);
-s = await state();
-check(s.units === 1, 'the plant persisted (the dock stands on)');
-const cat2 = await page.evaluate(() => window.__tubes.build.catalogue());
+check(s.mode === 'shop', 'one continuous shop, not a mode');
+const cat = await page.evaluate(() => window.__tubes.build.catalogue());
 check(
-  cat2.available.includes('maker') && cat2.available.includes('belt'),
-  `the maker AND the rails arrive together (${cat2.available.join(', ')})`,
+  ['dock', 'maker', 'belt'].every((t) => cat.available.includes(t)),
+  `a real chain is buildable from minute one (${cat.available.join(', ')})`,
 );
-check(await place(1, -3, 'maker', 2), 'the gear maker stands');
-const laid = await rails([
-  [1, -2, 1], [2, -2, 1], [3, -2, 1],
-  [4, -2, 2], [4, -1, 2], [4, 0, 2],
-]);
-check(laid === 6, `rails run maker → dock (${laid} pieces)`);
-await unseat(dockId);
+
+console.log('BUILDING BY HAND');
+// Everything below goes through aim + trigger — the controller's path.
+check((await handPlace('dock', 4, 1)).ok, 'the dock stands where the hand points');
+check((await handPlace('dock', 0, 0)).ok === false, 'a second dock is refused');
+
+// The draught first, with the floor still empty — then build the line
+// while it pours. (Play order matters here: the magnet takes the
+// NEAREST free gland, so a maker standing between the spout and the
+// dock would quite reasonably catch the tube instead.)
+const dockId = (await glands('far')).find((g) => g.type === 'dock').unit;
+await seatRun('far', dockId, 'the collar swivels to meet it');
+await setScale(10);
+
+// THE AUTO-FACING, the whole point: lay rails BACKWARD from the dock and
+// every piece turns itself to feed the one before it. No rotation puzzle.
+const railCells = [
+  [4, 0],
+  [4, -1],
+  [4, -2],
+  [3, -2],
+  [2, -2],
+  [1, -2],
+];
+let autoFaced = 0;
+for (const [i, j] of railCells) {
+  const { view, ok } = await handPlace('belt', i, j, 0);
+  if (ok && view && view.feeds) autoFaced++;
+}
+check(autoFaced === railCells.length, `every rail turned itself to connect (${autoFaced}/6)`);
+
+// And the maker, laid last, turns its chute onto the line.
+const maker = await handPlace('maker', 1, -3, 0);
+check(maker.ok, 'the maker stands');
+check(Boolean(maker.view?.feeds), 'and faces its chute onto the rail without being told');
+const placed = await unitsAt();
+void placed;
+
+// THE CONNECTION LAW, seen before you commit: a rail aimed into a maker
+// shows no link, because a maker drinks fluid and has no use for parts.
+await arm('belt');
+const intoMaker = await aim(1, -4, 0);
+check(
+  intoMaker !== null && intoMaker.feeds === null,
+  'a rail pointed at a maker offers no connection',
+);
+await arm(null);
+
+await waitOrder(1);
+s = await state();
+check(s.mode === 'shop', 'goal 1 posted WITHOUT leaving the floor');
+check(s.units >= 8, `and the plant you built is still standing (${s.units} units)`);
+
+console.log('GOAL 2 — the first thing you make');
+await setScale(6);
 const makerId = (await glands('far')).find((g) => g.type === 'maker').unit;
+await unseat(dockId);
+await page.waitForTimeout(900);
 await seatRun('far', makerId, 'amber feeds the maker');
-await waitOrder(2, 120000);
-check(true, 'ten gears BELTED home — nothing hand-carried');
-
-console.log('SHEET 3 — THE LINE');
-s = await state();
-check(s.feeds.left === true, 'the cyan feed woke with the sheet');
-check(await place(-4, -3, 'maker', 2), 'the cell maker stands');
-const laid3 = await rails([[-4, -2, 1], [-3, -2, 1], [-2, -2, 1], [-1, -2, 1], [0, -2, 1]]);
-check(laid3 === 5, `a second lane merges into the first (${laid3} pieces)`);
-const cellMakerId = (await glands('left')).find((g) => g.type === 'maker' && !g.seated).unit;
-await seatRun('left', cellMakerId, 'cyan from the far side of the floor');
-await setScale(12);
-
-// THE BANK IS FOR SOMETHING: gears keep arriving while the sheet wants
-// cells, so they bank — and a bill gets paid off the SUPPLY page.
-await page.waitForFunction(() => (window.__tubes.plant.state().bank.gear ?? 0) >= 4, undefined, {
-  timeout: 120000,
+await page.waitForFunction(() => window.__tubes.plant.state().parts > 0, undefined, {
+  timeout: 60000,
 });
-const before = (await state()).bank.gear ?? 0;
-await page.evaluate(() => window.__tubes.menu.act('buy:long-reach'));
-s = await state();
-check(s.upgrades.includes('long-reach'), 'LONG REACH fitted off the SUPPLY page');
-check((s.bank.gear ?? 0) === before - 4, `the bill came out of the bank (${before} → ${s.bank.gear ?? 0})`);
-await waitOrder(3, 180000);
-check(true, 'ten cells rode home while the gears banked');
-
-console.log('SHEET 4 — FIRST FITTING');
-await setScale(8);
-// The combiner is wall plant too — and it takes the wall's facing, not
-// the hand's, so its two ports always sit along the tape.
-check((await place(0, -1, 'combiner', 0)) === false, 'the combiner refuses open floor');
-check(await place(-2, -4, 'combiner', 0), 'the combiner bolts to the far tape');
-const combiner = await page.evaluate(() =>
-  window.__tubes.plant.state().units,
-);
-void combiner;
-// Re-plumb both makers to feed its ports along the wall.
-await removeAt(1, -3);
-check(await place(1, -3, 'maker', 0), 'the gear maker turns to face the wall run');
-await rails([[1, -4, 3], [0, -4, 3], [-1, -4, 3]]);
-await removeAt(-4, -3);
-check(await place(-4, -3, 'maker', 0), 'the cell maker turns too');
-await rails([[-4, -4, 1], [-3, -4, 1]]);
-check((await rails([[-2, -3, 2]])) === 1, 'the combiner chutes onto the main lane');
-const gearMaker2 = (await glands('far')).find((g) => g.type === 'maker' && g.x > 0).unit;
-const cellMaker2 = (await glands('left')).find((g) => g.type === 'maker' && g.x < -0.9).unit;
-await seatRun('far', gearMaker2, 're-seated after the turn');
-await seatRun('left', cellMaker2);
+check(true, 'parts come OUT of the maker and ride the rail');
 await setScale(12);
-await waitOrder(4, 300000);
-check(true, 'ten pumps fitted — two wall lanes became one');
+await waitOrder(2, 180000);
+check(true, 'ten gears delivered');
 
-console.log('SHEET 5 — NIGHT SHIFT');
+console.log('THE REST OF THE BOOK');
+// A second lane, laid backward off the first so every piece self-faces.
+await setScale(8);
+await handPlace('belt', 0, -2, 0);
+await handPlace('belt', -1, -2, 0);
+const cellMaker = await handPlace('maker', -1, -3, 0);
+check(Boolean(cellMaker.view?.feeds), 'the second maker faces its own lane unprompted');
+const cellMakerId = (await glands('left')).find((g) => g.type === 'maker' && !g.seated).unit;
+await seatRun('left', cellMakerId, 'a second lane');
+await setScale(14);
+await waitOrder(3, 240000);
+check(true, 'ten cells — two lanes, one dock');
+
+// THE COMBINER takes its two feeds head-on (its ports face each other),
+// so it drops into the seam between the lanes: gears arrive from the
+// east, cells from the west, pumps leave northward.
+await setScale(6);
+await page.evaluate(() => window.__tubes.build.removeAt(0, -2));
+const comb = await handPlace('combiner', 0, -2, 2);
+check(comb.ok, 'the combiner stands mid-floor (no wall rule left)');
+check((comb.view?.fedBy.length ?? 0) >= 1, 'and shows what already feeds it');
+// Turn the gear lane's last rail around to feed the near port…
+await page.evaluate(() => window.__tubes.build.removeAt(1, -2));
+const turned = await handPlace('belt', 1, -2, 3);
+check(turned.view?.rot === 3, 'a rail re-laid beside it turns to feed the port');
+// …and rail the combiner's output to the dock, backward as ever.
+for (const [i, j] of [
+  [3, -1],
+  [2, -1],
+  [1, -1],
+  [0, -1],
+]) {
+  await handPlace('belt', i, j, 1);
+}
+await setScale(14);
+await waitOrder(4, 300000);
+check(true, 'ten pumps fitted — two lanes became one');
+
+console.log('THE BOOK RUNS OUT');
 await setScale(6);
 s = await state();
-check(s.feeds.right === true, 'the violet feed woke with the sheet');
-check(await place(2, 1, 'chest', 0), 'the chest stands (free plant, mid-floor)');
-// THE SWIVEL'S HARDEST CASE: the same maker, re-fed from a feed on the
-// opposite side of the room. Its gland swings right round to meet it.
-await unseat(gearMaker2);
-await seatRun('right', gearMaker2, 'violet takes the gear maker — gland swung right round');
+check(s.feeds.right === true, 'the violet feed woke for the last sheet');
+await handPlace('chest', 2, 1, 0);
+await unseat(makerId);
+await page.waitForTimeout(900);
+await seatRun('right', makerId, 'violet re-feeds the same box');
 
-// The worst frame, shot while the whole floor is actually RUNNING (the
-// book's last sheet clears the plant when it closes, so a shot after
-// the ceremony catches an empty room).
-await page.waitForTimeout(1200);
+// A look at a running floor before the last sheet lands.
 const info = await page.evaluate(() => window.__tubes.info());
-check(info && info.calls < 320, `draw budget holds at full shift (${info?.calls} calls)`);
+check(info && info.calls < 340, `draw budget holds (${info?.calls} calls)`);
 mkdirSync('shots', { recursive: true });
 await page.evaluate(() => window.__tubes.rig(0, 1.35, 0));
 await page.waitForTimeout(400);
 await page.screenshot({ path: 'shots/order-walk.png' });
-await page.evaluate(() => window.__tubes.rig(-1.1, -0.4, -0.6));
+await page.evaluate(() => window.__tubes.rig(0.9, 0.75, 0));
 await page.waitForTimeout(400);
 await page.screenshot({ path: 'shots/order-walk-lines.png' });
 await page.evaluate(() => window.__tubes.rig(0, 0, 0));
 console.log('  · shots/order-walk.png · shots/order-walk-lines.png');
 
-await setScale(14);
-await page.waitForFunction(() => window.__tubes.site.screen === 'ceremony', undefined, {
+await setScale(16);
+await page.waitForFunction(() => window.__tubes.plant.state().order === -1, undefined, {
   timeout: 420000,
 });
-check(true, 'ten lamps — the book closed, and the room gets its moment');
-await page.waitForFunction(() => window.__tubes.site.screen === 'board', undefined, { timeout: 15000 });
-
-console.log('FREE PLAY');
-await page.evaluate(() => {
-  window.__tubes.menu.act('tab:orders');
-  window.__tubes.menu.act('free-play');
-});
-await page.waitForFunction(() => window.__tubes.site.screen === 'factory', undefined, { timeout: 5000 });
 s = await state();
-check(s.mode === 'free', 'FREE PLAY opens the shop');
-check(s.order === -1 && s.goal === 0, 'nobody is asking for ten of anything');
+check(s.mode === 'shop', 'the last goal does NOT close the shop');
 check(
-  s.feeds.far === true && s.feeds.left === true && s.feeds.right === true,
-  'every feed is awake at once',
+  s.feeds.far && s.feeds.left && s.feeds.right,
+  'every feed is open now — free play, without ever choosing it',
 );
-const catF = await page.evaluate(() => window.__tubes.build.catalogue());
-check(catF.available.length === 5, `the whole catalogue is open (${catF.available.join(', ')})`);
+const catEnd = await page.evaluate(() => window.__tubes.build.catalogue());
+check(catEnd.available.length === 5, `the whole catalogue is open (${catEnd.available.join(', ')})`);
+check((await state()).units > 5, 'and the factory you built is untouched');
+
+console.log('THE Ⓐ CARD');
+await page.evaluate(() => window.__tubes.menu.setPause(true));
+await page.waitForTimeout(300);
+let cardBtns = await page.evaluate(() => window.__tubes.menu.cardButtons());
 check(
-  catF.wallBound.join(',') === 'dock,combiner',
-  `and the wall law still names its plant (${catF.wallBound.join(', ')})`,
+  ['card:build', 'card:goals', 'card:supply'].every((b) => cardBtns.includes(b)),
+  `the card carries its three pages (${cardBtns.join(', ')})`,
 );
-check(await place(0, 0, 'maker', 2), 'a maker stands anywhere it likes');
-check(await place(-5, 0, 'combiner', 0), 'the combiner still wants a wall');
-const freeMaker = (await glands('far')).find((g) => g.type === 'maker').unit;
-await seatRun('far', freeMaker, 'free play pours like any shift');
-await setScale(12);
-const banked0 = Object.values((await state()).bank).reduce((a, b) => a + b, 0);
-await page.waitForFunction(
-  (was) =>
-    Object.values(window.__tubes.plant.state().bank).reduce((a, b) => a + b, 0) > was ||
-    window.__tubes.plant.state().parts > 0,
-  banked0,
-  { timeout: 60000 },
-);
-check(true, 'free play makes parts with no sheet in sight');
+check(cardBtns.includes('build:delete'), 'DELETE sits in the catalogue, not in folklore');
+await page.evaluate(() => window.__tubes.menu.act('card:goals'));
+await page.waitForTimeout(200);
+cardBtns = await page.evaluate(() => window.__tubes.menu.cardButtons());
+check(cardBtns.filter((b) => /^goal:\d/.test(b)).length === 5, 'GOALS lists the whole book');
+await page.evaluate(() => window.__tubes.menu.act('goal:2'));
+await page.waitForTimeout(200);
+cardBtns = await page.evaluate(() => window.__tubes.menu.cardButtons());
+check(cardBtns.includes('goal:back'), 'and a sheet opens up for a closer read');
+await page.evaluate(() => {
+  window.__tubes.menu.act('goal:back');
+  window.__tubes.menu.act('card:build');
+  window.__tubes.menu.setPause(false);
+});
+
+console.log('THE WRECKING BAR');
+const before = (await state()).units;
+await arm('delete');
+const del = await aim(2, 1, 0);
+check(del?.placeable === true, 'DELETE marks the plant under the reticle');
+check(await pull(), 'and the trigger takes it out');
+check((await state()).units === before - 1, `one unit gone (${before} → ${before - 1})`);
+const nothing = await aim(-5, 3, 0);
+check(nothing?.placeable === false, 'empty floor has nothing to delete');
+await arm(null);
+
 await page.evaluate(() => window.__tubes.abandonFactory());
 await page.waitForFunction(() => window.__tubes.site.screen === 'board', undefined, { timeout: 5000 });
 check((await state()).mode === 'idle', 'DOWN TOOLS closes the shop');
@@ -291,4 +321,4 @@ if (fails.length) {
   console.error(`\n${fails.length} FAILED:\n - ${fails.join('\n - ')}`);
   process.exit(1);
 }
-console.log('\nTHE WHOLE BOOK FILLED.');
+console.log('\nTHE SHOP WORKS BY HAND.');
