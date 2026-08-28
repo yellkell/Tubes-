@@ -13,6 +13,7 @@
 import {
   AdditiveBlending,
   BoxGeometry,
+  CanvasTexture,
   CircleGeometry,
   CylinderGeometry,
   DoubleSide,
@@ -24,8 +25,11 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  PlaneGeometry,
   Quaternion,
+  RepeatWrapping,
   RingGeometry,
+  SRGBColorSpace,
   TorusGeometry,
   Vector3,
 } from 'three';
@@ -145,6 +149,39 @@ export function buildGland(): GlandRefs {
   return { group, guideMat, glowMat, iris, seatOffset: 0.08 };
 }
 
+/* ── the belt tread (shared, scrolling) ─────────────────────────────────── */
+
+let _treadTex: CanvasTexture | null = null;
+let _treadMat: MeshBasicMaterial | null = null;
+const TREAD_SLAT = 0.06; // metres of belt per texture repeat
+
+function treadMaterial(): MeshBasicMaterial {
+  if (_treadMat) return _treadMat;
+  const canvas = document.createElement('canvas');
+  canvas.width = 32;
+  canvas.height = 32;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#17120e';
+  g.fillRect(0, 0, 32, 32);
+  g.fillStyle = '#2a231b';
+  g.fillRect(0, 0, 32, 7); // the slat
+  g.fillStyle = '#0d0a08';
+  g.fillRect(0, 7, 32, 2); // its shadow line
+  _treadTex = new CanvasTexture(canvas);
+  _treadTex.wrapT = RepeatWrapping;
+  _treadTex.colorSpace = SRGBColorSpace;
+  _treadMat = new MeshBasicMaterial({ map: _treadTex, toneMapped: false });
+  return _treadMat;
+}
+
+/** EVERY belt shares one tread texture, so one offset scroll moves the
+ *  whole floor's slats — each piece's rotation carries its direction.
+ *  FactorySystem feeds this the sim's own (scaled) speed. */
+export function tickBeltTread(delta: number, speed: number): void {
+  if (!_treadTex) return;
+  _treadTex.offset.y = (_treadTex.offset.y + (delta * speed) / TREAD_SLAT) % 1;
+}
+
 /* ── units ──────────────────────────────────────────────────────────────── */
 
 export interface UnitRefs {
@@ -152,6 +189,11 @@ export interface UnitRefs {
   gland: GlandRefs | null;
   /** Maker/combiner: the craft lamp FactorySystem pulses. */
   lampMat: MeshBasicMaterial | null;
+  /** The working part — the maker's piston, the combiner's clamp —
+   *  FactorySystem bobs it while a craft runs. */
+  anim: { mesh: Mesh; baseY: number; travel: number } | null;
+  /** The dock's delivery halo — breathes, and flashes when one lands. */
+  halo: MeshBasicMaterial | null;
 }
 
 function chuteTray(group: Group): void {
@@ -161,7 +203,7 @@ function chuteTray(group: Group): void {
   group.add(tray);
 }
 
-function craftLamp(group: Group): MeshBasicMaterial {
+function craftLamp(group: Group, y: number): MeshBasicMaterial {
   const lampMat = new MeshBasicMaterial({
     color: 0xffa22e,
     transparent: true,
@@ -171,81 +213,158 @@ function craftLamp(group: Group): MeshBasicMaterial {
   });
   const lamp = new Mesh(cylGeo(), lampMat);
   lamp.scale.set(0.02, 0.01, 0.02);
-  lamp.position.set(0, UNITS.crate.benchTop + 0.005, 0);
+  lamp.position.set(0, y, 0);
   group.add(lamp);
   return lampMat;
 }
 
-/** All builders face OUT along local +Z; FactorySystem rotates per rot. */
+function unitLeg(group: Group, top: number, radius = UNITS.crate.legRadius): void {
+  const leg = new Mesh(cylGeo(), ironMat);
+  leg.scale.set(radius, top, radius);
+  leg.position.y = top / 2;
+  group.add(leg);
+}
+
+/**
+ * All builders face OUT along local +Z; FactorySystem rotates per rot.
+ * EVERY ROLE ITS OWN SILHOUETTE — readable from across the room, the way
+ * the lines are: the MAKER is a drum with a working piston (something is
+ * being formed in there), the COMBINER is twin-lobed under one clamp
+ * (two things meet), the CHEST is a banded crate (things keep), and the
+ * DOCK is the round pedestal with the amber mouth (things LEAVE here).
+ */
 export function buildUnit(type: UnitType): UnitRefs {
   const group = new Group();
+  const { benchTop, size } = UNITS.crate;
   let gland: GlandRefs | null = null;
   let lampMat: MeshBasicMaterial | null = null;
+  let anim: UnitRefs['anim'] = null;
+  let halo: MeshBasicMaterial | null = null;
 
   if (type === 'dock') {
-    const box = bench(group, 0.42);
-    void box;
-    // The hopper mouth: an open ring on the lid — parts go IN here.
+    // THE DOCK: a round pedestal with a flared amber mouth — the one
+    // place parts LEAVE the floor. The halo breathes; a delivery flashes
+    // it (the count itself lives on the Ⓐ card, not in the room).
+    unitLeg(group, 0.45, 0.045);
+    const drum = new Mesh(new CylinderGeometry(1, 1, 1, 12), ironMat);
+    drum.scale.set(0.15, 0.4, 0.15);
+    drum.position.y = 0.65;
+    group.add(drum);
     const mouth = new Mesh(torusGeo(), ironMat);
     mouth.rotation.x = Math.PI / 2;
-    mouth.scale.setScalar(0.1);
-    mouth.position.y = UNITS.crate.benchTop + 0.012;
+    mouth.scale.setScalar(0.115);
+    mouth.position.y = benchTop + 0.012;
     group.add(mouth);
+    const throatDisc = new Mesh(discGeo(), irisMat);
+    throatDisc.rotation.x = -Math.PI / 2;
+    throatDisc.scale.setScalar(0.095);
+    throatDisc.position.y = benchTop + 0.004;
+    group.add(throatDisc);
+    halo = new MeshBasicMaterial({
+      color: 0xffa22e,
+      transparent: true,
+      opacity: 0.25,
+      blending: AdditiveBlending,
+      depthWrite: false,
+      side: DoubleSide,
+    });
+    const ring = new Mesh(ringGeo(), halo);
+    ring.rotation.x = -Math.PI / 2;
+    ring.scale.setScalar(0.14);
+    ring.position.y = benchTop + 0.02;
+    ring.renderOrder = 12;
+    group.add(ring);
     gland = buildGland();
   } else if (type === 'maker') {
-    bench(group);
+    // THE MAKER: a solidifier drum — feedstock in the back, a piston
+    // working on top, stamped parts out the front.
+    unitLeg(group, 0.55);
+    const drum = new Mesh(new CylinderGeometry(1, 1, 1, 20), ironMat);
+    drum.scale.set(0.135, 0.3, 0.135);
+    drum.position.y = 0.7;
+    group.add(drum);
+    for (const y of [0.57, 0.83]) {
+      const band = new Mesh(torusGeo(), hubMat);
+      band.rotation.x = Math.PI / 2;
+      band.scale.setScalar(0.138);
+      band.position.y = y;
+      group.add(band);
+    }
+    const piston = new Mesh(cylGeo(), hubMat);
+    piston.scale.set(0.05, 0.06, 0.05);
+    piston.position.y = benchTop + 0.03;
+    group.add(piston);
+    anim = { mesh: piston, baseY: benchTop + 0.03, travel: 0.028 };
     chuteTray(group);
-    lampMat = craftLamp(group);
+    lampMat = craftLamp(group, benchTop + 0.062);
     gland = buildGland();
   } else if (type === 'combiner') {
-    bench(group, 0.34);
-    chuteTray(group);
-    lampMat = craftLamp(group);
-    // Port trays on the two sides.
+    // THE COMBINER: twin lobes under one clamp — two parts walk in the
+    // sides and one deeper part leaves the front.
+    unitLeg(group, 0.61);
     for (const side of [-1, 1]) {
+      const lobe = new Mesh(boxGeo(), ironMat);
+      lobe.scale.set(0.128, 0.24, 0.24);
+      lobe.position.set(side * 0.0775, benchTop - 0.12, 0);
+      group.add(lobe);
+      const frame = new LineSegments(boxEdges(), edgeMat);
+      frame.scale.copy(lobe.scale);
+      frame.position.copy(lobe.position);
+      group.add(frame);
       const tray = new Mesh(boxGeo(), railMat);
       tray.scale.set(0.16, 0.012, 0.16);
-      tray.position.set(side * (UNITS.crate.size / 2 + 0.05), UNITS.crate.benchTop + 0.006, 0);
+      tray.position.set(side * (size / 2 + 0.05), benchTop + 0.006, 0);
       group.add(tray);
     }
+    const clamp = new Mesh(boxGeo(), hubMat);
+    clamp.scale.set(0.3, 0.04, 0.11);
+    clamp.position.y = benchTop + 0.024;
+    group.add(clamp);
+    anim = { mesh: clamp, baseY: benchTop + 0.024, travel: -0.02 };
+    chuteTray(group);
+    lampMat = craftLamp(group, benchTop + 0.05);
   } else if (type === 'belt') {
-    // A rail piece: two side skids at rail height on one slim leg,
-    // chevrons pointing the way.
-    const leg = new Mesh(cylGeo(), railMat);
-    leg.scale.set(0.014, UNITS.railTop, 0.014);
-    leg.position.y = UNITS.railTop / 2;
-    group.add(leg);
+    // THE RAIL: floating — two slim side rails and a slatted TREAD that
+    // visibly runs (one shared scrolling texture, rotation = direction).
     for (const side of [-1, 1]) {
-      const skid = new Mesh(boxGeo(), railMat);
-      skid.scale.set(0.03, 0.02, 0.35);
-      skid.position.set(side * 0.075, UNITS.railTop, 0);
-      group.add(skid);
+      const rail = new Mesh(boxGeo(), railMat);
+      rail.scale.set(0.024, 0.02, 0.35);
+      rail.position.set(side * 0.068, UNITS.railTop, 0);
+      group.add(rail);
     }
-    for (let c = 0; c < 2; c++) {
-      const chev = new Mesh(discGeo(), chevronMat);
-      chev.rotation.x = -Math.PI / 2;
-      chev.scale.setScalar(0.03);
-      chev.position.set(0, UNITS.railTop - 0.004, -0.08 + c * 0.16);
-      group.add(chev);
-    }
+    const tread = new Mesh(new PlaneGeometry(0.114, 0.34), treadMaterial());
+    tread.rotation.x = -Math.PI / 2;
+    tread.position.y = UNITS.railTop + 0.002;
+    group.add(tread);
+    const chev = new Mesh(discGeo(), chevronMat);
+    chev.rotation.x = -Math.PI / 2;
+    chev.scale.setScalar(0.028);
+    chev.position.set(0, UNITS.railTop + 0.006, 0.13);
+    group.add(chev);
   } else {
-    // chest — the phase-0 crate, grown an open rim.
+    // THE CHEST: the banded crate — things keep here.
     bench(group);
+    for (const y of [0.62, 0.72]) {
+      const band = new Mesh(boxGeo(), hubMat);
+      band.scale.set(size + 0.006, 0.012, size + 0.006);
+      band.position.y = y;
+      group.add(band);
+    }
     const rim = new Mesh(torusGeo(), ironMat);
     rim.rotation.x = Math.PI / 2;
     rim.scale.setScalar(0.11);
-    rim.position.y = UNITS.crate.benchTop + 0.01;
+    rim.position.y = benchTop + 0.01;
     group.add(rim);
   }
 
   if (gland) {
     // On the BACK face (local −Z), facing backward — where the tube
     // arrives from.
-    gland.group.position.set(0, UNITS.glandHeight, -UNITS.crate.size / 2 - 0.01);
+    gland.group.position.set(0, UNITS.glandHeight, -size / 2 - 0.01);
     gland.group.rotation.y = Math.PI;
     group.add(gland.group);
   }
-  return { group, gland, lampMat };
+  return { group, gland, lampMat, anim, halo };
 }
 
 /* ── the feeds ──────────────────────────────────────────────────────────── */

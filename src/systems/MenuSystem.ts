@@ -1059,14 +1059,15 @@ export class MenuSystem extends createSystem({}) {
         g.fillStyle = banked > 0 ? UI.dim : UI.faint;
         g.fillText(`bank · ${banked}`, 150, 118);
         if (spec) {
+          // THE GOAL lives here now — the room floats nothing.
           const target = this.targetOf(spec);
           g.textAlign = 'right';
-          g.font = font(700, 34);
+          g.font = font(700, 46);
           g.fillStyle = UI.accent;
-          g.fillText(`${plant.count} / ${spec.goal}`, cw - 40, 114);
-          g.font = font(500, 21);
-          g.fillStyle = UI.faint;
-          g.fillText(target.name, cw - 40, 142);
+          g.fillText(`${plant.count} / ${spec.goal}`, cw - 40, 112);
+          g.font = font(600, 22);
+          g.fillStyle = UI.dim;
+          g.fillText(target.name, cw - 40, 144);
         }
 
         if (this.cardMode === 'supply') {

@@ -178,7 +178,7 @@ to the factory design:
 | Typed lines with full identity (metal, light, pour, voice) | `config.ts` LINES, `tube/build.ts` | **The raw materials.** AMBER / CYAN / VIOLET feedstock = MAINS / COOLANT / VOLT, colour → item |
 | The pour (arc-length flow front, one unbroken column) | `materials/flow.ts`, `systems/FlowSystem.ts` | A seated supply run pours *continuously* — a live supply line reads as exactly what it is |
 | Placement grammar (hologram on ray, clamp-to-legal, stamp) | `systems/PlacementSystem.ts` | Generalised from wall mounts to floor-grid placement of boxes/belts |
-| Board + Ⓐ job card, panel kit, pointer lasers | `systems/MenuSystem.ts`, `ui/*` | The board becomes the order sheet; the card becomes the **wrist catalogue** |
+| Board + Ⓐ job card, panel kit, pointer lasers | `systems/MenuSystem.ts`, `ui/*` | The board becomes the order sheet; the card becomes the **Ⓐ shift menu** |
 | Jobs ladder, unlocks, best times, seeds | `config.ts` JOBS, `game/progress.ts`, `game/rng.ts` | Orders ladder, the bank, seeded layouts |
 | Synth sound kit + per-line detuned hums | `audio/sfx.ts` | The factory soundscape — more lines running = richer room |
 | Headless tool discipline (`__tubes` hook, job-walk, preview-shot) | `tools/*` | `factory-walk.mjs`: set floor, build a chain, assert 10 delivered — no mocks |
@@ -292,7 +292,7 @@ work", 0.7–2.05 m) and nothing ever asks your knees. Parts riding rails
 at bench height also sit exactly where passthrough looks best — mid-room,
 against your real furniture, not lost in carpet.
 
-### The units (crafted from the wrist, placed on the grid)
+### The units (crafted from the Ⓐ card, placed on the grid)
 
 Placement uses a **soft grid**: 0.35 m cells aligned to the floor
 rectangle. Holograms snap; occupied cells refuse with a buzz; the nearest
@@ -302,13 +302,20 @@ free cell inside reach is always offered (doorways, not keyholes).
 | --- | --- | --- |
 | **MAKER box** | 1 tube gland in · 1 rail out | Solidifies feedstock into the colour's base part every few seconds — gulp, stamp, eject |
 | **COMBINER box** | 2 rail in · 1 rail out | Two different parts in, one deeper part out; *the* complexity machine (the Assembler law — and per law 5, arity 2 is our ceiling for the campaign) |
-| **BELT rail** | 1 in · 1 out per piece | Straight/corner pieces; parts ride visibly; speed is upgradable |
+| **BELT rail** | 1 in · 1 out per piece | Floating rail pieces — no legs, just two skids and a slatted TREAD that visibly runs (one shared scrolling texture; rotation carries direction); speed is upgradable |
 | **SPLIT / MERGE tee** | 1→2 / 2→1 | Routing pressure valves; unlock exactly when their absence hurts (law 7) |
 | **CHEST crate** | 1 in (+ hand access) | Buffers 12 parts against rate mismatch; also the bin you grab from to hand-carry |
-| **THE DOCK** | 1 tube gland · 1 rail hopper · hand hopper | The delivery point — player-placed pedestal, one per floor. Drinks fluids, swallows parts, **wears the order counter** (law 2) and banks the surplus |
+| **THE DOCK** | 1 tube gland · 1 rail hopper · hand hopper | The delivery point — a round player-placed pedestal with an amber mouth, one per floor. Drinks fluids, swallows parts, **flashes its halo as each one lands**, banks the surplus. The COUNT itself rides the Ⓐ card — a chosen deviation from law 2: the room floats nothing |
 
 Boxes and rails are **free to craft** (law 6: never charge for trying).
 The bank buys **upgrades** only.
+
+**Every role its own silhouette** (shipped): the MAKER is a solidifier
+drum with a working piston, the COMBINER twin lobes under one pressing
+clamp, the CHEST a banded crate, the DOCK the round pedestal with the
+amber mouth. Machines tell you what they are from across the room — and
+tell you when they're WORKING: pistons bob, clamps press, lamps pulse,
+the dock's halo flashes as parts land.
 
 ### Items: colour → part, part + part → deeper part
 
@@ -391,7 +398,7 @@ strongest factory economy is **no abstract currency at all**. So:
 
 - The dock counts deliveries against the sheet first; **everything beyond
   the sheet banks** — a per-item tally kept in progress storage, shown on
-  the wrist card. A running factory is never wasted.
+  the Ⓐ card. A running factory is never wasted.
 - **Upgrades are bills of banked parts,** exactly like milestones — which
   keeps old lines alive (law 8) and makes overproducing *specific* items
   a decision, not noise. **Shipped:** the shift card's SUPPLY page lists
@@ -406,19 +413,23 @@ strongest factory economy is **no abstract currency at all**. So:
 | DEEP CRATES ✅ | chest 12 → 24 | 6 CHIP + 4 LAMP |
 | SECOND SPOUT (per feed) | +1 tube run, colour-dialable | phase 3 — the big physical one |
 
-### THE CATALOGUE — the wrist menu
+### THE CATALOGUE — the Ⓐ menu
 
-Mid-shift there is no board. **Ⓐ (or Ⓧ) raises the catalogue on your
-wrist** — the job card, promoted: a small panel-kit card floating above
-the left forearm, laser-clickable with either hand, three tabs:
+Mid-shift there is no board — and no hardware on your arm either (the
+wrist-button idea retired; one press beats one gadget). **Ⓐ raises the
+shift card dead ahead, below the eye line** — the job card, promoted:
+laser-clickable with either hand, and **the sheet's goal lives on it**:
+the big amber `3 / 10` and its target ride the card's header, because
+the room floats nothing — the dock just flashes its halo as parts land.
+Two pages under that header:
 
-- **BUILD** — maker / combiner / rail / tee / chest, with footprints;
-  select and the hologram rides your ray to the grid (trigger stamps;
-  grip over standing plant picks it back up).
-- **UPGRADES** — the bills above, with have/need counts per part (the
-  panel kit's value chips already exist for exactly this).
-- **ORDER** — the sheet's live count (7/10 PUMPS), the bank, chain status
-  dots, and DOWN TOOLS.
+- **BUILD** — dock / maker / rail / combiner / chest; pick one and the
+  card drops, the hologram rides your ray to the grid (trigger stamps,
+  Ⓑ unbolts).
+- **SUPPLY** — the bills above: pay one and the fitting is yours for
+  good, live immediately.
+
+The clock, the bank tally, BACK TO IT and DOWN TOOLS ride the card too.
 
 Raising it pauses the hands, never the machine — a factory mid-hum keeps
 humming, because the fiction doesn't know you stopped (the job-card law,
@@ -427,9 +438,10 @@ inherited verbatim).
 ### The payoff economy
 
 TUBES' aesthetic engine is reused as the factory's reward channel: every
-craft is a thunk + glow gulp; every delivery a tick and a small bloom at
-the dock (law 12: the counter lives ON the dock); every completed sheet a
-chord; the tenth sheet, the full ceremony. The per-line detuned hums
+craft is a thunk + glow gulp (and a piston or clamp you can SEE working);
+every delivery a tick and a flash of the dock's amber halo — the count
+itself rides the Ⓐ card; every completed sheet a chord; the tenth sheet,
+the full ceremony. The per-line detuned hums
 scale with live plant, so *the room itself* tells you how much factory
 you own. Satisfaction stays the win condition; the timer stays garnish.
 
@@ -481,7 +493,8 @@ src/systems/FactorySystem.ts  runs sim, owns unit visuals + instanced
   furniture) as well as wall sockets; the run's far pose comes from the
   box, not the picker. The pull itself doesn't change.
 - `systems/MenuSystem.ts`: board gains the ORDERS ladder + the bank; the
-  job card becomes the wrist catalogue (same panel kit, new anchor).
+  job card becomes the Ⓐ shift menu (same panel kit, same anchor —
+  dead ahead, below the eye line).
 - `game/progress.ts`: orders unlocked, best times, **the bank**, bought
   upgrades — still localStorage, still no server.
 - `tools/factory-walk.mjs`: the new job-walk — set floor, wake feed,
@@ -523,7 +536,7 @@ Five phases, each ending green on `npm run typecheck` + a headless walk.
   predetermined socket, every free GLAND is a candidate and the nearest
   one inside the snap window takes the head); continuous pours + per-run
   hums; makers drink colour and stamp parts; the dock with its gland,
-  hopper and live counter plate; grip-carry (you are the first
+  hopper and delivery halo (the count rides the Ⓐ card); grip-carry (you are the first
   conveyor); Ⓑ unbolts in two steps (run first, unit second).
 - **Phase 2 — LOGISTICS.** ✅ **SHIPPED.** Rails with visible parts,
   chute push, combiner ports fed from both sides, the chest, the ORDERS

@@ -22,26 +22,13 @@
  */
 
 import { InputComponent, createSystem } from '@iwsdk/core';
-import {
-  CanvasTexture,
-  DoubleSide,
-  Group,
-  InstancedMesh,
-  Matrix4,
-  Mesh,
-  MeshBasicMaterial,
-  PlaneGeometry,
-  Quaternion,
-  SRGBColorSpace,
-  Vector3,
-} from 'three';
-import { FACTORY, FLOW, ITEMS, LINES, SEAT, TUBE, UNITS, type ItemId } from '../config.js';
+import { Group, InstancedMesh, Matrix4, Quaternion, Vector3 } from 'three';
+import { FACTORY, FLOW, ITEMS, LINES, SEAT, TUBE, type ItemId } from '../config.js';
 import * as sfx from '../audio/sfx.js';
 import { buzz } from '../game/haptics.js';
 import { orderComplete } from '../game/flow.js';
-import { chestBonus, ownedUpgrades, reachBonus } from '../game/progress.js';
+import { chestBonus, ownedUpgrades, railFactor, reachBonus } from '../game/progress.js';
 import { site } from '../game/state.js';
-import { font } from '../ui/fonts.js';
 import { cellCenter } from '../floor/grid.js';
 import { floorLayout, type FloorSide } from '../floor/plan.js';
 import {
@@ -56,7 +43,14 @@ import {
   type Part,
 } from '../factory/state.js';
 import { deliverPart, glandPose, partPose, retractRun, simTick } from '../factory/sim.js';
-import { buildFeed, buildUnit, partKit, type FeedRefs, type UnitRefs } from '../factory/units.js';
+import {
+  buildFeed,
+  buildUnit,
+  partKit,
+  tickBeltTread,
+  type FeedRefs,
+  type UnitRefs,
+} from '../factory/units.js';
 import { buildCollar, buildSegment, type CollarRefs, type SegmentRefs } from '../tube/build.js';
 import {
   bendControl,
@@ -133,7 +127,6 @@ const _gn = new Vector3();
 const _c = { x: 0, z: 0 };
 const _m4 = new Matrix4();
 const _m4b = new Matrix4();
-const _cam = new Vector3();
 
 interface RunHw {
   root: Group;
@@ -165,8 +158,8 @@ export class FactorySystem extends createSystem({}) {
    *  not drop it between the tool's two calls. */
   private carriedDriven: Partial<Record<'left' | 'right', boolean>> = {};
   private driven = { active: false, side: 'far' as FloorSide, pos: new Vector3() };
-  private plate: { mesh: Mesh; tex: CanvasTexture; g: CanvasRenderingContext2D; key: string } | null =
-    null;
+  /** The dock halo's delivery flash (decays in the dressing tick). */
+  private dockFlash = 0;
 
   init(): void {
     factoryView.state = () => {
@@ -272,11 +265,12 @@ export class FactorySystem extends createSystem({}) {
     const dt = delta * plant.timeScale;
     simTick(dt);
     plant.elapsedMs += dt * 1000;
+    // Every tread on the floor runs at the sim's own pace.
+    tickBeltTread(dt, FACTORY.railSpeed * railFactor());
 
     this.drainEvents();
     this.renderParts();
     this.tickUnitDressing(delta);
-    this.tickPlate();
   }
 
   /* ── structures: feeds, unit meshes, run hardware ─────────────────────── */
@@ -305,10 +299,6 @@ export class FactorySystem extends createSystem({}) {
       this.partLocals.clear();
       this.carried = {};
       this.driven.active = false;
-      if (this.plate) {
-        this.plate.mesh.removeFromParent();
-        this.plate = null;
-      }
       sfx.stopAllHums();
       return;
     }
@@ -953,8 +943,10 @@ export class FactorySystem extends createSystem({}) {
         sfx.segmentClick(3);
       } else if (ev.kind === 'deliver') {
         sfx.sectionArrive(1);
+        this.dockFlash = 1;
       } else if (ev.kind === 'bank') {
         sfx.uiHover();
+        this.dockFlash = 0.6;
       } else if (ev.kind === 'feed-wake') {
         sfx.wallKnock();
         sfx.socketWake();
@@ -1005,80 +997,29 @@ export class FactorySystem extends createSystem({}) {
     }
   }
 
+  /** The working tells: craft lamps pulse, the maker's piston bobs, the
+   *  combiner's clamp presses, and the dock's halo breathes — flashing
+   *  when a delivery lands. (The COUNT lives on the Ⓐ card, not in the
+   *  room — the halo only says "it went in".) */
   private tickUnitDressing(delta: number): void {
-    void delta;
+    this.dockFlash = Math.max(0, this.dockFlash - delta * 2.2);
+    const breathe = 0.5 + 0.5 * Math.sin(this.clock * 2.2);
     for (const unit of plant.units) {
       const refs = this.unitRefs.get(unit.id);
-      if (!refs?.lampMat) continue;
-      // The craft lamp: dark idle, pulsing while a craft runs.
-      if (unit.craftT >= 0) {
-        refs.lampMat.opacity = 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(this.clock * 6));
-      } else {
-        refs.lampMat.opacity = 0.12;
+      if (!refs) continue;
+      const crafting = unit.craftT >= 0;
+      if (refs.lampMat) {
+        refs.lampMat.opacity = crafting
+          ? 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(this.clock * 6))
+          : 0.12;
+      }
+      if (refs.anim) {
+        const stroke = crafting ? (0.5 + 0.5 * Math.sin(this.clock * 7)) * refs.anim.travel : 0;
+        refs.anim.mesh.position.y = refs.anim.baseY + stroke;
+      }
+      if (refs.halo) {
+        refs.halo.opacity = 0.16 + 0.14 * breathe + 0.55 * this.dockFlash;
       }
     }
-  }
-
-  private tickPlate(): void {
-    const dock = plant.units.find((u) => u.type === 'dock');
-    if (!dock) {
-      if (this.plate) this.plate.mesh.visible = false;
-      return;
-    }
-    if (!this.plate) {
-      const canvas = document.createElement('canvas');
-      canvas.width = 512;
-      canvas.height = 224;
-      const g = canvas.getContext('2d')!;
-      const tex = new CanvasTexture(canvas);
-      tex.colorSpace = SRGBColorSpace;
-      const mesh = new Mesh(
-        new PlaneGeometry(0.46, 0.2),
-        new MeshBasicMaterial({ map: tex, transparent: true, side: DoubleSide, depthWrite: false }),
-      );
-      mesh.renderOrder = 13;
-      this.scene.add(mesh);
-      this.plate = { mesh, tex, g, key: '' };
-    }
-    const plate = this.plate;
-    plate.mesh.visible = true;
-    cellCenter(dock.i, dock.j, _c);
-    plate.mesh.position.set(_c.x, UNITS.crate.benchTop + 0.5, _c.z);
-    this.camera.getWorldPosition(_cam);
-    plate.mesh.rotation.set(0, Math.atan2(_cam.x - _c.x, _cam.z - _c.z), 0);
-
-    const spec = orderSpec();
-    const targetName =
-      spec === null
-        ? ''
-        : spec.target.kind === 'item'
-          ? ITEMS[spec.target.item].name
-          : `${spec.target.line.toUpperCase()} DRAUGHTS`;
-    const key = `${plant.orderIndex}|${plant.count}|${spec?.goal ?? 0}|${targetName}`;
-    if (key === plate.key) return;
-    plate.key = key;
-    const g = plate.g;
-    const W = 512;
-    const H = 224;
-    g.clearRect(0, 0, W, H);
-    g.fillStyle = 'rgba(10,8,10,0.82)';
-    g.beginPath();
-    g.roundRect(6, 6, W - 12, H - 12, 18);
-    g.fill();
-    g.strokeStyle = 'rgba(255,255,255,0.16)';
-    g.lineWidth = 3;
-    g.stroke();
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.font = font(600, 34);
-    g.fillStyle = 'rgba(242,236,226,0.6)';
-    g.fillText(spec?.name ?? '', W / 2, 52);
-    g.font = font(700, 92);
-    g.fillStyle = '#ffa22e';
-    g.fillText(`${plant.count} / ${spec?.goal ?? 0}`, W / 2, 122);
-    g.font = font(600, 33);
-    g.fillStyle = 'rgba(242,236,226,0.85)';
-    g.fillText(targetName, W / 2, 184);
-    plate.tex.needsUpdate = true;
   }
 }
