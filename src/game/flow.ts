@@ -19,7 +19,7 @@ import {
   upgradeOwned,
 } from './progress.js';
 import { buildRuns, site } from './state.js';
-import { clearPlant, orderSpec, plant, postOrder } from '../factory/state.js';
+import { clearPlant, openFreeplay, orderSpec, plant, postOrder } from '../factory/state.js';
 import * as sfx from '../audio/sfx.js';
 
 /** Clock in on a job. `seed` is for the tools — a layout replayed exactly. */
@@ -84,6 +84,18 @@ export function startOrder(index: number): void {
   site.paused = false;
   site.screen = 'factory';
   postOrder(index);
+  site.generation++;
+}
+
+/** FREE PLAY: the shop, open, with nobody asking for ten of anything.
+ *  Every feed awake, every box in the catalogue, deliveries all banking. */
+export function startFreeplay(): void {
+  if (site.screen !== 'board') return;
+  clearPlant();
+  plant.bank = loadBank();
+  site.paused = false;
+  site.screen = 'factory';
+  openFreeplay();
   site.generation++;
 }
 

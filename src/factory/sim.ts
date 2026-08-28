@@ -22,7 +22,7 @@ import {
   type ItemId,
   type UnitType,
 } from '../config.js';
-import { CELL, cellCenter, cellInFloor, occupy, vacate } from '../floor/grid.js';
+import { CELL, cellCenter, cellInFloor, edgeInward, occupy, vacate } from '../floor/grid.js';
 import { chestBonus, craftFactor, railFactor } from '../game/progress.js';
 import {
   DIRS,
@@ -76,22 +76,42 @@ export function portDir(unit: Unit, port: 0 | 1): Rot {
   return ((unit.rot + (port === 0 ? 3 : 1)) % 4) as Rot;
 }
 
-/** The unit's gland (tube intake): centre + outward normal, on the face
- *  opposite OUT. Makers and the dock have one. */
-export function glandPose(unit: Unit, point: Vector3, normal: Vector3): void {
+/**
+ * THE GLAND SWIVELS. A unit's tube intake is a collar that ORBITS its
+ * drum: hand it the point the tube is coming from and it swings round
+ * to meet it, so a supply run is never refused for arriving on the
+ * wrong side. (It used to be welded to the unit's back face, which made
+ * every hookup a guessing game about which way the box was facing —
+ * the whole "doorways, not keyholes" law, broken. Now the door turns to
+ * face you.) With no `toward`, it rests on the back face.
+ */
+export function glandPose(unit: Unit, point: Vector3, normal: Vector3, toward?: Vector3): void {
   cellCenter(unit.i, unit.j, _c);
-  const back = DIRS[((unit.rot + 2) % 4) as Rot];
+  let nx: number;
+  let nz: number;
+  const dx = toward ? toward.x - _c.x : 0;
+  const dz = toward ? toward.z - _c.z : 0;
+  const len = Math.hypot(dx, dz);
+  if (toward && len > 1e-3) {
+    nx = dx / len;
+    nz = dz / len;
+  } else {
+    const back = DIRS[((unit.rot + 2) % 4) as Rot];
+    nx = back.di;
+    nz = back.dj;
+  }
   const reach = UNITS.crate.size / 2;
-  point.set(_c.x + back.di * reach, UNITS.glandHeight, _c.z + back.dj * reach);
-  normal.set(back.di, 0, back.dj);
+  point.set(_c.x + nx * reach, UNITS.glandHeight, _c.z + nz * reach);
+  normal.set(nx, 0, nz);
 }
 
 /* ── mutations (BuildSystem / FactorySystem / the walk drive these) ─────── */
 
 export function unitAvailable(type: UnitType): boolean {
   // No shift live = site dressing (the floor walk stamps test crates
-  // before any sheet is posted); a live shift obeys its catalogue.
-  if (plant.orderIndex < 0) return true;
+  // before any sheet is posted); a shift obeys its catalogue — and FREE
+  // PLAY's catalogue is simply everything.
+  if (plant.mode === 'idle') return true;
   return plant.unitsAvailable.includes(type);
 }
 
@@ -99,11 +119,31 @@ export function dockUnit(): Unit | undefined {
   return plant.units.find((u) => u.type === 'dock');
 }
 
+/** WALL PLANT: these bolt to the site's edge and face inward. The dock
+ *  is where the works reaches into the room, and the combiner wants its
+ *  two feed sides clear — both read wrong marooned mid-floor. */
+export const WALL_BOUND: readonly UnitType[] = ['dock', 'combiner'];
+
+export function wallBound(type: UnitType): boolean {
+  return WALL_BOUND.includes(type);
+}
+
+/** Where a unit of this type may stand, and facing which way: null when
+ *  the cell refuses it. Wall plant takes the edge's inward direction and
+ *  ignores the hand's aim; free plant keeps whatever it was given. */
+export function placementFor(type: UnitType, i: number, j: number, rot: Rot): Rot | null {
+  if (!cellInFloor(i, j)) return null;
+  if (!wallBound(type)) return rot;
+  return edgeInward(i, j);
+}
+
 /** Stand a unit on a cell. The catalogue and the lattice both get a vote. */
 export function placeUnit(type: UnitType, i: number, j: number, rot: Rot): Unit | null {
   if (!unitAvailable(type)) return null;
   if (type === 'dock' && dockUnit()) return null;
-  if (!cellInFloor(i, j)) return null;
+  const facing = placementFor(type, i, j, rot);
+  if (facing === null) return null;
+  rot = facing;
   const id = plant.nextUnit;
   if (!occupy(i, j, id)) return null;
   plant.nextUnit++;

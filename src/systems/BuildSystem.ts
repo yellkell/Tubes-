@@ -42,7 +42,14 @@ import {
   worldToCell,
   type Cell,
 } from '../floor/grid.js';
-import { placeUnit, removeUnit, retractRun } from '../factory/sim.js';
+import {
+  WALL_BOUND,
+  placeUnit,
+  placementFor,
+  removeUnit,
+  retractRun,
+  unitAvailable,
+} from '../factory/sim.js';
 import { plant, runSeatedAt, unitAtCell, type Rot } from '../factory/state.js';
 import { PointerRay } from '../ui/pointer.js';
 
@@ -57,6 +64,8 @@ export const buildView: {
   removeAt?: (i: number, j: number) => boolean;
   count?: () => number;
   cells?: () => Cell[];
+  /** What the live catalogue offers, and which of it is wall plant. */
+  catalogue?: () => { available: UnitType[]; wallBound: UnitType[] };
 } = {};
 
 const _origin = new Vector3();
@@ -130,6 +139,12 @@ export class BuildSystem extends createSystem({}) {
       removeUnit(unit);
       return true;
     };
+    buildView.catalogue = () => ({
+      available: (['dock', 'maker', 'belt', 'combiner', 'chest'] as UnitType[]).filter((t) =>
+        unitAvailable(t),
+      ),
+      wallBound: [...WALL_BOUND],
+    });
     buildView.count = () => occupiedCount();
     buildView.cells = () => occupiedCells();
   }
@@ -163,16 +178,24 @@ export class BuildSystem extends createSystem({}) {
       }
     }
     const occupied = cell ? unitAtCell(cell.i, cell.j) : undefined;
-    const legal = cell !== null && cellInFloor(cell.i, cell.j);
-    const free = legal && occupied === undefined;
+    const inFloor = cell !== null && cellInFloor(cell.i, cell.j);
+    const free = inFloor && occupied === undefined;
     this.lastAim = cell ? { ...cell, free } : null;
 
-    // Facing: the controller's yaw, quantized to the lattice.
+    // Facing: the controller's yaw, quantized to the lattice — except for
+    // WALL PLANT (the dock, the combiner), which only stands on the
+    // site's edge and takes that edge's inward facing. Sweep the ray
+    // across open floor with a dock armed and no ghost appears: the
+    // refusal reads before the trigger ever does.
     const yaw = Math.atan2(_dir.x, _dir.z);
-    const rot = (((2 - Math.round(yaw / (Math.PI / 2))) % 4) + 4) % 4 as Rot;
+    const handRot = ((((2 - Math.round(yaw / (Math.PI / 2))) % 4) + 4) % 4) as Rot;
+    const facing =
+      this.armed && cell ? placementFor(this.armed, cell.i, cell.j, handRot) : null;
+    const rot = facing ?? handRot;
+    const placeable = free && facing !== null;
 
     // The ghost stands only when a type is armed and the cell is honest.
-    if (this.armed && cell && free) {
+    if (this.armed && cell && placeable) {
       cellCenter(cell.i, cell.j, _c);
       this.ghost.position.set(_c.x, 0, _c.z);
       const d = [
@@ -201,10 +224,15 @@ export class BuildSystem extends createSystem({}) {
     }
 
     const aiming = Boolean(this.armed && cell) || occupied !== undefined;
-    this.pointer.update(delta, _origin, cell ? _hit : null, aiming && (free || occupied !== undefined));
+    this.pointer.update(
+      delta,
+      _origin,
+      cell ? _hit : null,
+      aiming && (placeable || occupied !== undefined),
+    );
 
     if (pad?.getButtonDown(InputComponent.Trigger) && this.armed && cell) {
-      if (free && placeUnit(this.armed, cell.i, cell.j, rot)) {
+      if (placeable && placeUnit(this.armed, cell.i, cell.j, rot)) {
         this.pointer.click();
         sfx.mountThunk();
         buzz(this.world, 'right', 0.6, 50);

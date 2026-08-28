@@ -442,6 +442,11 @@ export const FACTORY = {
   chestCap: 12,
   /** An unbolted supply run telescopes home over this long. */
   retractS: 0.5,
+  /** The gland's catch radius. Wider than a wall socket's (SEAT.snapRadius)
+   *  because a bench gland is a SWIVEL — it turns to meet the tube — so
+   *  the only thing left to ask of the player is "get it near", and we
+   *  ask that generously. */
+  seatRadius: 0.42,
   /** Hand-carry: how close a grip must be to take a loose part, and how
    *  close a drop must be to a hopper/port/chest to land IN it. */
   partReach: 0.35,
@@ -610,18 +615,18 @@ export const ORDERS: OrderSpec[] = [
   {
     id: 'piece-work',
     name: 'PIECE WORK',
-    brief: 'The MAKER box: feed it amber and it stamps GEARS. Carry each one to the dock in your fist — you are the first conveyor.',
+    brief: 'The MAKER box stamps GEARS out of amber — and RAILS to carry them. Feed the maker, run rails from its chute to the dock, and watch the first part ride home.',
     target: { kind: 'item', item: 'gear' },
     goal: 10,
-    wakes: { units: ['maker'] },
+    wakes: { units: ['maker', 'belt'] },
   },
   {
     id: 'the-line',
     name: 'THE LINE',
-    brief: 'The cyan feed wakes, and so do the RAILS. Make CELLS and belt them home — the room runs without you for the first time.',
+    brief: 'The cyan feed wakes. A second maker, a second line — CELLS this time, and two chains sharing one dock.',
     target: { kind: 'item', item: 'cell' },
     goal: 10,
-    wakes: { feeds: ['coolant'], units: ['belt'] },
+    wakes: { feeds: ['coolant'] },
   },
   {
     id: 'first-fitting',

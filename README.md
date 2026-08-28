@@ -215,9 +215,11 @@ design, and the phased build. Phases 0–2 are in (plus the bank's BILLS
 from phase 3): mark the floor out in hazard tape — it comes down once
 you're set up — and the board's ORDERS tab opens a five-sheet work book:
 feeds on the floor's sides, the two-handed pull re-aimed at bench
-machines, rails, the combiner, the chest, the dock counting every
-delivery, and the bank spending its surplus on fittings from the shift
-card's SUPPLY page.
+machines whose intakes SWIVEL to meet the tube, rails, the wall-bound
+combiner, the chest, the dock counting every delivery, and the bank
+spending its surplus on fittings from the shift card's SUPPLY page.
+There is a FREE PLAY mode beside the book: every feed, every box, no
+one asking for ten.
 
 ## Checks
 

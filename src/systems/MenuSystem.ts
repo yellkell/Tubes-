@@ -45,6 +45,7 @@ import {
   abandonShift,
   buyUpgrade,
   enterFloorSetup,
+  startFreeplay,
   startJob,
   startOrder,
 } from '../game/flow.js';
@@ -311,6 +312,8 @@ export class MenuSystem extends createSystem({}) {
       if (i < ordersUnlocked()) this.orderSel = i;
     } else if (id === 'start-order') {
       startOrder(this.orderSel);
+    } else if (id === 'free-play') {
+      startFreeplay();
     } else if (id.startsWith('build:')) {
       // Arm the hologram and put the card away — the hands do the rest.
       buildView.arm?.(id.slice(6) as UnitType);
@@ -367,6 +370,7 @@ export class MenuSystem extends createSystem({}) {
       this.orderSel,
       ordersUnlocked(),
       ORDERS.map((o) => orderBestMs(o.id) ?? 0).join(','),
+      plant.mode,
       plant.orderIndex,
       plant.count,
       bankTotal(),
@@ -653,17 +657,31 @@ export class MenuSystem extends createSystem({}) {
     this.orderSel = Math.min(this.orderSel, ORDERS.length - 1);
     const sel = ORDERS[this.orderSel];
     const locked = this.orderSel >= unlocked;
-    buttons.push({
-      id: 'start-order',
-      label: locked ? 'LOCKED' : 'START ORDER',
-      sub: locked ? 'fill the sheet above it' : sel.name,
-      primary: !locked,
-      disabled: locked || !site.wallsReady,
-      x: SHEET_X + 10,
-      y: H - 164,
-      w: SHEET_W - 20,
-      h: 112,
-    });
+    buttons.push(
+      {
+        id: 'start-order',
+        label: locked ? 'LOCKED' : 'START ORDER',
+        sub: locked ? 'fill the sheet above it' : sel.name,
+        primary: !locked,
+        disabled: locked || !site.wallsReady,
+        x: SHEET_X + 10,
+        y: H - 182,
+        w: SHEET_W - 20,
+        h: 96,
+      },
+      {
+        // The book teaches; FREE PLAY is where you just build.
+        id: 'free-play',
+        label: 'FREE PLAY',
+        sub: 'every feed, every box, no one asking for ten',
+        disabled: !site.wallsReady,
+        small: true,
+        x: SHEET_X + 10,
+        y: H - 76,
+        w: SHEET_W - 20,
+        h: 62,
+      },
+    );
 
     const hoverOf = (id: string): number => this.board.hoverOf(id);
     this.boardOrdersBody = (g: CanvasRenderingContext2D): void => {
@@ -1047,17 +1065,19 @@ export class MenuSystem extends createSystem({}) {
     }
 
     this.card.paint(
-      spec?.name ?? 'THE SHOP',
+      spec?.name ?? (plant.mode === 'free' ? 'FREE PLAY' : 'THE SHOP'),
       (g) => {
         g.textBaseline = 'middle';
         g.textAlign = 'left';
         g.font = font(500, 24);
         g.fillStyle = UI.dim;
         g.fillText(fmtMs(plant.elapsedMs), 36, 118);
-        const banked = bankTotal();
-        g.font = font(500, 21);
-        g.fillStyle = banked > 0 ? UI.dim : UI.faint;
-        g.fillText(`bank · ${banked}`, 150, 118);
+        if (plant.mode !== 'free') {
+          const banked = bankTotal();
+          g.font = font(500, 21);
+          g.fillStyle = banked > 0 ? UI.dim : UI.faint;
+          g.fillText(`bank · ${banked}`, 150, 118);
+        }
         if (spec) {
           // THE GOAL lives here now — the room floats nothing.
           const target = this.targetOf(spec);
@@ -1068,6 +1088,15 @@ export class MenuSystem extends createSystem({}) {
           g.font = font(600, 22);
           g.fillStyle = UI.dim;
           g.fillText(target.name, cw - 40, 144);
+        } else if (plant.mode === 'free') {
+          // Nothing to fill — so the bank is the number that matters.
+          g.textAlign = 'right';
+          g.font = font(700, 46);
+          g.fillStyle = UI.accent;
+          g.fillText(String(bankTotal()), cw - 40, 112);
+          g.font = font(600, 22);
+          g.fillStyle = UI.dim;
+          g.fillText('BANKED', cw - 40, 144);
         }
 
         if (this.cardMode === 'supply') {

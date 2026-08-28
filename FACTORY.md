@@ -253,6 +253,16 @@ across the room). Its **spout** is a flange-and-gland at hand height.
   unchanged — and seat it into a **box's intake** instead of a wall
   socket. A seated run pours continuously: it is a supply line now, and
   the pour shader already knows how to be one.
+- **THE GLAND SWIVELS.** A box's intake is a collar that ORBITS its drum:
+  it turns to face wherever the tube is coming from, so a hookup is never
+  refused for arriving on the wrong side, and a box can be re-fed from a
+  feed clean across the room without moving an inch. (The first cut
+  welded the gland to the box's back face, and playtest killed it inside
+  a minute: every connection became a guessing game about which way the
+  box happened to be facing — "doorways, not keyholes" broken in the one
+  place the whole game hangs off. Now the door turns to face you and the
+  alignment gate is satisfied *by construction*: all we ask is "bring it
+  near", inside a catch radius wider than the wall sockets'.)
 - **Spout rate is our power grid** (deviation note above): a spout
   supplies a fixed rate, generous for one consumer, tight for two — the
   throttle that makes upgrades and layout choices matter without ever
@@ -275,11 +285,14 @@ Clockwinder) made structural:
 - **Tubes carry fluid, and only hands place tubes.** Every supply hookup
   is the two-handed haul — heavy, deliberate, satisfying, rare (a dozen
   times a shift, not a hundred).
-- **Belts carry parts, and belts are automation.** Early orders make you
-  the conveyor — you carry parts to the dock in your fists — and then
-  rails arrive and *do the walk for you*. Automation as relief, staged in
-  three metres: from one gear in your hand to a bench-height rail network
-  running unattended while you stand in the hum.
+- **Belts carry parts, and belts are automation.** Rails arrive with the
+  very first maker, so the first part you ever stamp rides home in front
+  of you. (The first cut withheld them a sheet longer and made you
+  hand-carry ten gears; playtest found the hole immediately — parts
+  stacked two-deep on a chute you had to know to look at, and the sheet
+  simply never finished. Carrying still works, and still matters for
+  loading a chest or a combiner port by hand — it is just no longer the
+  only way anything moves.)
 
 ### THE SHOP FLOOR IS BENCH HEIGHT
 
@@ -309,6 +322,14 @@ free cell inside reach is always offered (doorways, not keyholes).
 
 Boxes and rails are **free to craft** (law 6: never charge for trying).
 The bank buys **upgrades** only.
+
+**THE WALL LAW.** Two kinds of plant bolt to the site's edge and face
+inward: **the DOCK** (where the works reaches into your room) and **the
+COMBINER** (whose two feed ports then sit along the tape, one either
+side, its chute pushing into the floor). They take the edge's facing,
+not your hand's aim — one less thing to get wrong, and a floor that
+reads at a glance: sinks and merges at the walls, making in the middle.
+Makers, chests and rails stand wherever they like.
 
 **Every role its own silhouette** (shipped): the MAKER is a solidifier
 drum with a working piston, the COMBINER twin lobes under one pressing
@@ -354,6 +375,16 @@ make is ever just a token.
 (PEARL and its SHELL part, plus an INFUSER box — part + fluid in — are the
 post-campaign expansion lane, deliberately outside v1's tree.)
 
+### FREE PLAY — the shop with nobody asking
+
+The work book teaches; **FREE PLAY** is where factory players actually
+live. One button beside START ORDER on the board: every feed awake, the
+whole catalogue open, no goal and no clock — and every delivery simply
+banks, so the bills still pay and a free-play afternoon still buys
+fittings the book will feel. It shares every system with the book —
+same floor, same pull, same sim — because a mode that forks the code is
+a mode that rots.
+
 ### THE ORDERS — the level ladder (ten sheets, one new verb each)
 
 Every order: **deliver 10 ×** the target. No timers, no failure; best
@@ -367,8 +398,8 @@ the line you built for order 4 is still earning in order 7.
 | # | Order | Target ×10 | What wakes / what it teaches |
 | --- | --- | --- | --- |
 | 1 | FIRST DRAUGHT | AMBER (fluid) | The floor, the dock, the pull: run one tube feed→dock. Pure TUBES, new destination |
-| 2 | PIECE WORK | GEAR | The MAKER. Tube→maker; **hand-carry** each gear to the dock — you are the first conveyor (law 12) |
-| 3 | THE LINE | CELL | CYAN wakes; **BELTS** arrive. Maker→rail→dock, and the room runs without you for the first time |
+| 2 | PIECE WORK | GEAR | The MAKER **and the RAILS** together: tube→maker→rail→dock, and the first part you ever make rides home in front of you |
+| 3 | THE LINE | CELL | CYAN wakes: a second maker, a second lane, two chains sharing one dock |
 | 4 | FIRST FITTING | PUMP | The COMBINER: two lines merging into a 2-in box — our Reinforced Iron Plate moment |
 | 5 | NIGHT SHIFT | LAMP | VIOLET wakes; the CHEST arrives to buffer the rate mismatch it creates |
 | 6 | HOT ORDER | SERVO | SPLIT/MERGE tees; the bank starts posting upgrade bills worth chasing |

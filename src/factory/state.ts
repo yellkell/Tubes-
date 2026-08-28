@@ -105,8 +105,15 @@ export interface PlantEvent {
   order?: number;
 }
 
+export type PlantMode =
+  | 'idle' // no shift — the board is up
+  | 'order' // a sheet from the work book is live
+  | 'free'; // FREE PLAY: every feed, every box, no one asking for ten
+
 export interface Plant {
-  /** Index into ORDERS of the live sheet; −1 = no shift. */
+  /** What kind of shift this is. */
+  mode: PlantMode;
+  /** Index into ORDERS of the live sheet; −1 = free play or no shift. */
   orderIndex: number;
   /** Delivered toward the live sheet (fluid sheets count draughts). */
   count: number;
@@ -132,6 +139,7 @@ export interface Plant {
 }
 
 export const plant: Plant = {
+  mode: 'idle',
   orderIndex: -1,
   count: 0,
   fluidAcc: 0,
@@ -229,6 +237,7 @@ export function freshRun(side: FloorSide, line: LineSpec, spout: Vector3, normal
 
 /** Clear the whole shift (DOWN TOOLS / the book closing). */
 export function clearPlant(): void {
+  plant.mode = 'idle';
   plant.orderIndex = -1;
   plant.count = 0;
   plant.fluidAcc = 0;
@@ -246,6 +255,7 @@ export function clearPlant(): void {
 /** Post a sheet into the live shift: wake its feeds, open its catalogue. */
 export function postOrder(index: number): void {
   const spec = ORDERS[index];
+  plant.mode = 'order';
   plant.orderIndex = index;
   plant.count = 0;
   plant.fluidAcc = 0;
@@ -264,5 +274,29 @@ export function postOrder(index: number): void {
     if (!plant.unitsAvailable.includes(u)) plant.unitsAvailable.push(u);
   }
   plant.events.push({ kind: 'post', order: index });
+  plant.generation++;
+}
+
+/**
+ * FREE PLAY — the shop with nobody asking for ten of anything. Every
+ * feed is awake, every box is in the catalogue, and every delivery
+ * simply BANKS. The work book teaches; this is where you just build,
+ * and it is the mode most factory players end up living in.
+ */
+export function openFreeplay(): void {
+  plant.mode = 'free';
+  plant.orderIndex = -1;
+  plant.count = 0;
+  plant.fluidAcc = 0;
+  plant.elapsedMs = 0;
+  for (const [side, line] of Object.entries(FACTORY.sides) as Array<
+    [FloorSide, 'mains' | 'coolant' | 'volt' | null]
+  >) {
+    if (line && !plant.feedsAwake[side]) {
+      plant.feedsAwake[side] = true;
+      plant.events.push({ kind: 'feed-wake', side });
+    }
+  }
+  plant.unitsAvailable = ['dock', 'maker', 'belt', 'combiner', 'chest'];
   plant.generation++;
 }

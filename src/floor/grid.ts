@@ -46,6 +46,31 @@ export function cellInFloor(i: number, j: number): boolean {
   );
 }
 
+/**
+ * THE WALL LAW — which floor edge a cell backs onto, as the direction
+ * pointing INTO the room from it (null when the cell stands in open
+ * floor). Some plant is wall plant: the dock and the combiner bolt to
+ * the site's edge and face inward, so their working faces always point
+ * at the room and never at the plaster. Everything else — makers,
+ * chests, rails — stands wherever it likes.
+ */
+export function edgeInward(i: number, j: number): 0 | 1 | 2 | 3 | null {
+  if (!cellInFloor(i, j)) return null;
+  // An edge cell is one with no cell beyond it — the OUTERMOST RING.
+  // Defined by the lattice, not by metres: the floor rectangle rarely
+  // lands on cell boundaries, so a distance threshold would call the
+  // last legal column "open floor" whenever the leftover slack ran wide.
+  const out: Array<{ rot: 0 | 1 | 2 | 3; slack: number }> = [];
+  if (!cellInFloor(i, j - 1)) out.push({ rot: 2, slack: j * CELL - floorLayout.far });
+  if (!cellInFloor(i, j + 1)) out.push({ rot: 0, slack: floorLayout.near - (j + 1) * CELL });
+  if (!cellInFloor(i - 1, j)) out.push({ rot: 1, slack: i * CELL - floorLayout.left });
+  if (!cellInFloor(i + 1, j)) out.push({ rot: 3, slack: floorLayout.right - (i + 1) * CELL });
+  if (out.length === 0) return null;
+  // A corner backs two tapes; it takes the one it stands tightest against.
+  out.sort((a, b) => a.slack - b.slack);
+  return out[0].rot;
+}
+
 /* ── occupancy ────────────────────────────────────────────────────────────── */
 
 const occ = new Map<string, number>();

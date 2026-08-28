@@ -23,7 +23,7 @@
 
 import { InputComponent, createSystem } from '@iwsdk/core';
 import { Group, InstancedMesh, Matrix4, Quaternion, Vector3 } from 'three';
-import { FACTORY, FLOW, ITEMS, LINES, SEAT, TUBE, type ItemId } from '../config.js';
+import { FACTORY, FLOW, ITEMS, LINES, SEAT, TUBE, UNITS, type ItemId } from '../config.js';
 import * as sfx from '../audio/sfx.js';
 import { buzz } from '../game/haptics.js';
 import { orderComplete } from '../game/flow.js';
@@ -32,6 +32,7 @@ import { site } from '../game/state.js';
 import { cellCenter } from '../floor/grid.js';
 import { floorLayout, type FloorSide } from '../floor/plan.js';
 import {
+  DIRS,
   chestParts,
   chuteParts,
   freshRun,
@@ -64,6 +65,7 @@ import {
 /** Headless/dev hooks (wired into __tubes in main.ts). */
 export const factoryView: {
   state?: () => {
+    mode: string;
     order: number;
     orderId: string | null;
     count: number;
@@ -75,8 +77,10 @@ export const factoryView: {
     units: number;
     bank: Partial<Record<ItemId, number>>;
   };
-  /** Every gland on the floor: pose + whether a run holds it. */
-  glands?: () => Array<{
+  /** Every gland on the floor: the pose it would present to `side`'s
+   *  spout (the collar swivels, so ask from somewhere), and whether a
+   *  run already holds it. */
+  glands?: (side?: FloorSide) => Array<{
     unit: number;
     type: string;
     x: number;
@@ -165,6 +169,7 @@ export class FactorySystem extends createSystem({}) {
     factoryView.state = () => {
       const spec = orderSpec();
       return {
+        mode: plant.mode,
         order: plant.orderIndex,
         orderId: spec?.id ?? null,
         count: plant.count,
@@ -184,11 +189,12 @@ export class FactorySystem extends createSystem({}) {
         upgrades: ownedUpgrades(),
       };
     };
-    factoryView.glands = () =>
-      plant.units
+    factoryView.glands = (side) => {
+      const from = side ? runForSide(side)?.pointA : undefined;
+      return plant.units
         .filter((u) => u.type === 'maker' || u.type === 'dock')
         .map((u) => {
-          glandPose(u, _g, _gn);
+          glandPose(u, _g, _gn, from);
           return {
             unit: u.id,
             type: u.type,
@@ -201,6 +207,7 @@ export class FactorySystem extends createSystem({}) {
             seated: Boolean(runSeatedAt(u.id)),
           };
         });
+    };
     factoryView.grab = (side) => {
       const run = runForSide(side);
       if (!run || run.phase !== 'pull') return false;
@@ -241,7 +248,7 @@ export class FactorySystem extends createSystem({}) {
   update(delta: number): void {
     this.clock += delta;
 
-    const live = plant.orderIndex >= 0;
+    const live = plant.mode !== 'idle';
     if (this.lastGen !== plant.generation) {
       this.lastGen = plant.generation;
       this.syncStructures(live);
@@ -648,17 +655,19 @@ export class FactorySystem extends createSystem({}) {
     // offered up roughly square.
     if (!run.magnet && run.held) {
       let bestUnit = -1;
-      let bestD = SEAT.snapRadius;
+      let bestD = FACTORY.seatRadius;
       for (const unit of plant.units) {
         if (unit.type !== 'maker' && unit.type !== 'dock') continue;
         if (runSeatedAt(unit.id)) continue;
         if (plant.runs.some((r) => r !== run && r.magnet && r.targetUnit === unit.id)) continue;
-        glandPose(unit, _g, _gn);
+        // The collar SWIVELS to face this run's spout, so the alignment
+        // gate is satisfied by construction: the only thing we ask of
+        // the player is "bring it near". Nothing is ever refused for
+        // approaching a box from the wrong side again.
+        glandPose(unit, _g, _gn, run.pointA);
         _seat.copy(_g).addScaledVector(_gn, 0.08);
         const d = run.headVisual.distanceTo(_seat);
         if (d >= bestD) continue;
-        _entry.copy(_seat).sub(_mouth).normalize();
-        if (_entry.dot(_dir.copy(_gn).negate()) <= SEAT.alignDot) continue;
         bestD = d;
         bestUnit = unit.id;
         run.pointB.copy(_g);
@@ -924,7 +933,10 @@ export class FactorySystem extends createSystem({}) {
       hw.collar.capMat.opacity = 0.25;
       hw.collar.glowMat.opacity = 0.1;
     }
-    // Free glands breathe their guides while any collar is loose or held.
+    // Free glands breathe their guides while any collar is loose or held
+    // — and SWIVEL: a seated gland holds its run's line, a free one
+    // turns to face whichever tube is nearest your hands. The box you
+    // are walking a tube toward opens its door as you come.
     const wanting = plant.runs.some((r) => r.phase === 'pull');
     for (const unit of plant.units) {
       const gland = this.unitRefs.get(unit.id)?.gland;
@@ -932,7 +944,40 @@ export class FactorySystem extends createSystem({}) {
       const seated = runSeatedAt(unit.id);
       gland.guideMat.opacity = seated ? 0 : wanting ? 0.12 + 0.16 * breathe : 0.06;
       gland.glowMat.opacity = seated ? 0.45 : 0.15;
+
+      let toward: Vector3 | undefined;
+      if (seated) {
+        toward = seated.pointA;
+      } else {
+        let bestD = Infinity;
+        cellCenter(unit.i, unit.j, _c);
+        for (const run of plant.runs) {
+          if (run.phase !== 'pull') continue;
+          const d = (run.headVisual.x - _c.x) ** 2 + (run.headVisual.z - _c.z) ** 2;
+          if (d < bestD) {
+            bestD = d;
+            toward = run.headVisual;
+          }
+        }
+      }
+      this.poseGland(unit, gland.group, toward);
     }
+  }
+
+  /** Swing a gland's collar round its unit to face `toward` (world), or
+   *  home to the back face. The mesh is a child of the unit's rotated
+   *  group, so the world direction is folded back through that yaw. */
+  private poseGland(unit: (typeof plant.units)[number], group: Group, toward?: Vector3): void {
+    glandPose(unit, _g, _gn, toward);
+    const d = DIRS[unit.rot];
+    const yaw = Math.atan2(d.di, d.dj);
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    const lx = _gn.x * cos - _gn.z * sin;
+    const lz = _gn.x * sin + _gn.z * cos;
+    const reach = UNITS.crate.size / 2 + 0.01;
+    group.position.set(lx * reach, UNITS.glandHeight, lz * reach);
+    group.rotation.y = Math.atan2(lx, lz);
   }
 
   /* ── events, parts, dressing, the plate ───────────────────────────────── */
