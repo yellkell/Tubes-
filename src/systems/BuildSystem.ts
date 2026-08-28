@@ -44,9 +44,11 @@ import {
   Vector3,
 } from 'three';
 import { UNITS, type UnitType } from '../config.js';
+import { buildUnit } from '../factory/units.js';
 import * as sfx from '../audio/sfx.js';
 import { buzz } from '../game/haptics.js';
 import { site } from '../game/state.js';
+import { postsUnlocked } from '../game/progress.js';
 import {
   cellCenter,
   cellInFloor,
@@ -59,10 +61,13 @@ import {
   bestRot,
   canLink,
   emits,
+  haulRoute,
+  layHaul,
   placeUnit,
   removeUnit,
   retractRun,
   unitAvailable,
+  type HaulStep,
 } from '../factory/sim.js';
 import { DIRS, plant, runSeatedAt, unitAtCell, type Rot } from '../factory/state.js';
 import { PointerRay } from '../ui/pointer.js';
@@ -106,6 +111,20 @@ export const buildView: {
     fedBy: Cell[];
   } | null;
   trigger?: () => boolean;
+  /**
+   * THE HAUL, headless. `trigger` on an armed rail starts one (exactly
+   * as the press does); `haulTo` drags it — returning the route it
+   * would lay — and `haulRelease` lets go and reports how many rails
+   * landed. A walk pulls a run the way a hand does, so "it lays six
+   * rails" means the verb works, not that the maths does.
+   */
+  haulTo?: (x: number, z: number) => HaulStep[];
+  haulRelease?: () => number;
+  hauling?: () => { anchor: Cell; steps: HaulStep[] } | null;
+  /** How many meshes each tool's hologram is made of. The ghost used to
+   *  be one anonymous crate for everything; this is how a walk proves it
+   *  wears the machine now, and keeps wearing it. */
+  ghostParts?: () => Record<string, number>;
 } = {};
 
 const _origin = new Vector3();
@@ -136,6 +155,19 @@ export class BuildSystem extends createSystem({}) {
   /** Preview chevrons: [0] what we feed, [1..] what feeds us. */
   private links: Mesh[] = [];
   private linkMat!: MeshBasicMaterial;
+  /** One ghost body per tool — the real silhouette, in glass. */
+  private bodies!: Map<UnitType, Group>;
+  /** The haul's own ghosts: the run you are dragging out, before it is
+   *  real. Pooled to UNITS.pull.maxRun; each wears a rail body. */
+  private haulGhosts: Group[] = [];
+  /** Live haul, while the trigger is down on an armed rail. */
+  private haul: { anchor: Cell; steps: HaulStep[] } | null = null;
+  private haulHeld = false;
+  /** A headless haul is driven by haulTo/haulRelease, not by a trigger,
+   *  and there is no controller ray behind it — so the every-frame
+   *  hideAim (which fires whenever the ray is missing, i.e. always, in a
+   *  browser with no XR device) must not reach in and cancel it. */
+  private haulDriven = false;
   private armed: BuildTool | null = null;
   /**
    * THE HAND'S OVERRIDE. Auto-facing is right almost every time, and
@@ -172,16 +204,32 @@ export class BuildSystem extends createSystem({}) {
     this.arrowMat = this.ghostMat.clone();
     this.arrowMat.opacity = 0.85;
     this.ghost = new Group();
-    const { size, height, benchTop } = UNITS.crate;
-    const box = new Mesh(new BoxGeometry(size, height, size), this.ghostMat);
-    box.position.y = benchTop - height / 2;
-    this.ghost.add(box);
+    const { benchTop } = UNITS.crate;
+    // THE GHOST WEARS THE MACHINE. It used to be one anonymous crate for
+    // every tool, which meant the catalogue told you what you'd picked
+    // and the floor didn't — you found out what you had built by
+    // building it. Each type now holds its OWN body, made by the very
+    // same builder FactorySystem uses, wearing the ghost's glass: a
+    // maker's drum and piston, the combiner's twin lobes, the bank's
+    // mouth, the crate's bands, a post's stick. One is shown at a time.
+    this.bodies = new Map();
+    for (const type of ['dock', 'maker', 'belt', 'combiner', 'chest', 'post'] as UnitType[]) {
+      const body = buildUnit(type).group;
+      body.traverse((o) => {
+        const m = o as Mesh;
+        if (m.isMesh) m.material = this.ghostMat;
+        o.renderOrder = 11;
+      });
+      body.visible = false;
+      this.ghost.add(body);
+      this.bodies.set(type, body);
+    }
     // THE OUT ARROW — big, lifted, unmissable. The old one was a 5 cm
     // triangle lying on the bench top; nobody ever saw which way a box
     // was pointing.
     const arrow = new Mesh(chevronGeometry(), this.arrowMat);
     arrow.scale.set(0.17, 1, 0.19);
-    arrow.position.set(0, benchTop + 0.13, size / 2 + 0.02);
+    arrow.position.set(0, benchTop + 0.13, UNITS.crate.size / 2 + 0.02);
     this.ghost.add(arrow);
     this.ghost.visible = false;
     this.scene.add(this.ghost);
@@ -215,6 +263,19 @@ export class BuildSystem extends createSystem({}) {
       this.links.push(m);
     }
 
+    // The run you are hauling out, drawn as rails before it is rails.
+    for (let i = 0; i < UNITS.pull.maxRun; i++) {
+      const g = buildUnit('belt').group;
+      g.traverse((o) => {
+        const m = o as Mesh;
+        if (m.isMesh) m.material = this.ghostMat;
+        o.renderOrder = 11;
+      });
+      g.visible = false;
+      this.scene.add(g);
+      this.haulGhosts.push(g);
+    }
+
     buildView.aim = () => (this.lastAim ? { ...this.lastAim } : null);
     buildView.arm = (tool) => {
       this.armed = tool;
@@ -231,6 +292,17 @@ export class BuildSystem extends createSystem({}) {
      *  choosing again. A walk reads this to prove Ⓑ is per-piece. */
     buildView.forcedRot = () => this.forced;
     buildView.armed = () => this.armed;
+    buildView.ghostParts = () => {
+      const out: Record<string, number> = {};
+      for (const [type, body] of this.bodies) {
+        let n = 0;
+        body.traverse((o) => {
+          if ((o as Mesh).isMesh) n++;
+        });
+        out[type] = n;
+      }
+      return out;
+    };
     buildView.placeAt = (i, j, type = 'chest', rot = 0) => placeUnit(type, i, j, rot) !== null;
     buildView.removeAt = (i, j) => {
       const unit = unitAtCell(i, j);
@@ -239,8 +311,8 @@ export class BuildSystem extends createSystem({}) {
       return true;
     };
     buildView.catalogue = () => ({
-      available: (['dock', 'maker', 'belt', 'combiner', 'chest'] as UnitType[]).filter((t) =>
-        unitAvailable(t),
+      available: (['dock', 'maker', 'belt', 'combiner', 'chest', 'post'] as UnitType[]).filter(
+        (t) => typeAvailable(t),
       ),
     });
     buildView.count = () => occupiedCount();
@@ -256,8 +328,36 @@ export class BuildSystem extends createSystem({}) {
     buildView.trigger = () => {
       const h = this.headless;
       if (!h) return false;
-      return this.commit(this.resolve(worldToCell(h.x, h.z), h.handRot));
+      const cell = worldToCell(h.x, h.z);
+      const ok = this.commit(this.resolve(cell, h.handRot));
+      // A landed rail is a haul waiting to happen — the same as the
+      // press. haulTo/haulRelease then drive it, or ignore it, and a
+      // released haul of zero cells is just the single rail you placed.
+      if (ok && this.armed === 'belt') {
+        this.haul = { anchor: { ...cell }, steps: [] };
+        this.haulHeld = true;
+        this.haulDriven = true;
+      }
+      return ok;
     };
+    buildView.haulTo = (x, z) => {
+      const h = this.haul;
+      if (!h) return [];
+      h.steps = haulRoute(h.anchor, worldToCell(x, z), UNITS.pull.maxRun);
+      this.showHaul(h.steps);
+      return h.steps.map((s) => ({ ...s }));
+    };
+    buildView.haulRelease = () => {
+      const h = this.haul;
+      if (!h) return 0;
+      this.showHaul([]);
+      this.haul = null;
+      this.haulHeld = false;
+      this.haulDriven = false;
+      return layHaul(h.anchor, h.steps);
+    };
+    buildView.hauling = () =>
+      this.haul ? { anchor: { ...this.haul.anchor }, steps: this.haul.steps.map((s) => ({ ...s })) } : null;
   }
 
   /** What the tool would do at this cell — the ONE place the rules live,
@@ -372,11 +472,12 @@ export class BuildSystem extends createSystem({}) {
     const deleting = this.armed === 'delete';
     const showGhost = Boolean(this.view?.placeable) && !deleting;
 
-    if (showGhost && cell && this.view) {
+    if (showGhost && cell && this.view && this.armed && this.armed !== 'delete') {
       cellCenter(cell.i, cell.j, _c);
       this.ghost.position.set(_c.x, 0, _c.z);
       const d = DIRS[this.view.rot];
       this.ghost.rotation.y = Math.atan2(d.di, d.dj);
+      for (const [type, body] of this.bodies) body.visible = type === this.armed;
       this.ghost.visible = true;
       const breathe = 0.5 + 0.5 * Math.sin(this.clock * 3.2);
       this.ghostMat.opacity = 0.12 + 0.08 * breathe;
@@ -415,11 +516,18 @@ export class BuildSystem extends createSystem({}) {
       if (this.commit(this.view)) {
         this.pointer.click();
         buzz(this.world, 'right', deleting ? 0.4 : 0.6, deleting ? 40 : 50);
+        // A RAIL THAT LANDS IS A RAIL YOU CAN HAUL. Keep hold of the
+        // trigger and the run comes out of it — see updateHaul below.
+        if (this.armed === 'belt') {
+          this.haul = { anchor: { ...cell }, steps: [] };
+          this.haulDriven = false;
+        }
       } else {
         sfx.oneHandRattle();
         buzz(this.world, 'right', 0.25, 40);
       }
     }
+    this.updateHaul(pad?.getButtonPressed(InputComponent.Trigger) ?? false, cell);
     // Ⓑ IS TWO VERBS, AND WHICH ONE IS IN YOUR HAND DECIDES.
     //   holding a piece  → turn it a quarter, and mean it (see `forced`)
     //   empty-handed     → unbolt whatever the ray is on, as always
@@ -441,6 +549,77 @@ export class BuildSystem extends createSystem({}) {
           buzz(this.world, 'right', 0.4, 40);
         }
       }
+    }
+  }
+
+  /**
+   * THE HAUL — a rail run comes out of a rail the way a tube comes out
+   * of a wall.
+   *
+   * Stamping a conveyor a cell at a time is bookkeeping, not a verb; the
+   * ask was for the pull, and the pull is what this is. The first rail
+   * lands on the press. Keep the trigger DOWN and the run ratchets out
+   * toward wherever you point — one detent per cell, pitched up the run
+   * exactly like the tube's telescoping sections, so a long haul plays a
+   * rising scale. Let go and it is rails.
+   *
+   * The route is sim.haulRoute's business, POSTS and all; this only has
+   * to hold the trigger, count the detents and draw the ghosts.
+   */
+  private updateHaul(held: boolean, cell: Cell | null): void {
+    // A haul the HOOKS are driving belongs to them start to finish. This
+    // runs every frame off a controller that isn't there in a browser,
+    // and its release path would otherwise throw away a run a walk is
+    // still dragging out — the frame after it started.
+    if (this.haulDriven) return;
+    const h = this.haul;
+    if (!h) {
+      this.haulHeld = false;
+      return;
+    }
+    if (held) {
+      this.haulHeld = true;
+      const to = cell ?? h.anchor;
+      const was = h.steps.length;
+      h.steps = haulRoute(h.anchor, to, UNITS.pull.maxRun);
+      // A detent for every cell that just arrived — the run has WEIGHT,
+      // and silence while it grows is the whole feel thrown away.
+      if (h.steps.length > was) {
+        sfx.segmentClick(h.steps.length);
+        buzz(this.world, 'right', 0.22, 18);
+      } else if (h.steps.length < was) {
+        sfx.segmentClick(Math.max(0, h.steps.length));
+      }
+      this.showHaul(h.steps);
+      return;
+    }
+    // RELEASED. Lay it.
+    this.showHaul([]);
+    this.haul = null;
+    if (!this.haulHeld) return;
+    this.haulHeld = false;
+    const laid = layHaul(h.anchor, h.steps);
+    if (laid > 0) {
+      sfx.mountThunk();
+      sfx.droopSettle();
+      buzz(this.world, 'right', 0.55, 60);
+    }
+  }
+
+  /** The run as it stands in your hand: rail ghosts down the route. */
+  private showHaul(steps: HaulStep[]): void {
+    for (let n = 0; n < this.haulGhosts.length; n++) {
+      const g = this.haulGhosts[n];
+      const step = steps[n];
+      if (!step) {
+        g.visible = false;
+        continue;
+      }
+      cellCenter(step.i, step.j, _c2);
+      g.position.set(_c2.x, 0, _c2.z);
+      const d = DIRS[step.rot];
+      g.rotation.y = Math.atan2(d.di, d.dj);
+      g.visible = true;
     }
   }
 
@@ -472,6 +651,11 @@ export class BuildSystem extends createSystem({}) {
     this.ghost.visible = false;
     this.focus.visible = false;
     for (const m of this.links) m.visible = false;
+    if (!this.haulDriven) {
+      this.showHaul([]);
+      this.haul = null;
+      this.haulHeld = false;
+    }
     this.pointer.hide();
     this.lastAim = null;
     this.view = null;
@@ -480,6 +664,9 @@ export class BuildSystem extends createSystem({}) {
 
 /** The catalogue's availability check, for the card's button states. */
 export function typeAvailable(type: UnitType): boolean {
+  // Posts are not on the book's ladder at all — they arrive when the
+  // fitting is paid for, and then they are yours for good.
+  if (type === 'post') return postsUnlocked();
   if (plant.mode === 'idle') return type === 'chest';
   if (type === 'dock' && plant.units.some((u) => u.type === 'dock')) return false;
   return plant.unitsAvailable.includes(type);

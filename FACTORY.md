@@ -343,6 +343,44 @@ row of boxes.
 its target red — a verb nobody can find is a verb that doesn't exist.
 Moving it there freed Ⓑ up for the verb it should always have had:
 
+**THE RAIL IS PULLED, NOT STAMPED.** Pressing a trigger once per cell
+is bookkeeping, not a verb — and this game already owns the best verb it
+has. So: stand ONE rail where the parts come from, keep hold of the
+trigger, and haul. The run ratchets out toward wherever you point, one
+detent per cell, pitched up the run exactly like the tube's telescoping
+sections, so a long lane plays a rising scale. Let go and it is rails,
+every piece already facing the next. **Flow follows the drag** — the same
+way the tube's head follows your hands — so you pull *from* the maker
+*to* the bank and the last rail arrives pointing into it. A press with no
+drag is still one rail, so nothing was taken away.
+
+**AND THE STICKS BEND IT.** A haul goes direct by default: one leg, one
+corner, one leg. Buy ROUTING POSTS (10 GEAR — priced in the part the very
+first lane makes, because a routing aid you cannot afford until the book
+runs out is one nobody ever uses) and you can plant sticks: a survey peg
+with striped collars and a bright cap. Any stick standing between the two
+ends of a haul — within two cells of the box between them, because a
+straight drag's box is a line with no width and nothing could ever be
+inside it — becomes a waypoint the run visits in order. Plant the stick
+where you want the bow. The rail takes its place as it passes; the stick
+was scaffolding, and scaffolding comes down.
+
+**THE HOLOGRAM WEARS THE MACHINE.** The ghost used to be one anonymous
+crate for every tool, which meant the catalogue told you what you had
+picked and the floor didn't — you found out what you had built by
+building it. Each tool now holds its own body, from the very same builder
+the standing plant uses, in glass: the maker's drum and piston, the
+combiner's twin lobes, the bank's mouth, the crate's bands, a post's
+stick.
+
+**THE DOCK IS THE BANK.** One name for one thing. It was always where
+deliveries land AND where the surplus accrues — two words for that was
+one too many, and "bank" is the one the player already reads on the card.
+
+**QUIT ASKS FIRST.** It used to say DOWN TOOLS and mean it immediately;
+one mis-click took a whole floor of plant with it. Now it arms, the same
+two-press confirm RESET PROGRESS has always had.
+
 **Ⓑ TURNS THE PIECE, AND MEANS IT.** Auto-facing is the default, not a
 cage. With a piece in hand, Ⓑ ratchets it a quarter turn and that
 choice *wins over the scorer* until the piece lands — otherwise the

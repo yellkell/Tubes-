@@ -39,7 +39,7 @@ import { buzz } from '../game/haptics.js';
 import { orderComplete } from '../game/flow.js';
 import { chestBonus, ownedUpgrades, railFactor, reachBonus } from '../game/progress.js';
 import { site } from '../game/state.js';
-import { cellCenter } from '../floor/grid.js';
+import { cellCenter, worldToCell } from '../floor/grid.js';
 import { floorLayout, type FloorSide } from '../floor/plan.js';
 import {
   DIRS,
@@ -53,7 +53,15 @@ import {
   type FactoryRun,
   type Part,
 } from '../factory/state.js';
-import { deliverPart, glandPose, linkAhead, partPose, retractRun, simTick } from '../factory/sim.js';
+import {
+  deliverPart,
+  glandPose,
+  haulRoute,
+  linkAhead,
+  partPose,
+  retractRun,
+  simTick,
+} from '../factory/sim.js';
 import {
   buildFeed,
   buildUnit,
@@ -87,6 +95,21 @@ export const factoryView: {
     units: number;
     bank: Partial<Record<ItemId, number>>;
   };
+  /** The route a haul between two floor points would lay. */
+  route?: (
+    from: { x: number; z: number },
+    to: { x: number; z: number },
+  ) => Array<{ i: number; j: number; rot: number }>;
+  /** THE PLAN: every unit, its cell, its facing, and the unit it feeds.
+   *  Proves a hauled lane is a chain, not a row of rails. */
+  plan?: () => Array<{
+    id: number;
+    type: string;
+    i: number;
+    j: number;
+    rot: number;
+    feeds: number | null;
+  }>;
   /** Every gland on the floor: the pose it would present to `side`'s
    *  spout (the collar swivels, so ask from somewhere), and whether a
    *  run already holds it. */
@@ -209,6 +232,28 @@ export class FactorySystem extends createSystem({}) {
         upgrades: ownedUpgrades(),
       };
     };
+    /** Every unit as it stands: type, cell, facing, and where it sends.
+     *  A walk reads this to prove a hauled lane is a CHAIN and not just
+     *  the right number of rails in roughly the right place. */
+    factoryView.plan = () =>
+      plant.units.map((u) => {
+        const next = linkAhead(u);
+        return {
+          id: u.id,
+          type: u.type,
+          i: u.i,
+          j: u.j,
+          rot: u.rot,
+          feeds: next ? next.id : null,
+        };
+      });
+    /** THE ROUTE a haul between two floor points would take, without
+     *  holding one — the same haulRoute the drag itself uses, so a walk
+     *  can compare a direct lane against one bent round a stick. */
+    factoryView.route = (from, to) =>
+      haulRoute(worldToCell(from.x, from.z), worldToCell(to.x, to.z), UNITS.pull.maxRun).map(
+        (st) => ({ ...st }),
+      );
     factoryView.glands = (side) => {
       const from = side ? runForSide(side)?.pointA : undefined;
       return plant.units
@@ -344,8 +389,17 @@ export class FactorySystem extends createSystem({}) {
       }
     }
     for (const unit of plant.units) {
-      if (this.unitRefs.has(unit.id)) continue;
-      const refs = buildUnit(unit.type);
+      let refs = this.unitRefs.get(unit.id);
+      if (!refs) {
+        refs = buildUnit(unit.type);
+        this.scene.add(refs.group);
+        this.unitRefs.set(unit.id, refs);
+      }
+      // POSE EVERY REBUILD, not only on the frame a unit is born: a
+      // hauled run turns its own anchor round to face down the lane it
+      // just laid, and a rot set after placement used to reach the plant
+      // and never the mesh — a rail feeding a direction it wasn't
+      // pointing. Cheap, and it can't drift.
       cellCenter(unit.i, unit.j, _c);
       refs.group.position.set(_c.x, 0, _c.z);
       const d = [
@@ -355,8 +409,6 @@ export class FactorySystem extends createSystem({}) {
         { di: -1, dj: 0 },
       ][unit.rot];
       refs.group.rotation.y = Math.atan2(d.di, d.dj);
-      this.scene.add(refs.group);
-      this.unitRefs.set(unit.id, refs);
     }
 
     // A run per awake feed (the stub waits on the spout).

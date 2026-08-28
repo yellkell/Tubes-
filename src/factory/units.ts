@@ -341,6 +341,34 @@ export function buildUnit(type: UnitType): UnitRefs {
     chev.scale.setScalar(0.028);
     chev.position.set(0, UNITS.railTop + 0.006, 0.13);
     group.add(chev);
+  } else if (type === 'post') {
+    // THE POST: a stick, and honestly a stick. Slim enough to read as
+    // scaffolding rather than plant — a survey peg you knock in to say
+    // "the lane goes through here", with a bright cap so you can find it
+    // across a floor and a foot so it doesn't look like it's floating.
+    const { postRadius, postHeight } = UNITS.pull;
+    const foot = new Mesh(cylGeo(), hubMat);
+    foot.scale.set(0.05, 0.012, 0.05);
+    foot.position.y = 0.006;
+    group.add(foot);
+    const shaft = new Mesh(cylGeo(), railMat);
+    shaft.scale.set(postRadius, postHeight, postRadius);
+    shaft.position.y = postHeight / 2;
+    group.add(shaft);
+    // Three collars up the stick: a surveyor's stripes, and they give the
+    // eye something to judge distance by across the floor.
+    for (const t of [0.35, 0.6, 0.85]) {
+      const collar = new Mesh(torusGeo(), hubMat);
+      collar.rotation.x = Math.PI / 2;
+      collar.scale.setScalar(postRadius * 2.2);
+      collar.position.y = postHeight * t;
+      group.add(collar);
+    }
+    const cap = new Mesh(discGeo(), chevronMat);
+    cap.rotation.x = -Math.PI / 2;
+    cap.scale.setScalar(0.03);
+    cap.position.y = postHeight + 0.004;
+    group.add(cap);
   } else {
     // THE CHEST: the banded crate — things keep here.
     bench(group);

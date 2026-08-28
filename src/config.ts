@@ -408,6 +408,29 @@ export const UNITS = {
   },
   /** Rails ride a touch under the bench so parts sit AT the datum. */
   railTop: 0.8,
+  /** THE PULL. A rail is not stamped a cell at a time — you stand one
+   *  and HAUL, and the run ratchets out of it exactly like a tube comes
+   *  out of a wall. These are the stops on that haul. */
+  pull: {
+    /** How many rails one haul may lay. Long enough to cross the floor,
+     *  short enough that a sweep of the arm can't carpet it. */
+    maxRun: 14,
+    /** A POST is a stick you stand to say "go through here". A haul
+     *  visits every post between where it started and where you are
+     *  pointing, in order, instead of taking the direct line — and the
+     *  rail takes the post's place as it passes. Bought once (SUPPLY),
+     *  then free to plant, like every other piece. */
+    postRadius: 0.016,
+    postHeight: 0.62,
+    /** How far off the direct line a stick may sit and still catch the
+     *  haul, in cells. It HAS to be more than zero: the whole point of a
+     *  stick is bending a lane off the straight, and a straight drag's
+     *  bounding box is a line with no width — nothing could ever be
+     *  inside it. Two cells is forgiving enough to plant a stick where
+     *  you want the bow, tight enough that one across the room doesn't
+     *  come and hijack a lane you were laying somewhere else. */
+    postReach: 2,
+  },
   /** Where a unit's tube gland sits (m up its back face). */
   glandHeight: 0.7,
 };
@@ -545,7 +568,12 @@ export function combineKey(a: ItemId, b: ItemId): string {
  * (The SECOND SPOUT — the big physical one, with its colour dial — is
  * the next fitting on this list.)
  */
-export type UpgradeId = 'long-reach' | 'belt-pace' | 'quick-boxes' | 'deep-crates';
+export type UpgradeId =
+  | 'long-reach'
+  | 'belt-pace'
+  | 'quick-boxes'
+  | 'deep-crates'
+  | 'route-posts';
 
 export interface UpgradeSpec {
   id: UpgradeId;
@@ -580,6 +608,18 @@ export const UPGRADES: UpgradeSpec[] = [
     effect: 'chests hold twice the parts',
     bill: { chip: 6, lamp: 4 },
   },
+  {
+    // The one fitting that changes a VERB rather than a number: a haul
+    // goes direct until you give it somewhere to go through.
+    id: 'route-posts',
+    name: 'ROUTING POSTS',
+    effect: 'sticks you plant — a hauled rail bends to visit them',
+    // GEAR ONLY, and early. This is the first fitting anyone actually
+    // wants — it shapes the very first lane you pull — so it is priced
+    // in the part the very first lane makes. A routing aid you cannot
+    // afford until the book runs out is a routing aid nobody ever uses.
+    bill: { gear: 10 },
+  },
 ];
 
 /* ────────────────────────────── THE ORDERS ───────────────────────────────
@@ -589,14 +629,14 @@ export const UPGRADES: UpgradeSpec[] = [
  * the factory grows; DOWN TOOLS clears the floor. Sheets 6–10 (tees,
  * the bank's bills, the second spout) are the next phase of the book.
  */
-export type UnitType = 'dock' | 'maker' | 'belt' | 'combiner' | 'chest';
+export type UnitType = 'dock' | 'maker' | 'belt' | 'combiner' | 'chest' | 'post';
 
 export interface OrderSpec {
   id: string;
   name: string;
   brief: string;
-  /** Deliver `goal` of this to the dock. Fluid targets drink through
-   *  the dock's own gland; item targets ride belts or hands. */
+  /** Deliver `goal` of this to the BANK. Fluid targets drink through
+   *  the bank's own gland; item targets ride belts or hands. */
   target: { kind: 'fluid'; line: 'mains' | 'coolant' | 'volt' } | { kind: 'item'; item: ItemId };
   goal: number;
   /** The GOALS page's deeper read: what this actually asks of you. */
@@ -609,11 +649,11 @@ export const ORDERS: OrderSpec[] = [
   {
     id: 'first-draught',
     name: 'FIRST DRAUGHT',
-    brief: 'Stand the dock, then run a tube from the amber feed into its collar — the collar turns to meet you, so just bring it near. The works pours; the dock drinks ten draughts.',
+    brief: 'Stand the BANK, then run a tube from the amber feed into its collar — the collar turns to meet you, so just bring it near. The works pours; the bank drinks ten draughts.',
     steps: [
-      'Ⓐ → BUILD → DOCK, then trigger on the floor to stand it',
+      'Ⓐ → BUILD → BANK, then trigger on the floor to stand it',
       'Grab the amber feed\u2019s tube with both grips',
-      'Carry the head to the dock\u2019s collar until it snaps home',
+      'Carry the head to the bank\u2019s collar until it snaps home',
     ],
     target: { kind: 'fluid', line: 'mains' },
     goal: 10,
@@ -624,10 +664,10 @@ export const ORDERS: OrderSpec[] = [
   {
     id: 'piece-work',
     name: 'PIECE WORK',
-    brief: 'Now make something. A MAKER fed with amber stamps a GEAR every few seconds onto its chute; RAILS carry them to the dock.',
+    brief: 'Now make something. A MAKER fed with amber stamps a GEAR every few seconds onto its chute; RAILS carry them to the bank.',
     steps: [
       'Stand a MAKER, and move the amber tube onto its collar',
-      'Stand RAILS from the maker\u2019s chute to the dock',
+      'Stand a RAIL at the maker\u2019s chute, then HOLD the trigger and pull the run to the bank',
       'Rails point themselves — they turn to feed whatever they touch',
     ],
     target: { kind: 'item', item: 'gear' },
@@ -653,7 +693,7 @@ export const ORDERS: OrderSpec[] = [
     steps: [
       'Stand a COMBINER where both lines can reach its two sides',
       'Rail the gear line into one side, the cell line into the other',
-      'Rail its front chute onward to the dock',
+      'Pull a rail run from its front chute to the bank',
     ],
     target: { kind: 'item', item: 'pump' },
     goal: 10,

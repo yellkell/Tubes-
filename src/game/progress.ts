@@ -150,6 +150,12 @@ export function railFactor(): number {
 export function chestBonus(): number {
   return upgradeOwned('deep-crates') ? 12 : 0;
 }
+
+/** Posts are a bought VERB: until the fitting is paid for, the catalogue
+ *  doesn't offer sticks and a haul always goes the direct way. */
+export function postsUnlocked(): boolean {
+  return upgradeOwned('route-posts');
+}
 export function reachBonus(): number {
   return upgradeOwned('long-reach') ? 2 : 0;
 }

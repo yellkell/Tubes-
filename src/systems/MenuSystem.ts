@@ -99,6 +99,9 @@ export const menuView: {
   boardButtons?: () => string[];
   snapCard?: () => string;
   cardButtons?: () => string[];
+  /** What the card's controls SAY — a label carries state the id can't
+   *  (QUIT asking "SURE? PRESS AGAIN", for one). */
+  cardLabels?: () => string[];
   /** Every control on the card, in card pixels — the overlap check. */
   cardRects?: () => Array<{ id: string; x: number; y: number; w: number; h: number }>;
   /** The card's pixel frame those rects have to fit inside. */
@@ -124,6 +127,10 @@ export class MenuSystem extends createSystem({}) {
   private railTargetY = NaN;
   /** RESET PROGRESS asks twice; the arm decays after a beat. */
   private resetArm = 0;
+  /** QUIT is armed, not instant. A shift card mis-click used to take a
+   *  whole floor of plant with it — the same two-press confirm RESET
+   *  PROGRESS has always had, for the same reason. Seconds remaining. */
+  private quitArm = 0;
   private lastScreen = '';
   /** The ORDERS tab's selected sheet. */
   private orderSel = 0;
@@ -162,6 +169,7 @@ export class MenuSystem extends createSystem({}) {
     menuView.snapCard = () => (this.card.ctx().canvas as HTMLCanvasElement).toDataURL('image/png');
     menuView.cardButtons = () => this.card.buttonIds();
     menuView.cardRects = () => this.card.buttonRects();
+    menuView.cardLabels = () => this.card.buttonLabels();
     menuView.cardLayout = () => this.card.layout();
   }
 
@@ -187,6 +195,7 @@ export class MenuSystem extends createSystem({}) {
   update(delta: number): void {
     this.clock += delta;
     this.resetArm = Math.max(0, this.resetArm - delta);
+    this.quitArm = Math.max(0, this.quitArm - delta);
 
     if (site.screen === 'shift') site.elapsedMs += delta * 1000;
 
@@ -358,7 +367,14 @@ export class MenuSystem extends createSystem({}) {
       }
     } else if (id === 'resume') {
       site.paused = false;
+      this.quitArm = 0;
     } else if (id === 'quit') {
+      // Ask once. Everything standing on the floor is about to go.
+      if (this.quitArm <= 0) {
+        this.quitArm = 4;
+        return;
+      }
+      this.quitArm = 0;
       site.paused = false;
       if (site.screen === 'factory') abandonFactory();
       else abandonShift();
@@ -380,6 +396,7 @@ export class MenuSystem extends createSystem({}) {
       sfxVolume().toFixed(1),
       site.showWalls,
       this.resetArm > 0,
+      this.quitArm > 0,
       walls.length,
       site.fallbackRoom,
       runsKey,
@@ -921,7 +938,7 @@ export class MenuSystem extends createSystem({}) {
       },
       {
         id: 'quit',
-        label: 'DOWN TOOLS',
+        label: this.quitArm > 0 ? 'SURE? PRESS AGAIN' : 'QUIT',
         tone: UI.danger,
         x: cw / 2 + 12,
         y: ch - 118,
@@ -1032,7 +1049,7 @@ export class MenuSystem extends createSystem({}) {
       },
       {
         id: 'quit',
-        label: 'DOWN TOOLS',
+        label: this.quitArm > 0 ? 'SURE? PRESS AGAIN' : 'QUIT',
         tone: UI.danger,
         x: cw / 2 + 12,
         y: ch - 84,
@@ -1046,11 +1063,12 @@ export class MenuSystem extends createSystem({}) {
       // The wrecking bar sits in the catalogue like any other tool —
       // playtest went looking for a delete and found nothing.
       const kit: Array<{ tool: BuildTool; label: string }> = [
-        { tool: 'dock', label: 'DOCK' },
+        { tool: 'dock', label: 'BANK' },
         { tool: 'maker', label: 'MAKER' },
         { tool: 'belt', label: 'RAIL' },
         { tool: 'combiner', label: 'COMBINER' },
         { tool: 'chest', label: 'CHEST' },
+        { tool: 'post', label: 'POST' },
         { tool: 'delete', label: 'DELETE' },
       ];
       kit.forEach((entry, i) => {
@@ -1148,7 +1166,11 @@ export class MenuSystem extends createSystem({}) {
           g.fillText(
             armed === 'delete'
               ? 'point at plant and pull the trigger to take it out'
-              : 'aim at the floor — it turns itself to connect, Ⓑ turns it yourself',
+              : armed === 'belt'
+                ? 'stand one, then HOLD the trigger and haul the run out'
+                : armed === 'post'
+                  ? 'plant a stick where you want a hauled rail to bend'
+                  : 'aim at the floor — it turns itself to connect, Ⓑ turns it yourself',
             cw / 2,
             ch - CARD_FOOT - 26,
           );

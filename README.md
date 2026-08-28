@@ -183,10 +183,12 @@ src/
   systems/WallSystem.ts       scan → registry (+ the hint frames)
   systems/FloorSystem.ts      the floor adjust verb: grab a tape side,
                               drag it to your wall, Ⓐ when done
-  systems/BuildSystem.ts      unit holograms stamped onto the lattice
-                              (armed from the shift card; pieces face
-                              themselves, Ⓑ turns one, Ⓑ empty-handed
-                              unbolts)
+  systems/BuildSystem.ts      unit holograms — each wearing its own
+                              machine — stamped onto the lattice, and THE
+                              HAUL: stand one rail, hold the trigger, and
+                              drag the run out of it (armed from the shift
+                              card; pieces face themselves, Ⓑ turns one,
+                              Ⓑ empty-handed unbolts)
   systems/FactorySystem.ts    the shift: feeds, the factory pull (the
                               two-hand verb, re-aimed at glands), pours,
                               the sim's beat, parts, the dock's counter
@@ -223,8 +225,10 @@ from phase 3): mark the floor out in hazard tape — it comes down once
 you're set up — and the board's ORDERS tab opens a five-sheet work book:
 feeds on the floor's sides, the two-handed pull re-aimed at bench
 machines whose intakes SWIVEL to meet the tube, rails and boxes that
-TURN THEMSELVES to connect — and Ⓑ turns one yourself when you disagree
-— a chest, a combiner, and a dock counting every delivery. One entrance,
+TURN THEMSELVES to connect — and Ⓑ turns one yourself when you disagree —
+rails you PULL out in one gesture rather than stamp a cell at a time
+(with bought sticks to bend the lane where you want it), a chest, a
+combiner, and a BANK counting every delivery. One entrance,
 one continuous session: goals advance in place on the Ⓐ card as you fill
 them, the catalogue grows with them, and when the book runs out the shop
 just stays open.

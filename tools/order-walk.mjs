@@ -63,6 +63,18 @@ const aim = (i, j, handRot = 0) =>
     { ...cellXZ(i, j), r: handRot },
   );
 const pull = () => page.evaluate(() => window.__tubes.build.trigger());
+/** THE HAUL, as a hand does it: press on a cell, drag, let go. */
+const haulTo = (i, j) =>
+  page.evaluate(({ x, z }) => window.__tubes.build.haulTo(x, z), cellXZ(i, j));
+const haulGo = () => page.evaluate(() => window.__tubes.build.haulRelease());
+async function haulRun(from, to) {
+  await arm('belt');
+  await aim(from[0], from[1], 0);
+  if (!(await pull())) return { anchor: false, steps: [], laid: 0 };
+  const steps = await haulTo(to[0], to[1]);
+  const laid = await haulGo();
+  return { anchor: true, steps, laid };
+}
 /** Arm → aim → pull, the way a player does it. Returns the aim report. */
 async function handPlace(tool, i, j, handRot = 0) {
   await arm(tool);
@@ -151,22 +163,33 @@ const dockId = (await glands('far')).find((g) => g.type === 'dock').unit;
 await seatRun('far', dockId, 'the collar swivels to meet it');
 await setScale(10);
 
-// THE AUTO-FACING, the whole point: lay rails BACKWARD from the dock and
-// every piece turns itself to feed the one before it. No rotation puzzle.
-const railCells = [
-  [4, 0],
-  [4, -1],
-  [4, -2],
-  [3, -2],
-  [2, -2],
-  [1, -2],
-];
-let autoFaced = 0;
-for (const [i, j] of railCells) {
-  const { view, ok } = await handPlace('belt', i, j, 0);
-  if (ok && view && view.feeds) autoFaced++;
+// THE HAUL. A rail is not stamped a cell at a time any more: stand ONE
+// where the parts will come from, hold on, and drag the run to where
+// they should end up — the whole lane in one gesture, the way the tube
+// comes out of a wall. FLOW FOLLOWS THE DRAG, exactly like the tube's
+// head follows your hands, so this goes maker-pitch → the bank.
+const run = await haulRun([1, -2], [4, 0]);
+check(run.anchor, 'one rail stands, and the haul starts in your hand');
+check(run.steps.length >= 5, `the run ratchets out to the corner (${run.steps.length} cells)`);
+check(run.laid === run.steps.length, `and the whole lane lands at once (${run.laid} rails)`);
+// It is an L, not a diagonal staircase: one leg, one corner, one leg.
+const corners = run.steps.filter((st, n) => n > 0 && st.rot !== run.steps[n - 1].rot).length;
+check(corners <= 1, `the lane turns once, not every cell (${corners} corner)`);
+// AND IT IS A CHAIN, not a row of rails: walk the plan from the anchor
+// and every hop must land on the next piece, ending in the dock.
+const plan = await page.evaluate(() => window.__tubes.plant.plan());
+let hop = plan.find((u) => u.i === 1 && u.j === -2);
+let hops = 0;
+while (hop && hop.feeds !== null && hops < 30) {
+  hop = plan.find((u) => u.id === hop.feeds);
+  hops++;
 }
-check(autoFaced === railCells.length, `every rail turned itself to connect (${autoFaced}/6)`);
+// laid rail-to-rail hops, plus the last one INTO the bank.
+check(
+  hops === run.laid + 1,
+  `every rail feeds the next, right into the bank (${hops} hops, ${run.laid} rails)`,
+);
+check(hop?.type === 'dock', `and the lane ends in the bank (${hop?.type})`);
 
 // And the maker, laid last, turns its chute onto the line.
 const maker = await handPlace('maker', 1, -3, 0);
@@ -313,8 +336,19 @@ check(
   s.feeds.far && s.feeds.left && s.feeds.right,
   'every feed is open now — free play, without ever choosing it',
 );
+// The catalogue now reports what you may actually STAND, not merely what
+// the book has unlocked — so the bank is absent once one is standing,
+// and POSTS wait on their bill. Everything else is open.
 const catEnd = await page.evaluate(() => window.__tubes.build.catalogue());
-check(catEnd.available.length === 5, `the whole catalogue is open (${catEnd.available.join(', ')})`);
+check(
+  ['maker', 'belt', 'combiner', 'chest'].every((t) => catEnd.available.includes(t)),
+  `the whole catalogue is open (${catEnd.available.join(', ')})`,
+);
+check(
+  !catEnd.available.includes('dock'),
+  'except a second bank, because one already stands',
+);
+check(!catEnd.available.includes('post'), 'and posts, which are bought and not yet paid for');
 check((await state()).units > 5, 'and the factory you built is untouched');
 
 console.log('THE Ⓐ CARD');
@@ -413,6 +447,66 @@ await page.evaluate(() => {
   window.__tubes.menu.setPause(false);
 });
 
+console.log('THE HOLOGRAM WEARS THE MACHINE');
+// The ghost used to be one anonymous crate for every tool: the catalogue
+// told you what you had picked and the floor didn't, so you found out
+// what you had built by building it. Each tool now holds its own body,
+// from the very same builder the real plant uses.
+const gp = await page.evaluate(() => window.__tubes.build.ghostParts());
+check(
+  ['dock', 'maker', 'belt', 'combiner', 'chest', 'post'].every((t) => gp[t] >= 4),
+  `every tool's ghost is a machine, not a box (${Object.entries(gp).map(([k, v]) => `${k} ${v}`).join(', ')})`,
+);
+check(
+  new Set(Object.values(gp)).size >= 4,
+  'and they do not all look the same as each other',
+);
+
+console.log('THE STICKS');
+// Posts are a bought VERB, not a number: a haul goes direct until you
+// give it somewhere to go through. Pay the bill, plant a stick, and the
+// same drag bends to visit it — and the rail takes the stick's place.
+check(
+  (await page.evaluate(() => window.__tubes.build.catalogue())).available.includes('post') === false,
+  'no sticks before the bill is paid',
+);
+const purse = (await state()).bank;
+await page.evaluate(() => window.__tubes.menu.act('buy:route-posts'));
+await page.waitForTimeout(200);
+const bought = await page.evaluate(() => window.__tubes.plant.state().upgrades);
+check(bought.includes('route-posts'), `ROUTING POSTS fitted (bank ${JSON.stringify(purse)} → ${bought.join(', ')})`);
+check(
+  (await page.evaluate(() => window.__tubes.build.catalogue())).available.includes('post'),
+  'and the sticks arrive in the catalogue',
+);
+
+// Clear ground, then the same haul twice: once direct, once through a
+// stick planted off the straight line.
+const direct = await page.evaluate(({ a, b }) => {
+  const B = window.__tubes.build;
+  B.arm('belt');
+  B.aimAt(a.x, a.z, 0);
+  return { would: window.__tubes.plant.route(a, b) };
+}, { a: cellXZ(-4, 3), b: cellXZ(-1, 3) });
+check(direct.would.length === 3, `a bare haul runs straight (${direct.would.length} cells)`);
+check(await handPlace('post', -3, 1).then((r) => r.ok), 'a stick stands off the straight line');
+const bent = await page.evaluate(
+  ({ a, b }) => window.__tubes.plant.route(a, b),
+  { a: cellXZ(-4, 3), b: cellXZ(-1, 3) },
+);
+check(bent.length > direct.would.length, `the haul bends to visit it (${bent.length} cells)`);
+check(
+  bent.some((st) => st.i === -3 && st.j === 1),
+  'and the lane actually goes through the stick',
+);
+const postRun = await haulRun([-4, 3], [-1, 3]);
+check(postRun.laid === bent.length, `the bent lane lands whole (${postRun.laid} rails)`);
+const afterPost = await page.evaluate(() => window.__tubes.plant.plan());
+check(
+  !afterPost.some((u) => u.type === 'post' && u.i === -3 && u.j === 1),
+  'the stick is spent — the rail took its place',
+);
+
 console.log('THE WRECKING BAR');
 const before = (await state()).units;
 await arm('delete');
@@ -424,9 +518,25 @@ const nothing = await aim(-5, 3, 0);
 check(nothing?.placeable === false, 'empty floor has nothing to delete');
 await arm(null);
 
-await page.evaluate(() => window.__tubes.abandonFactory());
+console.log('DOWN TOOLS');
+// QUIT asks first. One mis-click used to take a whole floor of plant
+// with it — the same two-press confirm RESET PROGRESS has always had.
+await page.evaluate(() => {
+  window.__tubes.menu.setPause(true);
+  window.__tubes.menu.act('quit');
+});
+await page.waitForTimeout(250);
+check(
+  (await page.evaluate(() => window.__tubes.site.screen)) === 'factory',
+  'one press on QUIT does not take the floor with it',
+);
+check(
+  (await page.evaluate(() => window.__tubes.menu.cardLabels())).some((l) => /SURE/.test(l)),
+  'it asks first',
+);
+await page.evaluate(() => window.__tubes.menu.act('quit'));
 await page.waitForFunction(() => window.__tubes.site.screen === 'board', undefined, { timeout: 5000 });
-check((await state()).mode === 'idle', 'DOWN TOOLS closes the shop');
+check((await state()).mode === 'idle', 'and the second press closes the shop');
 
 await browser.close();
 if (fails.length) {

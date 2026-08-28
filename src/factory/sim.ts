@@ -22,8 +22,8 @@ import {
   type ItemId,
   type UnitType,
 } from '../config.js';
-import { CELL, cellCenter, cellInFloor, occupy, vacate } from '../floor/grid.js';
-import { chestBonus, craftFactor, railFactor } from '../game/progress.js';
+import { CELL, cellCenter, cellInFloor, occupy, vacate, type Cell } from '../floor/grid.js';
+import { chestBonus, craftFactor, postsUnlocked, railFactor } from '../game/progress.js';
 import {
   DIRS,
   beltPart,
@@ -112,6 +112,9 @@ export function unitAvailable(type: UnitType): boolean {
   // before any sheet is posted); a shift obeys its catalogue — and FREE
   // PLAY's catalogue is simply everything.
   if (plant.mode === 'idle') return true;
+  // A POST is bought, not unlocked by a sheet: it never joins the book's
+  // ladder, so the catalogue would never list it.
+  if (type === 'post') return postsUnlocked();
   return plant.unitsAvailable.includes(type);
 }
 
@@ -130,6 +133,9 @@ export function dockUnit(): Unit | undefined {
  * whether a join means anything.
  */
 export function canLink(into: Unit, travel: Rot): boolean {
+  // A POST is scaffolding, not plant: it holds a corner for a haul to
+  // route through and has no more to do with a part than the floor does.
+  if (into.type === 'post') return false;
   if (into.type === 'belt' || into.type === 'dock' || into.type === 'chest') return true;
   if (into.type === 'combiner') {
     const enterFrom = ((travel + 2) % 4) as Rot;
@@ -161,7 +167,7 @@ export function linkAhead(unit: Unit): Unit | null {
  */
 export function bestRot(type: UnitType, i: number, j: number, handRot: Rot): Rot {
   // Sinks don't care which way they face; keep the hand honest.
-  if (type === 'dock' || type === 'chest') return handRot;
+  if (type === 'dock' || type === 'chest' || type === 'post') return handRot;
   let best = handRot;
   let bestScore = -Infinity;
   for (let r = 0; r < 4; r++) {
@@ -191,6 +197,140 @@ export function bestRot(type: UnitType, i: number, j: number, handRot: Rot): Rot
     }
   }
   return best;
+}
+
+/* ── THE HAUL ──────────────────────────────────────────────────────────────
+ * A rail run is PULLED, not stamped. You stand one rail and hold on; the
+ * run ratchets out of it toward wherever you point, the way a tube
+ * ratchets out of a wall. Everything about the shape of that run lives
+ * here, so the ghost you drag and the rails that land can never disagree.
+ */
+
+/** A cell on a haul, in order, with the way the rail there must face. */
+export interface HaulStep {
+  i: number;
+  j: number;
+  rot: Rot;
+}
+
+/** One Manhattan leg, longer axis first — an L, which is what a hand
+ *  drawing a lane across a room actually does. Excludes `from`. */
+function legCells(from: Cell, to: Cell): Cell[] {
+  const out: Cell[] = [];
+  let { i, j } = from;
+  const di = Math.sign(to.i - i);
+  const dj = Math.sign(to.j - j);
+  const iFirst = Math.abs(to.i - i) >= Math.abs(to.j - j);
+  const runI = (): void => {
+    while (i !== to.i) {
+      i += di;
+      out.push({ i, j });
+    }
+  };
+  const runJ = (): void => {
+    while (j !== to.j) {
+      j += dj;
+      out.push({ i, j });
+    }
+  };
+  if (iFirst) {
+    runI();
+    runJ();
+  } else {
+    runJ();
+    runI();
+  }
+  return out;
+}
+
+/**
+ * THE ROUTE a haul from `anchor` toward `to` would take.
+ *
+ * Direct by default — an L across the floor. But every POST standing
+ * between the two (inside their bounding box) is a waypoint the run
+ * visits in order, nearest first: that is the whole point of the sticks.
+ * Plant it where you want the corner and the lane bends to meet it,
+ * instead of you having to draw the corner with your arm.
+ *
+ * The run stops the moment it meets something it cannot pass: a post is
+ * consumed and passed through, empty floor is laid on, and anything else
+ * ENDS the haul — before the obstacle, so the last rail simply points
+ * into it. A rail that fetches up against the bank has arrived; one
+ * against a maker has hit a wall. Same rule, and canLink says which.
+ */
+export function haulRoute(anchor: Cell, to: Cell, limit: number): HaulStep[] {
+  // The catchment: the box between the two ends, opened out by
+  // UNITS.pull.postReach so a stick can sit OFF the straight line —
+  // which is the only place a stick is any use.
+  const reach = UNITS.pull.postReach;
+  const lo = { i: Math.min(anchor.i, to.i) - reach, j: Math.min(anchor.j, to.j) - reach };
+  const hi = { i: Math.max(anchor.i, to.i) + reach, j: Math.max(anchor.j, to.j) + reach };
+  const dist = (c: Cell): number => Math.abs(c.i - anchor.i) + Math.abs(c.j - anchor.j);
+  const posts = plant.units
+    .filter(
+      (u) => u.type === 'post' && u.i >= lo.i && u.i <= hi.i && u.j >= lo.j && u.j <= hi.j,
+    )
+    .map((u) => ({ i: u.i, j: u.j }))
+    .sort((a, b) => dist(a) - dist(b));
+
+  // anchor → each post in turn → where the hand is pointing.
+  const cells: Cell[] = [];
+  let from: Cell = { i: anchor.i, j: anchor.j };
+  for (const way of [...posts, to]) {
+    if (way.i === from.i && way.j === from.j) continue;
+    for (const c of legCells(from, way)) {
+      if (cells.some((x) => x.i === c.i && x.j === c.j)) continue;
+      cells.push(c);
+    }
+    from = way;
+  }
+
+  const steps: HaulStep[] = [];
+  for (let n = 0; n < cells.length && steps.length < limit; n++) {
+    const c = cells[n];
+    if (!cellInFloor(c.i, c.j)) break;
+    const standing = unitAtCell(c.i, c.j);
+    if (standing && standing.type !== 'post') break; // arrived, or blocked
+    const nextCell = cells[n + 1];
+    const prev: Cell = n === 0 ? anchor : cells[n - 1];
+    const towards = nextCell ?? null;
+    steps.push({
+      i: c.i,
+      j: c.j,
+      rot: towards ? dirTo(c, towards) : dirTo(prev, c),
+    });
+  }
+  return steps;
+}
+
+/** The rot that walks from `a` to the adjacent-ish `b`.
+ *  DIRS is [ −j, +i, +j, −i ] — read it off the table, don't guess it. */
+function dirTo(a: Cell, b: Cell): Rot {
+  if (Math.abs(b.i - a.i) >= Math.abs(b.j - a.j)) return b.i > a.i ? 1 : 3;
+  return b.j > a.j ? 2 : 0;
+}
+
+/** Lay a hauled run. Posts on the route are spent — the stick marked the
+ *  corner and the rail takes its place. Returns how many rails landed. */
+export function layHaul(anchor: Cell, steps: HaulStep[]): number {
+  let laid = 0;
+  for (const step of steps) {
+    const standing = unitAtCell(step.i, step.j);
+    if (standing) {
+      if (standing.type !== 'post') break;
+      removeUnit(standing);
+    }
+    if (!placeUnit('belt', step.i, step.j, step.rot)) break;
+    laid++;
+  }
+  // The anchor itself now has somewhere to send: point it down the run.
+  const first = steps[0];
+  const head = unitAtCell(anchor.i, anchor.j);
+  if (laid > 0 && first && head && head.type === 'belt') {
+    head.rot = dirTo(anchor, { i: first.i, j: first.j });
+    plant.generation++; // the mesh has to hear about a rot set after the fact
+  }
+  return laid;
 }
 
 /** Where a unit may stand: null when the cell refuses it. (Plant used to

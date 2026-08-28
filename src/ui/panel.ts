@@ -209,6 +209,12 @@ export class Panel {
     return this.buttons.map((b) => ({ id: b.id, x: b.x, y: b.y, w: b.w, h: b.h }));
   }
 
+  /** What each control reads, in order — some state only shows up in a
+   *  label (an armed confirm, a count, a price). */
+  buttonLabels(): string[] {
+    return this.buttons.map((b) => b.label);
+  }
+
   /** The panel's pixel canvas size — the frame those rects live in. */
   layout(): { w: number; h: number } {
     return { w: this.pxW, h: this.pxH };
