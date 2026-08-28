@@ -349,6 +349,65 @@ export const PORTS = {
   floorAvoidRadius: 0.9,
 };
 
+/* ────────────────────────────── THE FLOOR ────────────────────────────────
+ * PIECEWORK groundwork (FACTORY.md, phase 0). Before the shop can stand,
+ * you mark out the floor: a rectangle of HAZARD TAPE strung post to post
+ * on your real floor, each side draggable to your real walls — SLUGFEST's
+ * ring verb wearing site clothing. Reach toward a side, hold the trigger,
+ * slide it along its own normal; one side at a time; clamps keep the
+ * floor a floor; the layout saves per headset.
+ */
+export const FLOOR = {
+  /** The floor stays workable: sides can't close inside this. */
+  minWidth: 1.8,
+  minDepth: 1.8,
+  /** Hard cap on any side's coordinate — even a warehouse scan doesn't
+   *  get a tape run the pull can't service. */
+  maxSide: 7,
+  /** Default sides stand this far inside the registry's walls. */
+  inset: 0.25,
+  /** Dragging a side inside this reach of a parallel wall SNAPS it… */
+  snapDist: 0.2,
+  /** …to just off the plaster (tape touches walls in no workshop). */
+  snapGap: 0.04,
+  /** How close a hand must be to a side to take it. */
+  grabReach: 0.65,
+  /** Sides refuse to cross standing plant by this margin — re-planning
+   *  the floor can never orphan a crate outside the boundary. */
+  plantPad: 0.15,
+  /** The tape itself: barricade height and band width. */
+  tapeHeight: 0.72,
+  tapeWidth: 0.07,
+  /** One amber+black stripe cycle per this many metres of tape. */
+  stripePeriod: 0.24,
+  /** Corner posts stand at bench height — the shop's one datum. */
+  postHeight: 0.85,
+  /** No walls yet (grace still counting) — a starter floor this big
+   *  stands around the player, ready to drag out. */
+  fallback: { w: 3.6, d: 2.8 },
+  /** The build lattice: world-anchored cells this wide. Anchored to the
+   *  WORLD, not the rectangle, so dragging a side never re-deals the
+   *  cells under standing plant. */
+  cell: 0.35,
+};
+
+/* ────────────────────────────── THE UNITS ────────────────────────────────
+ * Phase 0 places one placeholder unit — the CRATE, a bench-height stand
+ * the real machines will inherit their footprint from. Everything is
+ * bench height on principle: a room-scale factory on the actual floor is
+ * a crouching simulator, so the whole shop lives in the mount band.
+ */
+export const UNITS = {
+  crate: {
+    /** Footprint (m) — sits inside one grid cell with clearance. */
+    size: 0.3,
+    /** The box itself; its top lands on the bench datum. */
+    height: 0.3,
+    benchTop: 0.85,
+    legRadius: 0.018,
+  },
+};
+
 /* ────────────────────────────── THE BOARD ────────────────────────────────
  * The menu is a work board: quiet glass, hairlines, one furnace-amber
  * accent that only marks what matters (see ui/panel.ts for the whole

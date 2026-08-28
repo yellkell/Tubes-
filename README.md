@@ -156,6 +156,12 @@ src/
                          for an advancing front inside a pipe
   room/walls.ts          the wall model: registry types, mount band,
                          the seeded socket picker, the fallback room
+  floor/plan.ts          THE FLOOR: the hazard-tape site boundary —
+                         SLUGFEST's ring layout ported whole (clamps,
+                         wall snap, the plant law, per-headset save)
+  floor/grid.ts          the world-anchored build lattice + occupancy
+  floor/tape.ts          the tape rig: striped bands, bench posts,
+                         grab rings, deck line, lattice hint
   tube/geometry.ts       telescoping maths: cubic path, root-first
                          section fill, spans, stops
   tube/build.ts          the hardware: flange / socket / segments /
@@ -166,6 +172,9 @@ src/
   game/rng.ts            seeded rng (vendored)
   game/haptics.ts        the buzz
   systems/WallSystem.ts       scan → registry (+ the hint frames)
+  systems/FloorSystem.ts      the floor adjust verb: grab a tape side,
+                              drag it to your wall, Ⓐ when done
+  systems/BuildSystem.ts      crate holograms stamped onto the lattice
   systems/PlacementSystem.ts  the reticle, the mount, the wake
   systems/TubeSystem.ts       the pull: grab, ratchet, park, magnet, seat
   systems/FlowSystem.ts       the payoff: charge, pour, bloom, shaft,
@@ -176,13 +185,18 @@ src/
 tools/
   job-walk.mjs           THE FULL SHIFT: every job worked end to end,
                          headlessly, with phase/unlock/budget/joint asserts
+  floor-walk.mjs         THE FLOOR: tape defaults, clamps, snap, lattice
+                         stamping, the plant law, persistence — asserted
   preview-shot.mjs       screenshots of the moments that carry the look
   socket-look.mjs        a socket from 14 angles — the anti-culling check
                          (open geometry looks whole from one viewpoint and
                          half-there from the next; only an orbit catches it)
 ```
 
-`DESIGN.md` has the full design notes and the roadmap.
+`DESIGN.md` has the full design notes and the roadmap. `FACTORY.md`
+carries the factory direction — PIECEWORK: the genre research, the whole
+design, and the phased build; phase 0 (THE FLOOR: hazard tape round the
+shop floor, dragged to your real walls) is in.
 
 ## Checks
 
@@ -190,6 +204,7 @@ tools/
 npm run typecheck        # strict TS, no emit
 npm run dev &            # then:
 node tools/job-walk.mjs  # the whole ladder, asserted (exits non-zero on fail)
+node tools/floor-walk.mjs     # the factory floor: tape, clamps, lattice
 node tools/preview-shot.mjs   # shots/ of the landing, board, pull, pour
 node tools/socket-look.mjs    # shots/socket/ — one socket, 14 angles
 ```

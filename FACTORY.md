@@ -209,9 +209,13 @@ shop.
 
 ### THE FLOOR — the boundary (ported from SLUGFEST's ring)
 
-Before the first order, the board hands you the floor: a hairline
-rectangle on your real floor with four glowing side-handles, exactly
-SLUGFEST's ADJUST RING verb —
+Before the first order, the board hands you the floor: a rectangle of
+amber-and-black **hazard tape** strung post to post at hip height across
+your real floor — SLUGFEST's ADJUST RING verb, restrung in barricade
+tape (the team call: tape, not ropes — and the shop's furnace amber IS
+caution livery, so the boundary wears the game's one accent for free).
+Bench-height corner posts, a hairline deck mark, the build lattice faint
+inside it, and in adjust mode each side grows a glowing grab ring —
 
 - reach toward a side, **hold trigger, drag it along its own normal** to
   your real wall; release and it stays; one side at a time; clamps keep a
@@ -427,8 +431,11 @@ makes the whole factory drivable headlessly, tools that walk the real code.
 src/floor/plan.ts        THE FLOOR: {left,right,near,far}, clamps (incl.
                          occupied-cell law), wall-snap, save/load
                          — a straight port of arena/ringLayout.ts
-src/floor/grid.ts        boundary-aligned 0.35 m cells, occupancy, port
-                         adjacency (which cell faces feed which)
+src/floor/grid.ts        the WORLD-ANCHORED 0.35 m lattice + occupancy
+                         (anchored to the world, not the rectangle, so a
+                         dragged side never re-deals cells under plant)
+src/floor/tape.ts        the hazard-tape rig: striped bands, bench-height
+                         posts, grab rings, deck line, lattice hint
 src/factory/items.ts     ItemSpec registry (id, tier, line lineage,
                          silhouette recipe)
 src/factory/recipes.ts   RecipeSpec: 1-in maker table (colour→part) +
@@ -482,9 +489,17 @@ instanced — the walk asserts it instead of hoping.
 
 Five phases, each ending green on `npm run typecheck` + a headless walk.
 
-- **Phase 0 — THE FLOOR.** Port ringLayout → `floor/plan.ts`; adjust mode
-  in FloorSystem; grid + hologram floor placement (no sim). *Check: set
-  floor + stamp 4 dummy units headlessly in the emulator.*
+- **Phase 0 — THE FLOOR.** ✅ **SHIPPED.** `floor/plan.ts` (the ring
+  port: clamps, the plant law, per-headset save), `floor/grid.ts`,
+  `floor/tape.ts` (the hazard-tape rig), `systems/FloorSystem.ts` (the
+  adjust verb + wall snap with a ratchet click), `systems/BuildSystem.ts`
+  (crate holograms stamped onto the lattice, Ⓑ unbolts), SET THE FLOOR
+  on the board's SYSTEM tab. All of it walked headlessly by
+  `tools/floor-walk.mjs` — defaults dealt from the walls, the cap, the
+  minimum, the snap through the live drag path, occupied-cell refusal,
+  the plant law, and the layout surviving a reload — with the original
+  five-job ladder still walking green beside it
+  (`npm run dev`, then `node tools/floor-walk.mjs`).
 - **Phase 1 — SUPPLY.** Feed pillars, spout glands, TubeSystem seats into
   a maker intake, continuous pour, maker ejects parts, dock + hand-carry.
   *Orders 1–2 playable end to end.*

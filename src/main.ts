@@ -16,6 +16,8 @@
 import { launchXR, SessionMode, World } from '@iwsdk/core';
 import { DirectionalLight, HemisphereLight } from 'three';
 import { ensureAudio } from './audio/sfx.js';
+import { BuildSystem, buildView } from './systems/BuildSystem.js';
+import { FloorSystem, floorView } from './systems/FloorSystem.js';
 import { FlowSystem, flowView } from './systems/FlowSystem.js';
 import { MenuSystem, menuView } from './systems/MenuSystem.js';
 import { PlacementSystem, placeView } from './systems/PlacementSystem.js';
@@ -85,6 +87,8 @@ World.create(container, {
   // then the shift's verbs in the order a run lives them, the payoff, and
   // the board last so it reads final state.
   world.registerSystem(WallSystem);
+  world.registerSystem(FloorSystem); // reads the registry; owns the tape
+  world.registerSystem(BuildSystem); // after the tape claims a hand, before the flange
   world.registerSystem(PlacementSystem);
   world.registerSystem(TubeSystem);
   world.registerSystem(FlowSystem);
@@ -147,6 +151,10 @@ declare global {
       menu: typeof menuView;
       /** Flange placement: reticle state, and the headless mount. */
       place: typeof placeView;
+      /** THE FLOOR: hazard tape adjust, drivable headlessly. */
+      floor: typeof floorView;
+      /** The lattice: stamp/remove crates, read occupancy. */
+      build: typeof buildView;
       /** The tube: pull state, and the headless hands. */
       tube: typeof tubeView;
       /** The pour: fronts, energies, what's landed. */
@@ -168,6 +176,8 @@ window.__tubes = {
   abandonShift,
   menu: menuView,
   place: placeView,
+  floor: floorView,
+  build: buildView,
   tube: tubeView,
   flow: flowView,
   info: () => {

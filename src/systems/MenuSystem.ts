@@ -29,7 +29,7 @@ import { Raycaster, Vector3, type Intersection, type Object3D } from 'three';
 import { BOARD, GAME_TITLE, JOBS, LINES } from '../config.js';
 import * as sfx from '../audio/sfx.js';
 import { setSfxVolume, sfxVolume } from '../audio/sfx.js';
-import { abandonShift, startJob } from '../game/flow.js';
+import { abandonShift, enterFloorSetup, startJob } from '../game/flow.js';
 import { bestMs, resetProgress, unlockedJobs } from '../game/progress.js';
 import { site } from '../game/state.js';
 import { font } from '../ui/fonts.js';
@@ -278,6 +278,8 @@ export class MenuSystem extends createSystem({}) {
       setSfxVolume(Math.min(1, Math.round((sfxVolume() + 0.1) * 10) / 10));
     } else if (id === 'walls:toggle') {
       site.showWalls = !site.showWalls;
+    } else if (id === 'floor:set') {
+      enterFloorSetup();
     } else if (id === 'reset') {
       if (this.resetArm > 0) {
         resetProgress();
@@ -582,11 +584,19 @@ export class MenuSystem extends createSystem({}) {
         h: 96,
       },
       {
+        id: 'floor:set',
+        label: 'SET THE FLOOR',
+        x: CONTENT_X + 330,
+        y: y0 + SYS_PITCH * 2,
+        w: rowW + valueW + 16,
+        h: 96,
+      },
+      {
         id: 'reset',
         label: this.resetArm > 0 ? 'SURE? PRESS AGAIN' : 'RESET PROGRESS',
         tone: UI.danger,
         x: CONTENT_X + 330,
-        y: y0 + SYS_PITCH * 2,
+        y: y0 + SYS_PITCH * 3,
         w: rowW + valueW + 16 + rowW + 16,
         h: 96,
         small: true,
@@ -606,7 +616,8 @@ export class MenuSystem extends createSystem({}) {
       };
       label('SOUND', 'the shop, the ratchet, the pour', SYS_Y0);
       label('WALL FRAMES', 'hairlines on what the scan found', SYS_Y0 + SYS_PITCH);
-      label('THE SHEET', 'tear it up, start the trade again', SYS_Y0 + SYS_PITCH * 2);
+      label('THE FLOOR', 'hazard tape round the shop floor — drag the sides to your walls', SYS_Y0 + SYS_PITCH * 2);
+      label('THE SHEET', 'tear it up, start the trade again', SYS_Y0 + SYS_PITCH * 3);
 
       const real = walls.filter((w) => w.real && w.kind === 'wall').length;
       const flats = walls.filter((w) => w.kind !== 'wall').length;

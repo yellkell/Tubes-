@@ -62,6 +62,21 @@ export function runLanded(runIndex: number): void {
   }
 }
 
+/** THE FLOOR (FACTORY.md, phase 0): step off the board and mark the
+ *  site out in hazard tape. FloorSystem owns the verb and the exit
+ *  button; these own the screen change. */
+export function enterFloorSetup(): void {
+  if (site.screen !== 'board') return;
+  site.screen = 'floor';
+  site.generation++;
+}
+
+export function exitFloorSetup(): void {
+  if (site.screen !== 'floor') return;
+  site.screen = 'board';
+  site.generation++;
+}
+
 /** Ceremony over: the hardware stays lit in memory, the board returns. */
 export function ceremonyDone(): void {
   if (site.screen !== 'ceremony') return;

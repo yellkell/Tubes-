@@ -11,6 +11,7 @@ import { LINES } from '../config.js';
 
 export type Screen =
   | 'board' // the work board is up, no shift running
+  | 'floor' // marking the site out in hazard tape (FloorSystem's verb)
   | 'shift' // a job is live: place, pull, seat, pour, repeat
   | 'ceremony'; // the last run landed — the room gets its moment
 
