@@ -343,6 +343,19 @@ row of boxes.
 its target red — a verb nobody can find is a verb that doesn't exist.
 Moving it there freed Ⓑ up for the verb it should always have had:
 
+**A SEATED LINE COMES OFF WITH A TUG.** Sheet 1 runs the amber tube
+into the bank; sheet 2 wants that same line feeding a maker. The only
+way to free it was to DELETE the bank, which is a nonsense — a fitter
+would take the collar in both hands and pull it off. So now you do:
+both hands on a seated collar, hauled clear of the gland and HELD there
+while the joint creaks and the grips buzz harder the closer it comes to
+letting go. Brush past a running factory and nothing happens; mean it,
+and the line is in your hands, still extended, ready to walk to the next
+box. And **the gland you just tore it off spurns it** for a couple of
+seconds: the head is by definition right beside the box you freed it
+from, so without that the magnet would undo the tug before you had taken
+a step, and you would fight the same box forever.
+
 **THE RAIL IS PULLED, NOT STAMPED.** Pressing a trigger once per cell
 is bookkeeping, not a verb — and this game already owns the best verb it
 has. So: stand ONE rail where the parts come from, keep hold of the

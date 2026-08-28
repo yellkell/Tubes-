@@ -227,8 +227,9 @@ feeds on the floor's sides, the two-handed pull re-aimed at bench
 machines whose intakes SWIVEL to meet the tube, rails and boxes that
 TURN THEMSELVES to connect — and Ⓑ turns one yourself when you disagree —
 rails you PULL out in one gesture rather than stamp a cell at a time
-(with bought sticks to bend the lane where you want it), a chest, a
-combiner, and a BANK counting every delivery. One entrance,
+(with bought sticks to bend the lane where you want it), supply lines you
+can HAUL back off a box to re-plumb it, a chest, a combiner, and a BANK
+counting every delivery. One entrance,
 one continuous session: goals advance in place on the Ⓐ card as you fill
 them, the catalogue grows with them, and when the book runs out the shop
 just stays open.

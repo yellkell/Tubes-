@@ -131,7 +131,43 @@ async function seatRun(side, glandUnit, label = '') {
   );
   check(true, `${side} seats into unit ${glandUnit}${label ? ` — ${label}` : ''}`);
 }
-const unseat = (u) => page.evaluate((x) => window.__tubes.plant.unseat(x), u);
+/**
+ * THE TUG — a seated line comes off its gland by being HAULED, the way
+ * a fitter would do it. This is the only door the hands have, so it is
+ * the only door the walk uses: `unseat` above is a back road, and a walk
+ * that drives back roads proves nothing about whether the game is
+ * playable. (Sheet 2 is the case: the amber line has to come off the
+ * bank and onto the maker, and deleting the bank to free it is absurd.)
+ */
+async function tugOff(side, fromUnit) {
+  const g = (await glands(side)).find((x) => x.unit === fromUnit);
+  if (!g) return check(false, `a seated collar to haul off unit ${fromUnit}`);
+  if (!(await page.evaluate((sd) => window.__tubes.plant.grab(sd), side))) {
+    return check(false, 'a seated collar can be taken in both hands at all');
+  }
+  const strainNow = () => page.evaluate((sd) => window.__tubes.plant.strain(sd), side);
+  check((await strainNow()) === 0, 'holding it is not pulling it — nothing strains yet');
+  // Haul it straight off the gland, along the way it went in.
+  await page.evaluate(
+    ({ x, y, z }) => window.__tubes.plant.dragTo(x, y, z),
+    { x: g.x + g.nx * 0.42, y: g.y + g.ny * 0.42, z: g.z + g.nz * 0.42 },
+  );
+  await page.waitForTimeout(180);
+  const mid = await strainNow();
+  check(mid > 0 && mid < 1, `the joint strains under the haul (${mid.toFixed(2)})`);
+  try {
+    await page.waitForFunction(
+      (sd) => window.__tubes.plant.state().runs.find((r) => r.side === sd)?.phase === 'pull',
+      side,
+      { timeout: 6000 },
+    );
+  } catch {
+    await page.evaluate(() => window.__tubes.plant.release());
+    return check(false, `${side} should come off unit ${fromUnit} under a sustained haul`);
+  }
+  check(true, `and it comes away in your hands (unit ${fromUnit} freed)`);
+  return true;
+}
 
 /* ── the shop ────────────────────────────────────────────────────────── */
 
@@ -255,8 +291,20 @@ check(s.units >= 8, `and the plant you built is still standing (${s.units} units
 console.log('GOAL 2 — the first thing you make');
 await setScale(6);
 const makerId = (await glands('far')).find((g) => g.type === 'maker').unit;
-await unseat(dockId);
-await page.waitForTimeout(900);
+// Sheet 2 needs the amber line off the bank and onto the maker. No
+// deleting anything: haul it off, still in your hands, walk it across.
+await tugOff('far', dockId);
+await page.evaluate(() => window.__tubes.plant.release());
+await page.waitForTimeout(500);
+const freed = await state();
+check(
+  freed.runs.find((r) => r.side === 'far').target === -1,
+  'the bank is still standing — nothing had to be deleted to free the line',
+);
+check(
+  freed.units === (await unitsAt()),
+  'and the gland it came off does not snatch it straight back',
+);
 await seatRun('far', makerId, 'amber feeds the maker');
 await page.waitForFunction(() => window.__tubes.plant.state().parts > 0, undefined, {
   timeout: 60000,
@@ -309,7 +357,9 @@ await setScale(6);
 s = await state();
 check(s.feeds.right === true, 'the violet feed woke for the last sheet');
 await handPlace('chest', 2, 1, 0);
-await unseat(makerId);
+// Sheet 5 re-plumbs the same box onto violet — the tug again, in anger.
+await tugOff('far', makerId);
+await page.evaluate(() => window.__tubes.plant.release());
 await page.waitForTimeout(900);
 await seatRun('right', makerId, 'violet re-feeds the same box');
 

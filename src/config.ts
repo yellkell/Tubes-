@@ -93,6 +93,17 @@ export const TUBE = {
    *  (analog, with the press as fallback) — a jostled grip mid-swing
    *  dips, it doesn't open. The only way to drop plant is to let go. */
   holdSqueeze: 0.3,
+  /** BREAKING A SEAL. A seated tube is not welded to the box: take the
+   *  collar in both hands and HAUL, and the gland lets go. Sheet 2 wants
+   *  the amber line moved off the bank and onto the maker, and the only
+   *  way out used to be deleting the bank — a fitter would just pull it.
+   *
+   *  It has to cost something, though, or a hand brushing past would
+   *  unplumb a running factory. So it takes a real tug: both hands, and
+   *  the collar dragged this far off the gland, held for `unseatHoldS`
+   *  while the joint audibly strains. Let go early and it re-seats. */
+  unseatPull: 0.26,
+  unseatHoldS: 0.45,
   /** One hand alone can't haul it — but it can RATTLE it. The shake
    *  amplitude and the cooldown between rattle clanks. */
   rattleAmp: 0.012,
@@ -442,6 +453,10 @@ export const UNITS = {
  * better.
  */
 export const FACTORY = {
+  /** After a line is hauled off a gland, that gland ignores it for this
+   *  long — the head is right beside the box you just freed it from, so
+   *  without a pause the magnet undoes the tug before you can step away. */
+  spurnS: 2.5,
   /** Which line each side's FEED carries. `near` holds PEARL — a fourth
    *  manifold kept visibly in reserve (the expansion hook; it never
    *  wakes in these sheets). */
@@ -666,7 +681,7 @@ export const ORDERS: OrderSpec[] = [
     name: 'PIECE WORK',
     brief: 'Now make something. A MAKER fed with amber stamps a GEAR every few seconds onto its chute; RAILS carry them to the bank.',
     steps: [
-      'Stand a MAKER, and move the amber tube onto its collar',
+      'Stand a MAKER \u2014 then take the amber collar off the bank in BOTH hands and HAUL until it lets go',
       'Stand a RAIL at the maker\u2019s chute, then HOLD the trigger and pull the run to the bank',
       'Rails point themselves — they turn to feed whatever they touch',
     ],
@@ -704,7 +719,7 @@ export const ORDERS: OrderSpec[] = [
     name: 'NIGHT SHIFT',
     brief: 'Violet wakes. CHIPS meet cells and make LAMPS — and the CHEST arrives to hold what runs ahead of the line.',
     steps: [
-      'Move a maker\u2019s tube onto the violet feed — the same box now stamps CHIPS',
+      'Haul a maker\u2019s collar off in both hands and re-seat it on the violet line — the same box now stamps CHIPS',
       'Feed chips and cells to the combiner',
       'Stand a CHEST anywhere a line runs ahead of itself',
     ],

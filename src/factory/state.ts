@@ -75,6 +75,15 @@ export interface FactoryRun {
   lastSections: number;
   rattleCool: number;
   strainCool: number;
+  /** Seconds this seated collar has been hauled past TUBE.unseatPull.
+   *  Reaching unseatHoldS breaks the seal and puts the line in your
+   *  hands; letting go early settles it back. */
+  strain: number;
+  /** The unit this line was just hauled OFF, and how long its gland
+   *  stays spurned — long enough to carry the head clear without the
+   *  magnet snapping it straight back on. */
+  spurnUnit: number;
+  spurnT: number;
   seatP: number;
   headVisual: Vector3;
   energy: number;
@@ -234,6 +243,9 @@ export function freshRun(side: FloorSide, line: LineSpec, spout: Vector3, normal
     lastSections: 1,
     rattleCool: 0,
     strainCool: 0,
+    strain: 0,
+    spurnUnit: -1,
+    spurnT: 0,
     seatP: 0,
     headVisual: head.clone(),
     energy: 0,

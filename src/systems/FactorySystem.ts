@@ -95,6 +95,8 @@ export const factoryView: {
     units: number;
     bank: Partial<Record<ItemId, number>>;
   };
+  /** How close a seated line is to coming off its gland (0..1). */
+  strain?: (side: FloorSide) => number;
   /** The route a haul between two floor points would lay. */
   route?: (
     from: { x: number; z: number },
@@ -275,7 +277,12 @@ export class FactorySystem extends createSystem({}) {
     };
     factoryView.grab = (side) => {
       const run = runForSide(side);
-      if (!run || run.phase !== 'pull') return false;
+      // A SEATED collar is grabbable too — that is the whole tug: take
+      // it, haul it off the gland, walk it to the next box. A walk needs
+      // the same door the hands use.
+      if (!run || (run.phase !== 'pull' && run.phase !== 'seated' && run.phase !== 'flowing')) {
+        return false;
+      }
       this.driven.active = true;
       this.driven.side = side;
       this.driven.pos.copy(run.headVisual);
@@ -286,6 +293,12 @@ export class FactorySystem extends createSystem({}) {
     };
     factoryView.release = () => {
       this.driven.active = false;
+    };
+    /** How far a seated collar is from letting go: 0 = seated, 1 = the
+     *  seal is about to break. A walk watches this rise as it hauls. */
+    factoryView.strain = (side) => {
+      const run = runForSide(side);
+      return run ? Math.min(1, run.strain / TUBE.unseatHoldS) : 0;
     };
     factoryView.unseat = (unitId) => {
       const run = runSeatedAt(unitId);
@@ -681,9 +694,11 @@ export class FactorySystem extends createSystem({}) {
     const hw = this.runHw.get(run.side);
     if (!hw) return;
 
+    if (run.spurnT > 0) run.spurnT -= delta;
     if (run.phase === 'pull' && !site.paused) this.tickPull(run, hw, delta);
     else if (run.phase === 'retract') this.tickRetract(run, hw, delta);
     if (run.phase === 'seated' || run.phase === 'flowing') {
+      if (!site.paused) this.tickStrain(run, delta);
       this.layTube(run, hw, run.extension, true);
       this.tickPour(run, hw, delta);
     } else {
@@ -781,6 +796,11 @@ export class FactorySystem extends createSystem({}) {
       for (const unit of plant.units) {
         if (unit.type !== 'maker' && unit.type !== 'dock') continue;
         if (runSeatedAt(unit.id)) continue;
+        // A GLAND YOU JUST TORE THE LINE OFF DOESN'T GRAB IT BACK. The
+        // head is, by definition, right beside the box you just hauled
+        // it from, so without this the magnet undoes the tug before you
+        // have taken a step — you'd fight the same box forever.
+        if (unit.id === run.spurnUnit && run.spurnT > 0) continue;
         if (plant.runs.some((r) => r !== run && r.magnet && r.targetUnit === unit.id)) continue;
         // The collar SWIVELS to face this run's spout, so the alignment
         // gate is satisfied by construction: the only thing we ask of
@@ -880,6 +900,62 @@ export class FactorySystem extends createSystem({}) {
     }
     const gland = this.unitRefs.get(run.targetUnit)?.gland;
     if (gland) gland.iris.visible = true;
+  }
+
+  /**
+   * BREAKING THE SEAL — a seated line comes off its gland with a TUG.
+   *
+   * Sheet 1 runs the amber tube into the bank; sheet 2 wants that same
+   * line feeding a maker. There was no way to do that but DELETE the
+   * bank, which is a nonsense: a fitter would take the collar in both
+   * hands and pull it off. So now you can.
+   *
+   * The cost is deliberate. Both hands on the collar, hauled
+   * TUBE.unseatPull clear of the gland and HELD there for unseatHoldS
+   * while the joint creaks and the grips buzz harder the closer it comes
+   * to letting go. Brush past a running factory and nothing happens;
+   * mean it, and the line is in your hands, still extended, ready to
+   * walk to the next box. Let go early and it settles back, sealed.
+   */
+  private tickStrain(run: FactoryRun, delta: number): void {
+    const hands = this.readHands(run);
+    if (!hands.holding) {
+      if (run.strain > 0) {
+        run.strain = 0;
+        sfx.seatClunk(); // it settles back on the gland
+      }
+      return;
+    }
+    const pull = hands.mid.distanceTo(run.head);
+    if (pull < TUBE.unseatPull) {
+      run.strain = Math.max(0, run.strain - delta * 2);
+      return;
+    }
+    const was = run.strain;
+    run.strain += delta;
+    // The joint complains all the way, and harder as it goes.
+    if (Math.floor(was * 6) !== Math.floor(run.strain * 6)) {
+      sfx.strainCreak();
+      buzz(this.world, 'both', 0.2 + 0.6 * (run.strain / TUBE.unseatHoldS), 30);
+    }
+    if (run.strain < TUBE.unseatHoldS) return;
+
+    // IT LETS GO. Straight into your hands, not back into the wall —
+    // the whole point is carrying it somewhere else.
+    run.strain = 0;
+    run.spurnUnit = run.targetUnit;
+    run.spurnT = FACTORY.spurnS;
+    this.stopRunHum(run);
+    run.phase = 'pull';
+    run.phaseT = 0;
+    run.held = true;
+    run.magnet = false;
+    run.targetUnit = -1;
+    run.front = -1;
+    run.energy = 0;
+    sfx.boltSpin();
+    sfx.droopSettle();
+    buzz(this.world, 'both', 0.9, 110);
   }
 
   private tickRetract(run: FactoryRun, hw: RunHw, delta: number): void {
