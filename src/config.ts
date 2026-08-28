@@ -688,11 +688,15 @@ export const BOARD = {
   pxH: 900,
   /** Where the board stands relative to spawn (m, forward is −Z). */
   position: [0, 1.32, -1.35] as [number, number, number],
-  /** The shift card (pause) — small, dead ahead, below the eye line.
-   *  Tall enough for the factory card's BUILD/SUPPLY pages. */
-  cardW: 0.56,
-  cardH: 0.5,
-  cardPx: [560, 500] as [number, number],
+  /** The shift card (pause) — dead ahead, below the eye line. Sized to
+   *  the BOOK, which is the page that needs the most room: the ladder,
+   *  or one sheet opened up with its docket and every step. Playtest
+   *  found text sitting on other text, and the honest fix was a bigger
+   *  card, not smaller type — you read this at a metre, in passthrough.
+   *  Kept at 1000 px/m so every font size below is still true. */
+  cardW: 0.68,
+  cardH: 0.64,
+  cardPx: [680, 640] as [number, number],
   cardPosition: [0, 1.24, -1.0] as [number, number, number],
 };
 

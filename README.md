@@ -184,7 +184,9 @@ src/
   systems/FloorSystem.ts      the floor adjust verb: grab a tape side,
                               drag it to your wall, Ⓐ when done
   systems/BuildSystem.ts      unit holograms stamped onto the lattice
-                              (armed from the shift card; Ⓑ unbolts)
+                              (armed from the shift card; pieces face
+                              themselves, Ⓑ turns one, Ⓑ empty-handed
+                              unbolts)
   systems/FactorySystem.ts    the shift: feeds, the factory pull (the
                               two-hand verb, re-aimed at glands), pours,
                               the sim's beat, parts, the dock's counter
@@ -201,9 +203,13 @@ tools/
   floor-walk.mjs         THE FLOOR: tape defaults, clamps, snap, lattice
                          stamping, the plant law, persistence — asserted
   order-walk.mjs         THE SHOP, built BY HAND: the same aim + trigger
-                         the controller runs — auto-facing, the link law,
-                         refusals, the delete tool, goals advancing in
-                         place, the card's three pages
+                         the controller runs — auto-facing, Ⓑ's override,
+                         the link law, refusals, the delete tool, goals
+                         advancing in place, and the card's geometry
+                         (nothing over anything, nothing off the edge)
+  card-look.mjs          the Ⓐ card, page by page, as PNGs — painted text
+                         has no rects to assert, and "the text was
+                         obscured" is invisible to every state check
   preview-shot.mjs       screenshots of the moments that carry the look
   socket-look.mjs        a socket from 14 angles — the anti-culling check
                          (open geometry looks whole from one viewpoint and
@@ -217,10 +223,11 @@ from phase 3): mark the floor out in hazard tape — it comes down once
 you're set up — and the board's ORDERS tab opens a five-sheet work book:
 feeds on the floor's sides, the two-handed pull re-aimed at bench
 machines whose intakes SWIVEL to meet the tube, rails and boxes that
-TURN THEMSELVES to connect, a chest, a combiner, and a dock counting
-every delivery. One entrance, one continuous session: goals advance in
-place on the Ⓐ card as you fill them, the catalogue grows with them,
-and when the book runs out the shop just stays open.
+TURN THEMSELVES to connect — and Ⓑ turns one yourself when you disagree
+— a chest, a combiner, and a dock counting every delivery. One entrance,
+one continuous session: goals advance in place on the Ⓐ card as you fill
+them, the catalogue grows with them, and when the book runs out the shop
+just stays open.
 
 ## Checks
 
@@ -230,6 +237,7 @@ npm run dev &            # then:
 node tools/job-walk.mjs  # the whole ladder, asserted (exits non-zero on fail)
 node tools/floor-walk.mjs     # the factory floor: tape, clamps, lattice
 node tools/order-walk.mjs     # the shop, built through the hands' own path
+node tools/card-look.mjs      # shots/card-*.png — every page of the Ⓐ card
 node tools/preview-shot.mjs   # shots/ of the landing, board, pull, pour
 node tools/socket-look.mjs    # shots/socket/ — one socket, 14 angles
 ```

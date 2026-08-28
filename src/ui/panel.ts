@@ -201,6 +201,19 @@ export class Panel {
     return this.buttons.map((b) => b.id);
   }
 
+  /** Where every control actually sits, in panel pixels. A walk can then
+   *  assert the thing a headset sees — nothing overlapping, nothing off
+   *  the edge — which is the class of bug that reads as "the text was
+   *  obscured by stuff" and is otherwise invisible to a state check. */
+  buttonRects(): Array<{ id: string; x: number; y: number; w: number; h: number }> {
+    return this.buttons.map((b) => ({ id: b.id, x: b.x, y: b.y, w: b.w, h: b.h }));
+  }
+
+  /** The panel's pixel canvas size — the frame those rects live in. */
+  layout(): { w: number; h: number } {
+    return { w: this.pxW, h: this.pxH };
+  }
+
   /** Repaint: frame + title, then the caller's body, then the button set.
    *  Also the hover hand-off: eased highlights start/retarget here. */
   paint(

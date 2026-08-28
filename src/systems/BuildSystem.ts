@@ -18,8 +18,12 @@
  *     and a rail pointed at something with no use for parts (a maker)
  *     simply shows no chevron. "Only attaches where it has function",
  *     made visible.
- *  3. DELETE IS A TOOL, NOT A SECRET. Ⓑ still unbolts, but DELETE sits
- *     in the card beside the boxes and paints its target red.
+ *  3. DELETE IS A TOOL, NOT A SECRET. DELETE sits in the card beside
+ *     the boxes and paints its target red — which freed Ⓑ up.
+ *  4. AND Ⓑ TURNS THE PIECE. Auto-facing is the default, not a cage:
+ *     with a piece in hand Ⓑ ratchets it a quarter turn and that
+ *     choice wins until it lands. Empty-handed, Ⓑ unbolts as it always
+ *     did. One button, and what you are holding says which verb it is.
  *
  * This system MUTATES the plant only (factory/sim.ts's doors) — meshes
  * belong to FactorySystem.
@@ -73,6 +77,13 @@ export const buildView: {
   /** Arm a tool for the hologram (null disarms). The card drives this. */
   arm?: (tool: BuildTool | null) => void;
   armed?: () => BuildTool | null;
+  /** Ⓑ while a piece is in hand: turn it a quarter, overriding the
+   *  auto-facing until it lands. Returns the new rotation. */
+  turn?: () => Rot | null;
+  /** Which way the ghost currently points (null = nothing aimed). */
+  facing?: () => Rot | null;
+  /** The live Ⓑ override, or null when auto-facing is back in charge. */
+  forcedRot?: () => Rot | null;
   placeAt?: (i: number, j: number, type?: UnitType, rot?: Rot) => boolean;
   removeAt?: (i: number, j: number) => boolean;
   count?: () => number;
@@ -126,6 +137,15 @@ export class BuildSystem extends createSystem({}) {
   private links: Mesh[] = [];
   private linkMat!: MeshBasicMaterial;
   private armed: BuildTool | null = null;
+  /**
+   * THE HAND'S OVERRIDE. Auto-facing is right almost every time, and
+   * when it isn't there has to be a way to say so — playtest asked for
+   * exactly this, on belts. Ⓑ sets a rotation here and it WINS over
+   * bestRot until the piece lands (or the tool changes), so pressing Ⓑ
+   * visibly turns the ghost a quarter turn each time instead of being
+   * argued back into place by the scorer. null = let the plant decide.
+   */
+  private forced: Rot | null = null;
   private clock = 0;
   private lastAim: (Cell & { free: boolean }) | null = null;
   /** The live aim, recomputed by both the ray and the headless hook. */
@@ -198,7 +218,18 @@ export class BuildSystem extends createSystem({}) {
     buildView.aim = () => (this.lastAim ? { ...this.lastAim } : null);
     buildView.arm = (tool) => {
       this.armed = tool;
+      this.forced = null;
     };
+    buildView.turn = () => {
+      if (!this.armed || this.armed === 'delete') return null;
+      this.forced = (((this.view?.rot ?? this.forced ?? 0) + 1) % 4) as Rot;
+      if (this.headless) this.view = this.resolve(worldToCell(this.headless.x, this.headless.z), this.headless.handRot);
+      return this.forced;
+    };
+    buildView.facing = () => this.view?.rot ?? null;
+    /** The hand's override, if one is live — null means the plant is
+     *  choosing again. A walk reads this to prove Ⓑ is per-piece. */
+    buildView.forcedRot = () => this.forced;
     buildView.armed = () => this.armed;
     buildView.placeAt = (i, j, type = 'chest', rot = 0) => placeUnit(type, i, j, rot) !== null;
     buildView.removeAt = (i, j) => {
@@ -241,7 +272,7 @@ export class BuildSystem extends createSystem({}) {
       return { cell, placeable: occupied !== undefined, rot: handRot, feeds: null, fedBy: [] };
     }
     if (!this.armed) return { cell, placeable: false, rot: handRot, feeds: null, fedBy: [] };
-    const rot = bestRot(this.armed, cell.i, cell.j, handRot);
+    const rot = this.forced ?? bestRot(this.armed, cell.i, cell.j, handRot);
     const placeable = inFloor && occupied === undefined && unitAvailable(this.armed);
 
     // What would this piece feed, and what would feed it?
@@ -292,7 +323,12 @@ export class BuildSystem extends createSystem({}) {
     }
     if (!v.placeable) return false;
     const ok = placeUnit(this.armed, v.cell.i, v.cell.j, v.rot) !== null;
-    if (ok) sfx.mountThunk();
+    if (ok) {
+      sfx.mountThunk();
+      // The override is per PIECE: the next one goes back to facing
+      // itself, which is right far more often than a stale hand angle.
+      this.forced = null;
+    }
     return ok;
   }
 
@@ -344,7 +380,11 @@ export class BuildSystem extends createSystem({}) {
       this.ghost.visible = true;
       const breathe = 0.5 + 0.5 * Math.sin(this.clock * 3.2);
       this.ghostMat.opacity = 0.12 + 0.08 * breathe;
-      this.arrowMat.opacity = 0.6 + 0.3 * breathe;
+      // A HELD OVERRIDE HAS TO SHOW. The arrow breathes while the plant
+      // is choosing and burns steady the moment you take the wheel with
+      // Ⓑ — otherwise a turn you made two cells ago quietly rides along
+      // and the next piece lands facing somewhere you didn't ask for.
+      this.arrowMat.opacity = this.forced === null ? 0.6 + 0.3 * breathe : 1;
     } else {
       this.ghost.visible = false;
     }
@@ -380,15 +420,26 @@ export class BuildSystem extends createSystem({}) {
         buzz(this.world, 'right', 0.25, 40);
       }
     }
-    // Ⓑ still unbolts whatever it points at, tool or no tool.
-    if (pad?.getButtonDown(InputComponent.B_Button) && cell && occupied !== undefined) {
-      const unit = unitAtCell(cell.i, cell.j);
-      if (unit) {
-        const run = runSeatedAt(unit.id);
-        if (run) retractRun(run);
-        else removeUnit(unit);
-        sfx.boltSpin();
-        buzz(this.world, 'right', 0.4, 40);
+    // Ⓑ IS TWO VERBS, AND WHICH ONE IS IN YOUR HAND DECIDES.
+    //   holding a piece  → turn it a quarter, and mean it (see `forced`)
+    //   empty-handed     → unbolt whatever the ray is on, as always
+    // Playtest wanted to aim a conveyor by hand; the wrecking bar moved
+    // into the catalogue last round precisely so this button could.
+    if (pad?.getButtonDown(InputComponent.B_Button)) {
+      if (this.armed && this.armed !== 'delete') {
+        this.forced = (((this.view?.rot ?? this.forced ?? 0) + 1) % 4) as Rot;
+        if (cell) this.view = this.resolve(cell, handRot);
+        sfx.segmentClick(this.forced); // the tube's own detent, reused
+        buzz(this.world, 'right', 0.3, 25);
+      } else if (cell && occupied !== undefined) {
+        const unit = unitAtCell(cell.i, cell.j);
+        if (unit) {
+          const run = runSeatedAt(unit.id);
+          if (run) retractRun(run);
+          else removeUnit(unit);
+          sfx.boltSpin();
+          buzz(this.world, 'right', 0.4, 40);
+        }
       }
     }
   }

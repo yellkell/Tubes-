@@ -175,6 +175,45 @@ check(Boolean(maker.view?.feeds), 'and faces its chute onto the rail without bei
 const placed = await unitsAt();
 void placed;
 
+// Ⓑ IS THE HAND'S OVERRIDE. Auto-facing is right nearly always, and when
+// it isn't the player has to be able to say so — this is the ask, on
+// belts, verbatim. Four presses walk the compass and come home.
+await arm('belt');
+const startRot = (await aim(-2, 2, 0)).rot;
+const spun = [];
+for (let k = 0; k < 4; k++) {
+  await page.evaluate(() => window.__tubes.build.turn());
+  spun.push((await aim(-2, 2, 0)).rot);
+}
+check(
+  spun[0] === (startRot + 1) % 4 && spun[1] === (startRot + 2) % 4,
+  `Ⓑ turns the piece a quarter at a time (${startRot} → ${spun.join(' → ')})`,
+);
+check(spun[3] === startRot, 'and four presses bring it back where it started');
+// And the override STICKS — the scorer does not argue it back into place.
+await page.evaluate(() => window.__tubes.build.turn());
+const held = (await aim(-2, 2, 0)).rot;
+check(
+  (await aim(-2, 2, 2)).rot === held,
+  'the hand wins while it is held — aim no longer moves it',
+);
+check(
+  (await page.evaluate(() => window.__tubes.build.forcedRot())) === held,
+  'the override is live while the piece is in hand',
+);
+check(await pull(), 'and the turned piece lands');
+check(
+  (await page.evaluate(() => window.__tubes.build.forcedRot())) === null,
+  'the next piece goes back to facing itself',
+);
+// …and it really is aim-led again: a different hand angle moves it.
+const free = [(await aim(-4, 3, 0)).rot, (await aim(-4, 3, 1)).rot];
+check(free[0] !== free[1], 'with nothing to link to, the hand steers once more');
+await arm('delete');
+await aim(-2, 2, 0);
+await pull(); // tidy the test piece back off the floor
+await arm(null);
+
 // THE CONNECTION LAW, seen before you commit: a rail aimed into a maker
 // shows no link, because a maker drinks fluid and has no use for parts.
 await arm('belt');
@@ -295,6 +334,79 @@ await page.evaluate(() => window.__tubes.menu.act('goal:2'));
 await page.waitForTimeout(200);
 cardBtns = await page.evaluate(() => window.__tubes.menu.cardButtons());
 check(cardBtns.includes('goal:back'), 'and a sheet opens up for a closer read');
+
+// THE ONE THAT BRICKED A HEADSET. 'goal:back' starts with 'goal:', so the
+// index branch caught it first and parked NaN in goalOpen; the next PAINT
+// then indexed ORDERS[NaN] and threw, every frame, and the game was gone.
+// The old walk pressed this exact button and passed, because it flipped
+// the page back in the same evaluate — no frame ever rendered the broken
+// state. So: press it ALONE, let real frames go by, and prove the card
+// still answers afterwards. (pageerror is wired to fails at the top, so a
+// throw during those frames fails the run on its own.)
+await page.evaluate(() => window.__tubes.menu.act('goal:back'));
+await page.waitForTimeout(600);
+cardBtns = await page.evaluate(() => window.__tubes.menu.cardButtons());
+check(
+  cardBtns.filter((b) => /^goal:\d/.test(b)).length === 5 && !cardBtns.includes('goal:back'),
+  'ALL GOALS goes back to the ladder — and does not brick the card',
+);
+await page.evaluate(() => window.__tubes.menu.act('card:supply'));
+await page.waitForTimeout(250);
+check(
+  (await page.evaluate(() => window.__tubes.menu.cardButtons())).some((b) => b.startsWith('buy:')),
+  'and the card still answers after the trip',
+);
+await page.evaluate(() => {
+  window.__tubes.menu.act('card:build');
+  window.__tubes.menu.setPause(false);
+});
+
+console.log('NOTHING SITS ON ANYTHING');
+const boxes = await page.evaluate(() => window.__tubes.menu.cardLayout());
+check(boxes.w >= 640 && boxes.h >= 600, `the card has room to read (${boxes.w}×${boxes.h})`);
+const overlaps = [];
+// cardRects() reports the LAST PAINT, so every act needs a frame to land
+// before it is read — otherwise this sweep cheerfully checks the page you
+// just left, which is how a layout bug reaches a headset.
+const rectsOf = async (m) => {
+  await page.evaluate((k) => {
+    window.__tubes.menu.setPause(true);
+    window.__tubes.menu.act(`card:${k}`);
+  }, m);
+  await page.waitForTimeout(250);
+  return page.evaluate(() => window.__tubes.menu.cardRects());
+};
+for (const page_ of ['build', 'goals', 'supply']) {
+  const rects = await rectsOf(page_);
+  check(rects.length > 2, `the ${page_} page paints its controls (${rects.length})`);
+  for (let a = 0; a < rects.length; a++) {
+    for (let b = a + 1; b < rects.length; b++) {
+      const p = rects[a];
+      const q = rects[b];
+      if (p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h) {
+        overlaps.push(`${page_}: ${p.id} over ${q.id}`);
+      }
+    }
+  }
+  const off = rects.filter((r) => r.y + r.h > boxes.h || r.x + r.w > boxes.w);
+  if (off.length) overlaps.push(`${page_}: ${off.map((r) => r.id).join(', ')} off the card`);
+}
+check(overlaps.length === 0, `no control sits on another, on any page${overlaps.length ? ` — ${overlaps.join(' · ')}` : ''}`);
+// The opened sheet is the page that overflowed in the headset.
+await page.evaluate(() => {
+  window.__tubes.menu.act('card:goals');
+  window.__tubes.menu.act('goal:4');
+});
+await page.waitForTimeout(250);
+const sheetRects = await page.evaluate(() => window.__tubes.menu.cardRects());
+check(
+  sheetRects.some((r) => r.id === 'goal:back'),
+  'the last sheet opens (the longest one in the book)',
+);
+check(
+  sheetRects.every((r) => r.y + r.h <= boxes.h && r.x + r.w <= boxes.w),
+  'an opened sheet keeps its controls on the card',
+);
 await page.evaluate(() => {
   window.__tubes.menu.act('goal:back');
   window.__tubes.menu.act('card:build');

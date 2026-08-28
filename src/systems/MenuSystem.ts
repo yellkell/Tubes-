@@ -99,6 +99,10 @@ export const menuView: {
   boardButtons?: () => string[];
   snapCard?: () => string;
   cardButtons?: () => string[];
+  /** Every control on the card, in card pixels — the overlap check. */
+  cardRects?: () => Array<{ id: string; x: number; y: number; w: number; h: number }>;
+  /** The card's pixel frame those rects have to fit inside. */
+  cardLayout?: () => { w: number; h: number };
 } = {};
 
 const _origin = new Vector3();
@@ -157,6 +161,8 @@ export class MenuSystem extends createSystem({}) {
     menuView.boardButtons = () => this.board.liveButtons();
     menuView.snapCard = () => (this.card.ctx().canvas as HTMLCanvasElement).toDataURL('image/png');
     menuView.cardButtons = () => this.card.buttonIds();
+    menuView.cardRects = () => this.card.buttonRects();
+    menuView.cardLayout = () => this.card.layout();
   }
 
   /** Plant a panel in front of the player's face: forward on the floor
@@ -323,10 +329,15 @@ export class MenuSystem extends createSystem({}) {
       this.cardMode = 'goals';
     } else if (id === 'card:supply') {
       this.cardMode = 'supply';
-    } else if (id.startsWith('goal:')) {
-      this.goalOpen = Number(id.slice(5));
     } else if (id === 'goal:back') {
+      // BEFORE the prefix test below — 'goal:back' starts with 'goal:'
+      // too, and parsing it as an index put NaN in goalOpen, which sent
+      // the detail paint through ORDERS[NaN] and threw inside the paint
+      // callback every frame. That is how a menu bricks a game.
       this.goalOpen = null;
+    } else if (id.startsWith('goal:')) {
+      const i = Number(id.slice(5));
+      this.goalOpen = Number.isInteger(i) && i >= 0 && i < ORDERS.length ? i : null;
     } else if (id.startsWith('buy:')) {
       buyUpgrade(id.slice(4) as UpgradeId);
     } else if (id === 'sfx:down') {
@@ -992,20 +1003,24 @@ export class MenuSystem extends createSystem({}) {
     const [cw, ch] = BOARD.cardPx;
     const spec = orderSpec();
     const armed = buildView.armed?.() ?? null;
-    const tab = (id: string, label: string, on: boolean, x: number): PanelButton => ({
+    // Three columns, measured off the card instead of nailed to pixels —
+    // the card grew and every hard-coded 166 would have left a gutter.
+    const colW = (cw - 2 * CARD_PAD - 2 * CARD_GAP) / 3;
+    const colX = (c: number): number => CARD_PAD + c * (colW + CARD_GAP);
+    const tab = (id: string, label: string, on: boolean, c: number): PanelButton => ({
       id,
       label,
       small: true,
       selected: on,
-      x,
+      x: colX(c),
       y: 162,
-      w: 158,
+      w: colW,
       h: 42,
     });
     const buttons: PanelButton[] = [
-      tab('card:build', 'BUILD', this.cardMode === 'build', 34),
-      tab('card:goals', 'GOALS', this.cardMode === 'goals', 200),
-      tab('card:supply', 'SUPPLY', this.cardMode === 'supply', 366),
+      tab('card:build', 'BUILD', this.cardMode === 'build', 0),
+      tab('card:goals', 'GOALS', this.cardMode === 'goals', 1),
+      tab('card:supply', 'SUPPLY', this.cardMode === 'supply', 2),
       {
         id: 'resume',
         label: 'BACK TO IT',
@@ -1039,8 +1054,6 @@ export class MenuSystem extends createSystem({}) {
         { tool: 'delete', label: 'DELETE' },
       ];
       kit.forEach((entry, i) => {
-        const row = Math.floor(i / 3);
-        const col = i % 3;
         buttons.push({
           id: `build:${entry.tool}`,
           label: entry.label,
@@ -1048,23 +1061,24 @@ export class MenuSystem extends createSystem({}) {
           disabled: entry.tool === 'delete' ? false : !typeAvailable(entry.tool as UnitType),
           selected: armed === entry.tool,
           tone: entry.tool === 'delete' ? UI.danger : undefined,
-          x: 34 + col * 166,
-          y: 220 + row * 66,
-          w: 158,
+          x: colX(i % 3),
+          y: CARD_BODY + Math.floor(i / 3) * 66,
+          w: colW,
           h: 58,
         });
       });
     } else if (this.cardMode === 'goals') {
       if (this.goalOpen === null) {
+        const step = goalRowStep(ch);
         ORDERS.forEach((_o, i) => {
           buttons.push({
             id: `goal:${i}`,
             label: '',
             ghost: true,
-            x: 34,
-            y: 216 + i * 38,
-            w: cw - 68,
-            h: 34,
+            x: CARD_PAD,
+            y: CARD_BODY + i * step,
+            w: cw - 2 * CARD_PAD,
+            h: step - 6,
           });
         });
       } else {
@@ -1072,9 +1086,9 @@ export class MenuSystem extends createSystem({}) {
           id: 'goal:back',
           label: 'ALL GOALS',
           small: true,
-          x: 34,
-          y: ch - 148,
-          w: 170,
+          x: CARD_PAD,
+          y: ch - CARD_FOOT,
+          w: 190,
           h: 46,
         });
       }
@@ -1085,9 +1099,9 @@ export class MenuSystem extends createSystem({}) {
           label: '',
           ghost: true,
           disabled: upgradeOwned(u.id) || !this.canAfford(u.id),
-          x: 34,
-          y: 214 + i * 46,
-          w: cw - 68,
+          x: CARD_PAD,
+          y: CARD_BODY - 6 + i * 46,
+          w: cw - 2 * CARD_PAD,
           h: 42,
         });
       });
@@ -1134,9 +1148,9 @@ export class MenuSystem extends createSystem({}) {
           g.fillText(
             armed === 'delete'
               ? 'point at plant and pull the trigger to take it out'
-              : 'aim at the floor — it turns itself to connect',
+              : 'aim at the floor — it turns itself to connect, Ⓑ turns it yourself',
             cw / 2,
-            ch - 108,
+            ch - CARD_FOOT - 26,
           );
         }
       },
@@ -1145,81 +1159,104 @@ export class MenuSystem extends createSystem({}) {
     );
   }
 
-  /** The book, in the card: the ladder, or one sheet opened up. */
+  /** The book, in the card: the ladder, or one sheet opened up.
+   *
+   *  EVERY Y BELOW FLOWS. The first cut nailed the docket to y=280 and
+   *  the steps to y=316, so a docket that wrapped to two lines printed
+   *  its second line straight through the first step — and the ladder's
+   *  own hint sat on the last row. Nothing here is a fixed offset any
+   *  more: text advances by the lines it actually drew, and the footer
+   *  band (ALL GOALS, "next ·") is reserved before the body starts. */
   private paintGoals(g: CanvasRenderingContext2D, cw: number, ch: number): void {
     const live = plant.orderIndex;
     if (this.goalOpen === null) {
       const hoverOf = (id: string): number => this.card.hoverOf(id);
+      const step = goalRowStep(ch);
+      const h = step - 6;
       ORDERS.forEach((o, i) => {
-        const y = 216 + i * 38;
+        const y = CARD_BODY + i * step;
         const done = plant.goalsDone || i < live;
         const now = i === live;
         const hov = hoverOf(`goal:${i}`);
         g.fillStyle = now ? UI.accentFaint : `rgba(255,255,255,${(0.03 + 0.05 * hov).toFixed(3)})`;
         g.beginPath();
-        g.roundRect(34, y, cw - 68, 34, 8);
+        g.roundRect(CARD_PAD, y, cw - 2 * CARD_PAD, h, 8);
         g.fill();
         if (now) {
           g.fillStyle = UI.accent;
           g.beginPath();
-          g.roundRect(40, y + 7, 4, 20, 2);
+          g.roundRect(CARD_PAD + 6, y + 7, 4, h - 14, 2);
           g.fill();
         }
         g.textAlign = 'left';
         g.font = font(600, 20);
         g.fillStyle = done ? UI.dim : now ? UI.textHi : UI.faint;
-        g.fillText(`${done ? '✓' : now ? '▸' : '·'}  ${o.name}`, 54, y + 18);
+        g.fillText(`${done ? '✓' : now ? '▸' : '·'}  ${o.name}`, CARD_PAD + 20, y + h / 2);
         const t = this.targetOf(o);
         g.textAlign = 'right';
         g.font = font(500, 18);
         g.fillStyle = UI.faint;
-        g.fillText(`${o.goal} × ${t.name}`, cw - 50, y + 18);
+        g.fillText(`${o.goal} × ${t.name}`, cw - CARD_PAD - 16, y + h / 2);
       });
       g.textAlign = 'center';
       g.font = font(500, 18);
       g.fillStyle = UI.faint;
-      g.fillText('tap a sheet for what it asks', cw / 2, ch - 108);
+      g.fillText('tap a sheet for what it asks', cw / 2, ch - CARD_FOOT - 26);
       return;
     }
 
     // ONE SHEET, OPENED: what it wants, how you do it, what comes next.
-    const o = ORDERS[Math.min(this.goalOpen, ORDERS.length - 1)];
+    const o = ORDERS[this.goalOpen];
+    if (!o) {
+      this.goalOpen = null;
+      return;
+    }
     const t = this.targetOf(o);
+    const left = CARD_PAD + 2;
+    const wide = cw - 2 * left;
     g.textAlign = 'left';
     g.font = font(700, 26);
     g.fillStyle = UI.textHi;
-    g.fillText(o.name, 36, 226);
+    g.fillText(o.name, left, CARD_BODY + 10);
     g.font = font(600, 20);
     g.fillStyle = UI.accent;
-    g.fillText(`${o.goal} × ${t.name}`, 36, 254);
-    wrapText(g, t.docket, 36, 280, cw - 72, 24, font(500, 17), UI.faint);
-    let y = 316;
-    for (const step of o.steps) {
+    g.fillText(`${o.goal} × ${t.name}`, left, CARD_BODY + 38);
+    // The docket advances the cursor by however many lines it took.
+    let y = CARD_BODY + 66;
+    y += 22 * wrapText(g, t.docket, left, y, wide, 22, font(500, 17), UI.faint) + 14;
+    // The steps stop where the footer band begins — better a sheet you
+    // can read to the bottom of than one that prints over its own feet.
+    const floorY = ch - CARD_FOOT - 34;
+    for (const stepText of o.steps) {
+      if (y > floorY) break;
       g.fillStyle = UI.accent;
       g.beginPath();
-      g.arc(44, y - 5, 3.5, 0, Math.PI * 2);
+      g.arc(left + 8, y - 5, 3.5, 0, Math.PI * 2);
       g.fill();
-      const lines = wrapText(g, step, 58, y, cw - 96, 22, font(500, 17), UI.dim);
-      y += 22 * lines + 8;
+      y += 22 * wrapText(g, stepText, left + 22, y, wide - 22, 22, font(500, 17), UI.dim) + 8;
     }
     const next = ORDERS[this.goalOpen + 1];
     g.textAlign = 'right';
     g.font = font(500, 17);
     g.fillStyle = UI.faint;
-    g.fillText(next ? `next · ${next.name}` : 'last sheet — then the shop is yours', cw - 40, ch - 126);
+    g.fillText(
+      next ? `next · ${next.name}` : 'last sheet — then the shop is yours',
+      cw - CARD_PAD,
+      ch - CARD_FOOT + 23,
+    );
   }
 
   /** The bank's bills (the SUPPLY page's body). */
   private paintBills(g: CanvasRenderingContext2D, cw: number): void {
     const hoverOf = (id: string): number => this.card.hoverOf(id);
     UPGRADES.forEach((u, i) => {
-      const y = 214 + i * 46;
+      const y = CARD_BODY - 6 + i * 46;
       const owned = upgradeOwned(u.id);
       const afford = this.canAfford(u.id);
       const hov = hoverOf(`buy:${u.id}`);
       g.fillStyle = `rgba(255,255,255,${(owned ? 0.02 : 0.04 + 0.05 * hov).toFixed(3)})`;
       g.beginPath();
-      g.roundRect(34, y, cw - 68, 42, 10);
+      g.roundRect(CARD_PAD, y, cw - 2 * CARD_PAD, 42, 10);
       g.fill();
       g.strokeStyle = owned
         ? 'rgba(255,162,46,0.35)'
@@ -1229,18 +1266,18 @@ export class MenuSystem extends createSystem({}) {
       g.textAlign = 'left';
       g.font = font(600, 20);
       g.fillStyle = owned ? UI.dim : afford ? UI.text : UI.disabled;
-      g.fillText(u.name, 50, y + 15);
+      g.fillText(u.name, CARD_PAD + 16, y + 15);
       g.font = font(500, 15);
       g.fillStyle = UI.faint;
-      g.fillText(u.effect, 50, y + 32);
+      g.fillText(u.effect, CARD_PAD + 16, y + 32);
       g.textAlign = 'right';
       g.font = font(600, 17);
       if (owned) {
         g.fillStyle = UI.accent;
-        g.fillText('FITTED', cw - 50, y + 22);
+        g.fillText('FITTED', cw - CARD_PAD - 16, y + 22);
       } else {
         g.fillStyle = afford ? UI.positive : UI.faint;
-        g.fillText(this.billText(u.id), cw - 50, y + 22);
+        g.fillText(this.billText(u.id), cw - CARD_PAD - 16, y + 22);
       }
     });
   }
@@ -1264,6 +1301,27 @@ function fmtMs(ms: number): string {
   const m = Math.floor(total / 60);
   const s = (total - m * 60).toFixed(1);
   return m > 0 ? `${m}:${s.padStart(4, '0')}` : `${s}s`;
+}
+
+/* ── the shift card's layout band ───────────────────────────────────────
+ * The card has three fixed zones — header (goal + clock), body (the
+ * page), footer (BACK TO IT / DOWN TOOLS, and whatever the page parks
+ * above them) — and every page measures itself against these instead of
+ * guessing pixels. Playtest found text over text on the GOALS page; it
+ * was all fixed offsets that had outgrown a 500 px card.
+ */
+const CARD_PAD = 34;
+const CARD_GAP = 8;
+/** Where a page's body may start — clear of the tabs at y 162. */
+const CARD_BODY = 220;
+/** How much of the bottom belongs to the footer, measured up from ch. */
+const CARD_FOOT = 150;
+
+/** Row pitch for the goals ladder: share the body band out over the
+ *  book, so a longer book tightens up instead of running off the card. */
+function goalRowStep(ch: number): number {
+  const band = ch - CARD_FOOT - 26 - CARD_BODY;
+  return Math.max(30, Math.min(46, Math.floor(band / Math.max(1, ORDERS.length))));
 }
 
 function wrapText(

@@ -340,8 +340,17 @@ chevrons too, so a chain reads as a chain across the room instead of a
 row of boxes.
 
 **DELETE IS A TOOL.** It sits in the card beside the boxes and paints
-its target red. (Ⓑ over plant still unbolts — but a verb nobody can
-find is a verb that doesn't exist.)
+its target red — a verb nobody can find is a verb that doesn't exist.
+Moving it there freed Ⓑ up for the verb it should always have had:
+
+**Ⓑ TURNS THE PIECE, AND MEANS IT.** Auto-facing is the default, not a
+cage. With a piece in hand, Ⓑ ratchets it a quarter turn and that
+choice *wins over the scorer* until the piece lands — otherwise the
+button appears to do nothing, because bestRot simply argues it back.
+Four presses walk the compass and come home. The override is per piece:
+the next one goes back to facing itself, which is right far more often
+than a stale hand angle. Empty-handed, Ⓑ unbolts exactly as it always
+did — one button, and what you are holding decides which verb it is.
 
 *(An earlier cut split plant into "wall plant" — dock and combiner
 bolted to the site's edge. Playtest killed it: it turned every one of
@@ -479,13 +488,34 @@ shift card dead ahead, below the eye line** — the job card, promoted:
 laser-clickable with either hand, and **the sheet's goal lives on it**:
 the big amber `3 / 10` and its target ride the card's header, because
 the room floats nothing — the dock just flashes its halo as parts land.
-Two pages under that header:
+Three pages under that header:
 
-- **BUILD** — dock / maker / rail / combiner / chest; pick one and the
-  card drops, the hologram rides your ray to the grid (trigger stamps,
-  Ⓑ unbolts).
+- **BUILD** — dock / maker / rail / combiner / chest, and DELETE at the
+  end of the row; pick one and the card drops, the hologram rides your
+  ray to the grid (trigger stamps, Ⓑ turns).
+- **GOALS** — the book as a ladder (`✓` filled, `▸` running, `·` still
+  to come), every sheet tappable for its docket, its steps in order,
+  and what it feeds two sheets later.
 - **SUPPLY** — the bills above: pay one and the fitting is yours for
   good, live immediately.
+
+**AND THE CARD IS SIZED TO THE BOOK.** Playtest found text sitting on
+other text all through GOALS, and two things were wrong. The card was
+500 px tall for a page that wanted more, and — worse — every y on it
+was a fixed offset, so a docket that wrapped to two lines printed its
+second line straight through the first step. The card is now 680 × 640
+(same 1000 px/m, so every font size is unchanged — bigger card, not
+smaller type, because you read this at a metre through passthrough) and
+nothing on it is a hard-coded pixel: pages measure themselves against a
+header / body / footer band, text advances by the lines it actually
+drew, and the steps stop where the footer begins.
+
+*(And ALL GOALS bricked the game. `'goal:back'` starts with `'goal:'`,
+so the index branch caught it first, parked `NaN` in `goalOpen`, and
+the next paint indexed `ORDERS[NaN]` and threw — every frame, forever.
+The walk pressed that exact button and passed, because it flipped the
+page back in the same evaluate and no frame ever rendered the broken
+state. It now presses it alone and lets real frames go by.)*
 
 The clock, the bank tally, BACK TO IT and DOWN TOOLS ride the card too.
 
@@ -595,7 +625,8 @@ Five phases, each ending green on `npm run typecheck` + a headless walk.
   one inside the snap window takes the head); continuous pours + per-run
   hums; makers drink colour and stamp parts; the dock with its gland,
   hopper and delivery halo (the count rides the Ⓐ card); grip-carry (you are the first
-  conveyor); Ⓑ unbolts in two steps (run first, unit second).
+  conveyor); Ⓑ unbolts in two steps (run first, unit second) whenever
+  the hands are empty.
 - **Phase 2 — LOGISTICS.** ✅ **SHIPPED.** Rails with visible parts,
   chute push, combiner ports fed from both sides, the chest, the ORDERS
   tab + the Ⓐ shift card with the BUILD catalogue, sheets 1–5 posting
