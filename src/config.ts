@@ -392,10 +392,10 @@ export const FLOOR = {
 };
 
 /* ────────────────────────────── THE UNITS ────────────────────────────────
- * Phase 0 places one placeholder unit — the CRATE, a bench-height stand
- * the real machines will inherit their footprint from. Everything is
- * bench height on principle: a room-scale factory on the actual floor is
- * a crouching simulator, so the whole shop lives in the mount band.
+ * The shop's plant, one grid cell each, and ALL of it bench height on
+ * principle: a room-scale factory on the actual floor is a crouching
+ * simulator, so the whole shop lives in the mount band. The CRATE from
+ * phase 0 grew up into the CHEST; the rest arrived with the orders.
  */
 export const UNITS = {
   crate: {
@@ -406,7 +406,154 @@ export const UNITS = {
     benchTop: 0.85,
     legRadius: 0.018,
   },
+  /** Rails ride a touch under the bench so parts sit AT the datum. */
+  railTop: 0.8,
+  /** Where a unit's tube gland sits (m up its back face). */
+  glandHeight: 0.7,
 };
+
+/* ────────────────────────────── THE FACTORY ──────────────────────────────
+ * PIECEWORK phases 1–2 (FACTORY.md): the feeds, the sim, the orders.
+ * Rates follow the tuning law — a naive single chain finishes a sheet in
+ * minutes, a parallel floor in under one; waiting is legal, building is
+ * better.
+ */
+export const FACTORY = {
+  /** Which line each side's FEED carries. `near` holds PEARL — a fourth
+   *  manifold kept visibly in reserve (the expansion hook; it never
+   *  wakes in these sheets). */
+  sides: {
+    far: 'mains',
+    left: 'coolant',
+    right: 'volt',
+    near: null,
+  } as Record<'far' | 'left' | 'right' | 'near', 'mains' | 'coolant' | 'volt' | null>,
+  /** The spout: where the stub waits on the pillar (m up), and the
+   *  supply rate a seated run pours at (units/s — one maker's appetite
+   *  with a little headroom, which is the whole throttle design). */
+  spoutHeight: 1.05,
+  fluidRate: 0.8,
+  /** Craft times. Makers drink and stamp; combiners fit two parts. */
+  makerS: 4,
+  combinerS: 6,
+  /** Rails: part speed along a chain, and a chute's queue depth. */
+  railSpeed: 0.35,
+  chuteSlots: 2,
+  chestCap: 12,
+  /** An unbolted supply run telescopes home over this long. */
+  retractS: 0.5,
+  /** Hand-carry: how close a grip must be to take a loose part, and how
+   *  close a drop must be to a hopper/port/chest to land IN it. */
+  partReach: 0.35,
+  dropReach: 0.4,
+};
+
+/* ────────────────────────────── THE ITEMS ────────────────────────────────
+ * Colour → part, part + part → deeper part. Every item wears its
+ * lineage's plate language (eight-sided iron / smooth alloy / hex glass),
+ * so a composite part visibly CONTAINS its ingredients and a target on
+ * the sheet is reverse-engineerable by looking at it.
+ */
+export type ItemId = 'gear' | 'cell' | 'chip' | 'pump' | 'lamp' | 'servo';
+
+export interface ItemSpec {
+  id: ItemId;
+  name: string;
+  tier: 1 | 2;
+  /** The lines whose look this part carries (first = the body). */
+  lineage: Array<'mains' | 'coolant' | 'volt'>;
+}
+
+export const ITEMS: Record<ItemId, ItemSpec> = {
+  gear: { id: 'gear', name: 'GEAR', tier: 1, lineage: ['mains'] },
+  cell: { id: 'cell', name: 'CELL', tier: 1, lineage: ['coolant'] },
+  chip: { id: 'chip', name: 'CHIP', tier: 1, lineage: ['volt'] },
+  pump: { id: 'pump', name: 'PUMP', tier: 2, lineage: ['mains', 'coolant'] },
+  lamp: { id: 'lamp', name: 'LAMP', tier: 2, lineage: ['coolant', 'volt'] },
+  servo: { id: 'servo', name: 'SERVO', tier: 2, lineage: ['mains', 'volt'] },
+};
+
+/** The maker's law: feed it a colour, get the colour's base part. */
+export const MAKES: Record<'mains' | 'coolant' | 'volt', ItemId> = {
+  mains: 'gear',
+  coolant: 'cell',
+  volt: 'chip',
+};
+
+/** The combiner's law: two DIFFERENT tier-1 parts, alphabetical key. */
+export const COMBINES: Record<string, ItemId> = {
+  'cell+gear': 'pump',
+  'cell+chip': 'lamp',
+  'chip+gear': 'servo',
+};
+
+export function combineKey(a: ItemId, b: ItemId): string {
+  return [a, b].sort().join('+');
+}
+
+/* ────────────────────────────── THE ORDERS ───────────────────────────────
+ * The work book: deliver 10 × the target, each sheet one verb deeper
+ * (the whole research section of FACTORY.md, made config). Completing a
+ * sheet posts the next one INTO the same shift — the plant persists,
+ * the factory grows; DOWN TOOLS clears the floor. Sheets 6–10 (tees,
+ * the bank's bills, the second spout) are the next phase of the book.
+ */
+export type UnitType = 'dock' | 'maker' | 'belt' | 'combiner' | 'chest';
+
+export interface OrderSpec {
+  id: string;
+  name: string;
+  brief: string;
+  /** Deliver `goal` of this to the dock. Fluid targets drink through
+   *  the dock's own gland; item targets ride belts or hands. */
+  target: { kind: 'fluid'; line: 'mains' | 'coolant' | 'volt' } | { kind: 'item'; item: ItemId };
+  goal: number;
+  /** What this sheet switches on the morning it's posted. */
+  wakes: { feeds?: Array<'mains' | 'coolant' | 'volt'>; units?: UnitType[] };
+}
+
+export const ORDERS: OrderSpec[] = [
+  {
+    id: 'first-draught',
+    name: 'FIRST DRAUGHT',
+    brief: 'Stand the dock, then run a tube from the amber feed straight into its gland. The works pours; the dock drinks ten draughts.',
+    target: { kind: 'fluid', line: 'mains' },
+    goal: 10,
+    wakes: { feeds: ['mains'], units: ['dock'] },
+  },
+  {
+    id: 'piece-work',
+    name: 'PIECE WORK',
+    brief: 'The MAKER box: feed it amber and it stamps GEARS. Carry each one to the dock in your fist — you are the first conveyor.',
+    target: { kind: 'item', item: 'gear' },
+    goal: 10,
+    wakes: { units: ['maker'] },
+  },
+  {
+    id: 'the-line',
+    name: 'THE LINE',
+    brief: 'The cyan feed wakes, and so do the RAILS. Make CELLS and belt them home — the room runs without you for the first time.',
+    target: { kind: 'item', item: 'cell' },
+    goal: 10,
+    wakes: { feeds: ['coolant'], units: ['belt'] },
+  },
+  {
+    id: 'first-fitting',
+    name: 'FIRST FITTING',
+    brief: 'The COMBINER: gears in one side, cells in the other, PUMPS out the front. Two lines becoming one is the whole trade.',
+    target: { kind: 'item', item: 'pump' },
+    goal: 10,
+    wakes: { units: ['combiner'] },
+  },
+  {
+    id: 'night-shift',
+    name: 'NIGHT SHIFT',
+    brief: 'Violet wakes. CHIPS meet cells and make LAMPS — and the CHEST arrives to hold what runs ahead of the line.',
+    target: { kind: 'item', item: 'lamp' },
+    goal: 10,
+    wakes: { feeds: ['volt'], units: ['chest'] },
+  },
+];
 
 /* ────────────────────────────── THE BOARD ────────────────────────────────
  * The menu is a work board: quiet glass, hairlines, one furnace-amber

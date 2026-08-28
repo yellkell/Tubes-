@@ -26,12 +26,26 @@
 
 import { InputComponent, createSystem } from '@iwsdk/core';
 import { Raycaster, Vector3, type Intersection, type Object3D } from 'three';
-import { BOARD, GAME_TITLE, JOBS, LINES } from '../config.js';
+import { BOARD, GAME_TITLE, ITEMS, JOBS, LINES, ORDERS, type UnitType } from '../config.js';
 import * as sfx from '../audio/sfx.js';
 import { setSfxVolume, sfxVolume } from '../audio/sfx.js';
-import { abandonShift, enterFloorSetup, startJob } from '../game/flow.js';
-import { bestMs, resetProgress, unlockedJobs } from '../game/progress.js';
+import {
+  abandonFactory,
+  abandonShift,
+  enterFloorSetup,
+  startJob,
+  startOrder,
+} from '../game/flow.js';
+import {
+  bestMs,
+  orderBestMs,
+  ordersUnlocked,
+  resetProgress,
+  unlockedJobs,
+} from '../game/progress.js';
 import { site } from '../game/state.js';
+import { bankTotal, orderSpec, plant } from '../factory/state.js';
+import { buildView, typeAvailable } from './BuildSystem.js';
 import { font } from '../ui/fonts.js';
 import { Panel, UI, type PanelButton } from '../ui/panel.js';
 import { PointerRay } from '../ui/pointer.js';
@@ -55,7 +69,7 @@ const SHEET_W = W - SHEET_X - 34;
 const SYS_Y0 = 196;
 const SYS_PITCH = 140;
 
-type Tab = 'jobs' | 'sys';
+type Tab = 'jobs' | 'orders' | 'sys';
 
 /** Headless/dev hooks (wired into __tubes in main.ts) — drive the board
  *  without controllers: hover, press, read what's offered. */
@@ -93,6 +107,8 @@ export class MenuSystem extends createSystem({}) {
   /** RESET PROGRESS asks twice; the arm decays after a beat. */
   private resetArm = 0;
   private lastScreen = '';
+  /** The ORDERS tab's selected sheet. */
+  private orderSel = 0;
 
   init(): void {
     this.board = new Panel(BOARD.widthM, BOARD.heightM, W, H);
@@ -150,8 +166,9 @@ export class MenuSystem extends createSystem({}) {
 
     if (site.screen === 'shift') site.elapsedMs += delta * 1000;
 
-    // Mid-shift, right Ⓐ raises (or lowers) THE JOB CARD.
-    if (site.screen === 'shift') {
+    // Mid-shift (pipe jobs and factory orders alike), Ⓐ raises the card.
+    const midShift = site.screen === 'shift' || site.screen === 'factory';
+    if (midShift) {
       if (this.input.xr.gamepads.right?.getButtonDown(InputComponent.A_Button)) {
         sfx.uiClick();
         site.paused = !site.paused;
@@ -163,7 +180,7 @@ export class MenuSystem extends createSystem({}) {
     }
 
     const boardUp = site.screen === 'board';
-    const cardUp = site.paused && site.screen === 'shift';
+    const cardUp = site.paused && midShift;
 
     // The board re-plants every time it comes back — you wandered.
     if (site.screen !== this.lastScreen) {
@@ -266,12 +283,22 @@ export class MenuSystem extends createSystem({}) {
 
   private action(id: string): void {
     if (id === 'tab:jobs') this.tab = 'jobs';
+    else if (id === 'tab:orders') this.tab = 'orders';
     else if (id === 'tab:sys') this.tab = 'sys';
     else if (id.startsWith('job:')) {
       const i = Number(id.slice(4));
       if (i < unlockedJobs()) site.jobIndex = i;
     } else if (id === 'start') {
       startJob(site.jobIndex);
+    } else if (id.startsWith('order:')) {
+      const i = Number(id.slice(6));
+      if (i < ordersUnlocked()) this.orderSel = i;
+    } else if (id === 'start-order') {
+      startOrder(this.orderSel);
+    } else if (id.startsWith('build:')) {
+      // Arm the hologram and put the card away — the hands do the rest.
+      buildView.arm?.(id.slice(6) as UnitType);
+      site.paused = false;
     } else if (id === 'sfx:down') {
       setSfxVolume(Math.max(0, Math.round((sfxVolume() - 0.1) * 10) / 10));
     } else if (id === 'sfx:up') {
@@ -292,7 +319,8 @@ export class MenuSystem extends createSystem({}) {
       site.paused = false;
     } else if (id === 'quit') {
       site.paused = false;
-      abandonShift();
+      if (site.screen === 'factory') abandonFactory();
+      else abandonShift();
     }
     this.lastKey = '';
   }
@@ -314,7 +342,16 @@ export class MenuSystem extends createSystem({}) {
       walls.length,
       site.fallbackRoom,
       runsKey,
-      cardUp ? Math.floor(site.elapsedMs / 100) : 0,
+      this.orderSel,
+      ordersUnlocked(),
+      ORDERS.map((o) => orderBestMs(o.id) ?? 0).join(','),
+      plant.orderIndex,
+      plant.count,
+      bankTotal(),
+      buildView.armed?.() ?? '',
+      cardUp
+        ? Math.floor((site.screen === 'factory' ? plant.elapsedMs : site.elapsedMs) / 100)
+        : 0,
     ].join('|');
     if (key === this.lastKey) return;
     this.lastKey = key;
@@ -328,6 +365,7 @@ export class MenuSystem extends createSystem({}) {
     // The rail.
     const tabs: Array<{ id: string; tab: Tab; label: string }> = [
       { id: 'tab:jobs', tab: 'jobs', label: 'JOBS' },
+      { id: 'tab:orders', tab: 'orders', label: 'ORDERS' },
       { id: 'tab:sys', tab: 'sys', label: 'SYSTEM' },
     ];
     tabs.forEach((t, i) => {
@@ -341,13 +379,15 @@ export class MenuSystem extends createSystem({}) {
         selected: this.tab === t.tab,
       });
     });
-    this.railTargetY = 172 + (this.tab === 'jobs' ? 0 : 1) * 104;
+    this.railTargetY = 172 + Math.max(0, tabs.findIndex((t) => t.tab === this.tab)) * 104;
     if (!Number.isFinite(this.railY)) this.railY = this.railTargetY;
 
     // Each tab painter installs its own body; the shared chrome fronts it.
     this.boardJobsBody = null;
+    this.boardOrdersBody = null;
     this.boardSysBody = null;
     if (this.tab === 'jobs') this.paintJobs(buttons);
+    else if (this.tab === 'orders') this.paintOrders(buttons);
     else this.paintSystem(buttons);
 
     this.board.paint('', (g) => this.paintBoardBody(g), buttons, this.hover);
@@ -546,7 +586,160 @@ export class MenuSystem extends createSystem({}) {
   }
 
   private boardJobsBody: ((g: CanvasRenderingContext2D) => void) | null = null;
+  private boardOrdersBody: ((g: CanvasRenderingContext2D) => void) | null = null;
   private boardSysBody: ((g: CanvasRenderingContext2D) => void) | null = null;
+
+  /* ── ORDERS tab (the factory's book) ──────────────────────────────────── */
+
+  private targetOf(spec: (typeof ORDERS)[number]): { name: string; dots: string[] } {
+    if (spec.target.kind === 'fluid') {
+      const line = LINES[spec.target.line];
+      return { name: `${line.name} DRAUGHTS`, dots: [line.hex] };
+    }
+    const item = ITEMS[spec.target.item];
+    return { name: item.name, dots: item.lineage.map((l) => LINES[l].hex) };
+  }
+
+  private paintOrders(buttons: PanelButton[]): void {
+    const unlocked = ordersUnlocked();
+    ORDERS.forEach((_o, i) => {
+      buttons.push({
+        id: `order:${i}`,
+        label: '',
+        ghost: true,
+        disabled: i >= unlocked,
+        x: ROW_X,
+        y: ROW_Y0 + i * ROW_PITCH,
+        w: ROW_W,
+        h: ROW_H,
+      });
+    });
+    this.orderSel = Math.min(this.orderSel, ORDERS.length - 1);
+    const sel = ORDERS[this.orderSel];
+    const locked = this.orderSel >= unlocked;
+    buttons.push({
+      id: 'start-order',
+      label: locked ? 'LOCKED' : 'START ORDER',
+      sub: locked ? 'fill the sheet above it' : sel.name,
+      primary: !locked,
+      disabled: locked || !site.wallsReady,
+      x: SHEET_X + 10,
+      y: H - 164,
+      w: SHEET_W - 20,
+      h: 112,
+    });
+
+    const hoverOf = (id: string): number => this.board.hoverOf(id);
+    this.boardOrdersBody = (g: CanvasRenderingContext2D): void => {
+      const unlockedNow = ordersUnlocked();
+      ORDERS.forEach((o, i) => {
+        const y = ROW_Y0 + i * ROW_PITCH;
+        const open = i < unlockedNow;
+        const selected = i === this.orderSel;
+        const hov = hoverOf(`order:${i}`);
+        g.fillStyle = selected
+          ? UI.accentFaint
+          : `rgba(255,255,255,${(open ? 0.045 + 0.045 * hov : 0.02).toFixed(3)})`;
+        g.beginPath();
+        g.roundRect(ROW_X, y, ROW_W, ROW_H, 16);
+        g.fill();
+        g.lineWidth = 2;
+        g.strokeStyle = selected
+          ? 'rgba(255,162,46,0.9)'
+          : `rgba(255,255,255,${(open ? 0.1 + 0.2 * hov : 0.05).toFixed(3)})`;
+        g.stroke();
+        if (selected) {
+          g.fillStyle = UI.accent;
+          g.beginPath();
+          g.roundRect(ROW_X + 7, y + 12, 5, ROW_H - 24, 2.5);
+          g.fill();
+        }
+        g.textAlign = 'left';
+        g.textBaseline = 'middle';
+        g.font = font(600, 33);
+        g.letterSpacing = '1.5px';
+        g.fillStyle = open ? UI.text : UI.disabled;
+        g.fillText(`${i + 1}. ${o.name}`, ROW_X + 26, y + 36, ROW_W - 150);
+        g.letterSpacing = '0px';
+        const target = this.targetOf(o);
+        target.dots.forEach((hex, r) => {
+          g.fillStyle = open ? hex : 'rgba(255,255,255,0.14)';
+          g.beginPath();
+          g.arc(ROW_X + 34 + r * 30, y + 82, 9, 0, Math.PI * 2);
+          g.fill();
+        });
+        g.font = font(500, 23);
+        g.fillStyle = open ? UI.dim : UI.disabled;
+        g.fillText(
+          `${o.goal} × ${target.name}`,
+          ROW_X + 34 + target.dots.length * 30 + 8,
+          y + 82,
+        );
+        g.textAlign = 'right';
+        g.font = font(500, 24);
+        if (!open) {
+          g.fillStyle = UI.disabled;
+          g.fillText('LOCKED', ROW_X + ROW_W - 22, y + 82);
+        } else {
+          const best = orderBestMs(o.id);
+          g.fillStyle = best === null ? UI.faint : UI.dim;
+          g.fillText(best === null ? '—' : fmtMs(best), ROW_X + ROW_W - 22, y + 82);
+        }
+      });
+
+      // THE ORDER SHEET.
+      const sheet = ORDERS[this.orderSel];
+      const target = this.targetOf(sheet);
+      g.fillStyle = UI.well;
+      g.beginPath();
+      g.roundRect(SHEET_X, ROW_Y0, SHEET_W, H - ROW_Y0 - 190, 18);
+      g.fill();
+      g.textAlign = 'left';
+      g.font = font(700, 42);
+      g.letterSpacing = '2px';
+      g.fillStyle = UI.textHi;
+      g.fillText(sheet.name, SHEET_X + 26, ROW_Y0 + 52);
+      g.letterSpacing = '0px';
+      wrapText(g, sheet.brief, SHEET_X + 26, ROW_Y0 + 106, SHEET_W - 52, 32, font(500, 25), UI.dim);
+      // DELIVER: the target, worn in its lineage's dots.
+      g.font = font(500, 24);
+      g.fillStyle = UI.faint;
+      g.fillText('DELIVER', SHEET_X + 26, ROW_Y0 + 268);
+      target.dots.forEach((hex, r) => {
+        g.fillStyle = hex;
+        g.beginPath();
+        g.arc(SHEET_X + 142 + r * 30, ROW_Y0 + 264, 11, 0, Math.PI * 2);
+        g.fill();
+      });
+      g.font = font(600, 32);
+      g.fillStyle = UI.text;
+      g.fillText(
+        `${sheet.goal} × ${target.name}`,
+        SHEET_X + 142 + target.dots.length * 30 + 12,
+        ROW_Y0 + 266,
+      );
+      const best = orderBestMs(sheet.id);
+      g.font = font(500, 24);
+      g.fillStyle = UI.faint;
+      g.fillText('BEST', SHEET_X + 26, ROW_Y0 + 330);
+      g.font = font(600, 34);
+      g.fillStyle = best === null ? UI.faint : UI.text;
+      g.fillText(best === null ? 'no time on the sheet' : fmtMs(best), SHEET_X + 108, ROW_Y0 + 330);
+      const banked = bankTotal();
+      g.font = font(500, 23);
+      g.fillStyle = banked > 0 ? UI.dim : UI.faint;
+      g.fillText(
+        banked > 0 ? `the bank holds ${banked} surplus part${banked === 1 ? '' : 's'}` : 'the bank stands empty — surplus deliveries keep',
+        SHEET_X + 26,
+        ROW_Y0 + 392,
+      );
+      if (!site.wallsReady) {
+        g.font = font(500, 23);
+        g.fillStyle = UI.warn;
+        g.fillText('waiting for walls — look around the room', SHEET_X + 26, ROW_Y0 + 448);
+      }
+    };
+  }
 
   /* ── SYSTEM tab ───────────────────────────────────────────────────────── */
 
@@ -635,6 +828,10 @@ export class MenuSystem extends createSystem({}) {
   /* ── THE JOB CARD ─────────────────────────────────────────────────────── */
 
   private paintCard(): void {
+    if (site.screen === 'factory') {
+      this.paintFactoryCard();
+      return;
+    }
     const [cw, ch] = BOARD.cardPx;
     const job = JOBS[site.jobIndex];
     const buttons: PanelButton[] = [
@@ -702,6 +899,88 @@ export class MenuSystem extends createSystem({}) {
     );
   }
 
+  /** THE SHIFT CARD — the job card, promoted for the factory: the live
+   *  sheet, the bank, and the BUILD catalogue. Picking a unit arms the
+   *  hologram and drops the card — the hands do the rest. */
+  private paintFactoryCard(): void {
+    const [cw, ch] = BOARD.cardPx;
+    const spec = orderSpec();
+    const armed = buildView.armed?.() ?? null;
+    const catalogue: Array<{ type: UnitType; label: string }> = [
+      { type: 'dock', label: 'DOCK' },
+      { type: 'maker', label: 'MAKER' },
+      { type: 'belt', label: 'RAIL' },
+      { type: 'combiner', label: 'COMBINER' },
+      { type: 'chest', label: 'CHEST' },
+    ];
+    const buttons: PanelButton[] = [];
+    const bw = (cw - 68 - 2 * 12) / 3;
+    catalogue.forEach((entry, i) => {
+      const row = Math.floor(i / 3);
+      const col = i % 3;
+      buttons.push({
+        id: `build:${entry.type}`,
+        label: entry.label,
+        small: true,
+        disabled: !typeAvailable(entry.type),
+        selected: armed === entry.type,
+        x: 34 + col * (bw + 12),
+        y: 168 + row * 74,
+        w: bw,
+        h: 62,
+      });
+    });
+    buttons.push(
+      {
+        id: 'resume',
+        label: 'BACK TO IT',
+        primary: true,
+        x: 34,
+        y: ch - 100,
+        w: cw / 2 - 46,
+        h: 76,
+      },
+      {
+        id: 'quit',
+        label: 'DOWN TOOLS',
+        tone: UI.danger,
+        x: cw / 2 + 12,
+        y: ch - 100,
+        w: cw / 2 - 46,
+        h: 76,
+        small: true,
+      },
+    );
+    this.card.paint(
+      spec?.name ?? 'THE SHOP',
+      (g) => {
+        g.textBaseline = 'middle';
+        // The clock and the sheet's live count.
+        g.textAlign = 'left';
+        g.font = font(500, 24);
+        g.fillStyle = UI.dim;
+        g.fillText(fmtMs(plant.elapsedMs), 36, 118);
+        if (spec) {
+          const target = this.targetOf(spec);
+          g.textAlign = 'right';
+          g.font = font(700, 34);
+          g.fillStyle = UI.accent;
+          g.fillText(`${plant.count} / ${spec.goal}`, cw - 40, 116);
+          g.font = font(500, 21);
+          g.fillStyle = UI.faint;
+          g.fillText(target.name, cw - 40, 144);
+        }
+        const banked = bankTotal();
+        g.textAlign = 'left';
+        g.font = font(500, 21);
+        g.fillStyle = banked > 0 ? UI.dim : UI.faint;
+        g.fillText(`bank · ${banked}`, 36, 144);
+      },
+      buttons,
+      this.hover,
+    );
+  }
+
   /* ── shared body dispatcher ───────────────────────────────────────────── */
 
   /** Panel.paint takes one body; the board's is whichever tab's painter
@@ -709,6 +988,7 @@ export class MenuSystem extends createSystem({}) {
   private paintBoardBody(g: CanvasRenderingContext2D): void {
     this.paintChrome(g);
     this.boardJobsBody?.(g);
+    this.boardOrdersBody?.(g);
     this.boardSysBody?.(g);
   }
 }

@@ -6,10 +6,18 @@
  * brings the board back with the sheet stamped.
  */
 
-import { CEREMONY_S, JOBS } from '../config.js';
+import { CEREMONY_S, JOBS, ORDERS } from '../config.js';
 import { freshSeed } from './rng.js';
-import { recordJobDone, unlockedJobs } from './progress.js';
+import {
+  loadBank,
+  ordersUnlocked,
+  recordJobDone,
+  recordOrderDone,
+  saveBank,
+  unlockedJobs,
+} from './progress.js';
 import { buildRuns, site } from './state.js';
+import { clearPlant, orderSpec, plant, postOrder } from '../factory/state.js';
 import * as sfx from '../audio/sfx.js';
 
 /** Clock in on a job. `seed` is for the tools — a layout replayed exactly. */
@@ -60,6 +68,53 @@ export function runLanded(runIndex: number): void {
   if (newBest) {
     /* the board will show the time in the accent — no popup needed */
   }
+}
+
+/* ── the factory (FACTORY.md phases 1–2) ─────────────────────────────────── */
+
+/** Clock in on a work order: a fresh plant, the sheet posted, the shift
+ *  live on the FACTORY screen. The bank rides in from the shelf. */
+export function startOrder(index: number): void {
+  if (site.screen !== 'board') return;
+  if (index < 0 || index >= ORDERS.length || index >= ordersUnlocked()) return;
+  clearPlant();
+  plant.bank = loadBank();
+  site.paused = false;
+  site.screen = 'factory';
+  postOrder(index);
+  site.generation++;
+}
+
+/** DOWN TOOLS: the whole shift comes off the floor, the board returns.
+ *  The bank keeps what it banked. */
+export function abandonFactory(): void {
+  if (site.screen !== 'factory') return;
+  saveBank(plant.bank);
+  clearPlant();
+  site.screen = 'board';
+  sfx.stopAllHums();
+  site.generation++;
+}
+
+/** The sheet filled (the sim's 'complete' event lands here): stamp it,
+ *  post the next one into the SAME shift — the plant persists, the
+ *  factory grows — or, the book done, give the room its moment. */
+export function orderComplete(): void {
+  const spec = orderSpec();
+  if (!spec || site.screen !== 'factory') return;
+  recordOrderDone(spec.id, plant.elapsedMs);
+  saveBank(plant.bank);
+  const next = plant.orderIndex + 1;
+  if (next < ORDERS.length) {
+    postOrder(next);
+    return;
+  }
+  clearPlant();
+  site.screen = 'ceremony';
+  site.ceremonyT = CEREMONY_S;
+  sfx.stopAllHums();
+  sfx.stampDone();
+  site.generation++;
 }
 
 /** THE FLOOR (FACTORY.md, phase 0): step off the board and mark the

@@ -17,6 +17,7 @@ import { launchXR, SessionMode, World } from '@iwsdk/core';
 import { DirectionalLight, HemisphereLight } from 'three';
 import { ensureAudio } from './audio/sfx.js';
 import { BuildSystem, buildView } from './systems/BuildSystem.js';
+import { FactorySystem, factoryView } from './systems/FactorySystem.js';
 import { FloorSystem, floorView } from './systems/FloorSystem.js';
 import { FlowSystem, flowView } from './systems/FlowSystem.js';
 import { MenuSystem, menuView } from './systems/MenuSystem.js';
@@ -89,6 +90,7 @@ World.create(container, {
   world.registerSystem(WallSystem);
   world.registerSystem(FloorSystem); // reads the registry; owns the tape
   world.registerSystem(BuildSystem); // after the tape claims a hand, before the flange
+  world.registerSystem(FactorySystem); // the shift: feeds, runs, sim, parts
   world.registerSystem(PlacementSystem);
   world.registerSystem(TubeSystem);
   world.registerSystem(FlowSystem);
@@ -135,7 +137,7 @@ World.create(container, {
 // tool) without controllers — e.g. __tubes.menu.act('start'),
 // __tubes.place.mountAt(0, 0, 0), __tubes.tube.grab(), __tubes.tube.dragTo(...).
 import { site } from './game/state.js';
-import { abandonShift, startJob } from './game/flow.js';
+import { abandonFactory, abandonShift, startJob, startOrder } from './game/flow.js';
 import { walls } from './systems/WallSystem.js';
 
 declare global {
@@ -153,8 +155,12 @@ declare global {
       place: typeof placeView;
       /** THE FLOOR: hazard tape adjust, drivable headlessly. */
       floor: typeof floorView;
-      /** The lattice: stamp/remove crates, read occupancy. */
+      /** The lattice: stamp/remove units, read occupancy. */
       build: typeof buildView;
+      /** The factory: orders, runs, parts, the sim — drivable headlessly. */
+      plant: typeof factoryView;
+      startOrder: typeof startOrder;
+      abandonFactory: typeof abandonFactory;
       /** The tube: pull state, and the headless hands. */
       tube: typeof tubeView;
       /** The pour: fronts, energies, what's landed. */
@@ -178,6 +184,9 @@ window.__tubes = {
   place: placeView,
   floor: floorView,
   build: buildView,
+  plant: factoryView,
+  startOrder,
+  abandonFactory,
   tube: tubeView,
   flow: flowView,
   info: () => {

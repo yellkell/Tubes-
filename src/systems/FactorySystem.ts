@@ -1,0 +1,1063 @@
+/**
+ * FactorySystem — the shift itself: feeds, supply runs, the sim, the
+ * parts, the payoff. Everything PIECEWORK on the FACTORY screen.
+ *
+ * THE PULL LIVES ON. The supply hookup is TubeSystem's verb, forked —
+ * same constants, same five rules — with one honest difference: there is
+ * no predetermined socket. While the collar is held, EVERY free gland on
+ * the floor is a candidate, and the nearest one inside the snap window
+ * (roughly square) takes the head. The fork is deliberate scaffolding:
+ * TubeSystem stays the ladder's untouched crown jewel, and the two pulls
+ * reunify once the factory's is proven (FACTORY.md roadmap).
+ *
+ * Ownership: BuildSystem MUTATES the plant (stamp/unbolt); the sim
+ * ADVANCES it (factory/sim.ts, events out); this system PERFORMS it —
+ * meshes, pours, hums, haptics, the dock's counter plate — and carries
+ * the hands: the two-hand pull and the one-hand part carry.
+ *
+ * Budget note: units are plain meshes (a full floor ≈ 15 units × ~8
+ * draws); parts are instanced per item type. The order walk asserts the
+ * whole worst frame under its own bar — instancing the unit chassis is
+ * the known next win if it tightens.
+ */
+
+import { InputComponent, createSystem } from '@iwsdk/core';
+import {
+  CanvasTexture,
+  DoubleSide,
+  Group,
+  InstancedMesh,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  PlaneGeometry,
+  Quaternion,
+  SRGBColorSpace,
+  Vector3,
+} from 'three';
+import { FACTORY, FLOW, ITEMS, LINES, SEAT, TUBE, UNITS, type ItemId } from '../config.js';
+import * as sfx from '../audio/sfx.js';
+import { buzz } from '../game/haptics.js';
+import { orderComplete } from '../game/flow.js';
+import { site } from '../game/state.js';
+import { font } from '../ui/fonts.js';
+import { cellCenter } from '../floor/grid.js';
+import { floorLayout, type FloorSide } from '../floor/plan.js';
+import {
+  chestParts,
+  chuteParts,
+  freshRun,
+  orderSpec,
+  plant,
+  runForSide,
+  runSeatedAt,
+  type FactoryRun,
+  type Part,
+} from '../factory/state.js';
+import { deliverPart, glandPose, partPose, retractRun, simTick } from '../factory/sim.js';
+import {
+  buildFeed,
+  buildUnit,
+  partGeometry,
+  partMaterial,
+  type FeedRefs,
+  type UnitRefs,
+} from '../factory/units.js';
+import { buildCollar, buildSegment, type CollarRefs, type SegmentRefs } from '../tube/build.js';
+import {
+  bendControl,
+  endControl,
+  pathPoint,
+  pathTangent,
+  runLength,
+  segmentSpans,
+} from '../tube/geometry.js';
+
+/** Headless/dev hooks (wired into __tubes in main.ts). */
+export const factoryView: {
+  state?: () => {
+    order: number;
+    orderId: string | null;
+    count: number;
+    goal: number;
+    elapsedMs: number;
+    feeds: Partial<Record<FloorSide, boolean>>;
+    runs: Array<{ side: FloorSide; phase: string; ext: number; target: number }>;
+    parts: number;
+    units: number;
+    bank: Partial<Record<ItemId, number>>;
+  };
+  /** Every gland on the floor: pose + whether a run holds it. */
+  glands?: () => Array<{
+    unit: number;
+    type: string;
+    x: number;
+    y: number;
+    z: number;
+    nx: number;
+    ny: number;
+    nz: number;
+    seated: boolean;
+  }>;
+  /** The driven two hands, per feed side (the tools' pull). */
+  grab?: (side: FloorSide) => boolean;
+  dragTo?: (x: number, y: number, z: number) => void;
+  release?: () => void;
+  /** Unbolt a seated run off a unit's gland. */
+  unseat?: (unitId: number) => boolean;
+  /** Headless hand-carry: take the nearest part / drop what's carried. */
+  take?: (x: number, y: number, z: number) => number | null;
+  drop?: (x: number, y: number, z: number) => boolean;
+  timeScale?: (s: number) => void;
+  parts?: () => Array<{ id: number; item: ItemId; kind: string; unit?: number }>;
+} = {};
+
+const SHELL_PAD = 0.03;
+const UP_Y = new Vector3(0, 1, 0);
+const FWD_Z = new Vector3(0, 0, 1);
+const DOWN = new Vector3(0, -1, 0);
+
+const _mouth = new Vector3();
+const _p1 = new Vector3();
+const _p2 = new Vector3();
+const _entry = new Vector3();
+const _chord = new Vector3();
+const _pA = new Vector3();
+const _pB = new Vector3();
+const _point = new Vector3();
+const _tangent = new Vector3();
+const _quat = new Quaternion();
+const _seat = new Vector3();
+const _dir = new Vector3();
+const _handL = new Vector3();
+const _handR = new Vector3();
+const _mid = new Vector3();
+const _aimL = new Vector3();
+const _aimSum = new Vector3();
+const _g = new Vector3();
+const _gn = new Vector3();
+const _c = { x: 0, z: 0 };
+const _m4 = new Matrix4();
+const _cam = new Vector3();
+
+interface RunHw {
+  root: Group;
+  segments: SegmentRefs[];
+  collar: CollarRefs;
+  humOn: boolean;
+}
+
+const FEED_NORMALS: Record<FloorSide, Vector3> = {
+  far: new Vector3(0, 0, 1),
+  near: new Vector3(0, 0, -1),
+  left: new Vector3(1, 0, 0),
+  right: new Vector3(-1, 0, 0),
+};
+
+export class FactorySystem extends createSystem({}) {
+  private clock = 0;
+  private lastGen = -1;
+  private feeds = new Map<FloorSide, FeedRefs>();
+  private feedFlash = new Map<FloorSide, number>();
+  private runHw = new Map<FloorSide, RunHw>();
+  private unitRefs = new Map<number, UnitRefs>();
+  private partPools = new Map<ItemId, InstancedMesh>();
+  private carried: Partial<Record<'left' | 'right', number>> = {};
+  /** A tool's carry (factoryView.take) — the real grip's open hand must
+   *  not drop it between the tool's two calls. */
+  private carriedDriven: Partial<Record<'left' | 'right', boolean>> = {};
+  private driven = { active: false, side: 'far' as FloorSide, pos: new Vector3() };
+  private plate: { mesh: Mesh; tex: CanvasTexture; g: CanvasRenderingContext2D; key: string } | null =
+    null;
+
+  init(): void {
+    factoryView.state = () => {
+      const spec = orderSpec();
+      return {
+        order: plant.orderIndex,
+        orderId: spec?.id ?? null,
+        count: plant.count,
+        goal: spec?.goal ?? 0,
+        elapsedMs: plant.elapsedMs,
+        feeds: { ...plant.feedsAwake },
+        runs: plant.runs.map((r) => ({
+          side: r.side,
+          phase: r.phase,
+          ext: r.extension,
+          target: r.targetUnit,
+          head: { x: r.headVisual.x, y: r.headVisual.y, z: r.headVisual.z },
+        })),
+        parts: plant.parts.length,
+        units: plant.units.length,
+        bank: { ...plant.bank },
+      };
+    };
+    factoryView.glands = () =>
+      plant.units
+        .filter((u) => u.type === 'maker' || u.type === 'dock')
+        .map((u) => {
+          glandPose(u, _g, _gn);
+          return {
+            unit: u.id,
+            type: u.type,
+            x: _g.x,
+            y: _g.y,
+            z: _g.z,
+            nx: _gn.x,
+            ny: _gn.y,
+            nz: _gn.z,
+            seated: Boolean(runSeatedAt(u.id)),
+          };
+        });
+    factoryView.grab = (side) => {
+      const run = runForSide(side);
+      if (!run || run.phase !== 'pull') return false;
+      this.driven.active = true;
+      this.driven.side = side;
+      this.driven.pos.copy(run.headVisual);
+      return true;
+    };
+    factoryView.dragTo = (x, y, z) => {
+      this.driven.pos.set(x, y, z);
+    };
+    factoryView.release = () => {
+      this.driven.active = false;
+    };
+    factoryView.unseat = (unitId) => {
+      const run = runSeatedAt(unitId);
+      if (!run) return false;
+      this.stopRunHum(run);
+      retractRun(run);
+      sfx.boltSpin();
+      sfx.droopSettle();
+      return true;
+    };
+    factoryView.take = (x, y, z) => this.takeNearest('right', _g.set(x, y, z), true);
+    factoryView.drop = (x, y, z) => this.dropCarried('right', _g.set(x, y, z));
+    factoryView.timeScale = (s) => {
+      plant.timeScale = Math.max(0.1, Math.min(30, s));
+    };
+    factoryView.parts = () =>
+      plant.parts.map((p) => ({
+        id: p.id,
+        item: p.item,
+        kind: p.at.kind,
+        unit: 'unit' in p.at ? p.at.unit : undefined,
+      }));
+  }
+
+  update(delta: number): void {
+    this.clock += delta;
+
+    const live = plant.orderIndex >= 0;
+    if (this.lastGen !== plant.generation) {
+      this.lastGen = plant.generation;
+      this.syncStructures(live);
+    }
+    if (!live) return;
+
+    const active = site.screen === 'factory';
+
+    // The feeds stand on the tape's sides — reposed every frame (cheap,
+    // and the floor may have moved between shifts).
+    this.poseFeeds();
+
+    // Hands: the pull and the carry — only mid-shift, never under the card.
+    if (active && !site.paused) this.tickHands(delta);
+    else if (this.driven.active && !active) this.driven.active = false;
+
+    // The runs: pull physics, seat magnet, pours, retraction.
+    for (const run of plant.runs) this.tickRun(run, delta);
+
+    // The machine itself. The card pauses the HANDS, never the works.
+    const dt = delta * plant.timeScale;
+    simTick(dt);
+    plant.elapsedMs += dt * 1000;
+
+    this.drainEvents();
+    this.renderParts();
+    this.tickUnitDressing(delta);
+    this.tickPlate();
+  }
+
+  /* ── structures: feeds, unit meshes, run hardware ─────────────────────── */
+
+  private syncStructures(live: boolean): void {
+    // Feeds exist while a shift does.
+    if (live && this.feeds.size === 0) {
+      for (const side of ['far', 'left', 'right', 'near'] as FloorSide[]) {
+        const lineId = FACTORY.sides[side];
+        const refs = buildFeed(lineId ? LINES[lineId] : null);
+        this.scene.add(refs.group);
+        this.feeds.set(side, refs);
+      }
+    }
+    if (!live) {
+      for (const refs of this.feeds.values()) refs.group.removeFromParent();
+      this.feeds.clear();
+      for (const hw of this.runHw.values()) this.dropRunHw(hw);
+      this.runHw.clear();
+      for (const refs of this.unitRefs.values()) this.dropUnitRefs(refs);
+      this.unitRefs.clear();
+      for (const pool of this.partPools.values()) pool.removeFromParent();
+      this.partPools.clear();
+      this.carried = {};
+      this.driven.active = false;
+      if (this.plate) {
+        this.plate.mesh.removeFromParent();
+        this.plate = null;
+      }
+      sfx.stopAllHums();
+      return;
+    }
+
+    // Unit meshes follow plant.units.
+    const liveIds = new Set(plant.units.map((u) => u.id));
+    for (const [id, refs] of this.unitRefs) {
+      if (!liveIds.has(id)) {
+        this.dropUnitRefs(refs);
+        this.unitRefs.delete(id);
+      }
+    }
+    for (const unit of plant.units) {
+      if (this.unitRefs.has(unit.id)) continue;
+      const refs = buildUnit(unit.type);
+      cellCenter(unit.i, unit.j, _c);
+      refs.group.position.set(_c.x, 0, _c.z);
+      const d = [
+        { di: 0, dj: -1 },
+        { di: 1, dj: 0 },
+        { di: 0, dj: 1 },
+        { di: -1, dj: 0 },
+      ][unit.rot];
+      refs.group.rotation.y = Math.atan2(d.di, d.dj);
+      this.scene.add(refs.group);
+      this.unitRefs.set(unit.id, refs);
+    }
+
+    // A run per awake feed (the stub waits on the spout).
+    for (const [side, refs] of this.feeds) {
+      const lineId = FACTORY.sides[side];
+      if (!lineId || !plant.feedsAwake[side]) continue;
+      if (!runForSide(side)) {
+        this.spoutPose(side, refs, _g, _gn);
+        plant.runs.push(freshRun(side, LINES[lineId], _g, _gn));
+      }
+      if (!this.runHw.has(side)) {
+        const run = runForSide(side)!;
+        const root = new Group();
+        const segments: SegmentRefs[] = [];
+        for (let s = 0; s < TUBE.segments; s++) {
+          const seg = buildSegment(run.line, s);
+          segments.push(seg);
+          root.add(seg.shell, seg.rib, seg.pour);
+        }
+        const collar = buildCollar(run.line);
+        root.add(collar.group);
+        this.scene.add(root);
+        this.runHw.set(side, { root, segments, collar, humOn: false });
+      }
+    }
+
+    // Part pools once.
+    if (this.partPools.size === 0) {
+      for (const item of Object.keys(ITEMS) as ItemId[]) {
+        const pool = new InstancedMesh(partGeometry(item), partMaterial(item), 64);
+        pool.count = 0;
+        pool.frustumCulled = false;
+        this.scene.add(pool);
+        this.partPools.set(item, pool);
+      }
+    }
+  }
+
+  private dropRunHw(hw: RunHw): void {
+    hw.root.removeFromParent();
+    for (const seg of hw.segments) seg.pourMat.dispose();
+    hw.collar.capMat.dispose();
+    hw.collar.glowMat.dispose();
+  }
+
+  private dropUnitRefs(refs: UnitRefs): void {
+    refs.group.removeFromParent();
+    if (refs.gland) {
+      refs.gland.glowMat.dispose();
+      refs.gland.guideMat.dispose();
+    }
+    if (refs.lampMat) refs.lampMat.dispose();
+  }
+
+  /* ── feeds ────────────────────────────────────────────────────────────── */
+
+  private sideMid(side: FloorSide, out: Vector3): Vector3 {
+    const cx = (floorLayout.left + floorLayout.right) / 2;
+    const cz = (floorLayout.near + floorLayout.far) / 2;
+    if (side === 'far') out.set(cx, 0, floorLayout.far);
+    else if (side === 'near') out.set(cx, 0, floorLayout.near);
+    else if (side === 'left') out.set(floorLayout.left, 0, cz);
+    else out.set(floorLayout.right, 0, cz);
+    return out;
+  }
+
+  private spoutPose(side: FloorSide, refs: FeedRefs, point: Vector3, normal: Vector3): void {
+    this.sideMid(side, point);
+    normal.copy(FEED_NORMALS[side]);
+    point.addScaledVector(normal, refs.mouthOffset).setY(FACTORY.spoutHeight);
+  }
+
+  private poseFeeds(): void {
+    for (const [side, refs] of this.feeds) {
+      this.sideMid(side, _g);
+      refs.group.position.set(_g.x, 0, _g.z);
+      const n = FEED_NORMALS[side];
+      refs.group.rotation.y = Math.atan2(n.x, n.z);
+      const awake = Boolean(plant.feedsAwake[side]);
+      const flash = this.feedFlash.get(side) ?? 0;
+      if (flash > 0) this.feedFlash.set(side, flash - 0.016);
+      const breathe = 0.5 + 0.5 * Math.sin(this.clock * 2.2);
+      refs.glowMat.opacity = awake
+        ? 0.25 + 0.2 * breathe + Math.max(0, flash) * 0.5
+        : FACTORY.sides[side]
+          ? 0.06
+          : 0.08;
+      // A run's pointA rides the spout (the floor may have moved between
+      // shifts; runs are born fresh each shift, but stay honest anyway).
+      const run = runForSide(side);
+      if (run && run.phase === 'pull' && !run.held) {
+        this.spoutPose(side, refs, _g, _gn);
+        run.pointA.copy(_g);
+        run.normalA.copy(_gn);
+      }
+    }
+  }
+
+  /* ── hands: the pull's grips and the carry ────────────────────────────── */
+
+  private tickHands(delta: number): void {
+    void delta;
+    const grips = this.world.playerSpaceEntities?.gripSpaces;
+    const objL = grips?.left?.object3D;
+    const objR = grips?.right?.object3D;
+    if (objL) objL.getWorldPosition(_handL);
+    if (objR) objR.getWorldPosition(_handR);
+
+    // THE CARRY: one squeezing hand near a loose part takes it — unless
+    // that hand is close enough to a collar that the pull has first call.
+    for (const [hand, obj, pos] of [
+      ['left', objL, _handL],
+      ['right', objR, _handR],
+    ] as const) {
+      if (!obj) continue;
+      const gp = this.input.xr.gamepads[hand];
+      const squeezing = gp?.getButtonPressed(InputComponent.Squeeze) ?? false;
+      const carriedId = this.carried[hand];
+      if (carriedId !== undefined && !squeezing && !this.carriedDriven[hand]) {
+        this.dropCarried(hand, pos);
+      } else if (
+        carriedId === undefined &&
+        (gp?.getButtonDown(InputComponent.Squeeze) ?? false) &&
+        !this.nearAnyCollar(pos)
+      ) {
+        this.takeNearest(hand, pos, false);
+      }
+    }
+  }
+
+  private nearAnyCollar(pos: Vector3): boolean {
+    for (const run of plant.runs) {
+      if (run.phase === 'pull' && pos.distanceTo(run.headVisual) < TUBE.grabReach) return true;
+    }
+    return false;
+  }
+
+  private takeNearest(hand: 'left' | 'right', pos: Vector3, headless: boolean): number | null {
+    if (this.carried[hand] !== undefined) return null; // one part per fist
+    let best: Part | null = null;
+    let bestD = FACTORY.partReach;
+    for (const part of plant.parts) {
+      const at = part.at;
+      if (at.kind === 'hand' || at.kind === 'port') continue;
+      if (at.kind === 'chest') {
+        // Only the top of the stack is in reach of a fist.
+        const stack = chestParts(at.unit);
+        if (stack[stack.length - 1] !== part) continue;
+      }
+      partPose(part, _pA);
+      const d = _pA.distanceTo(pos);
+      if (d < bestD) {
+        bestD = d;
+        best = part;
+      }
+    }
+    if (!best) return null;
+    const at = best.at;
+    if (at.kind === 'chute') {
+      for (const p of chuteParts(at.unit)) {
+        if (p.at.kind === 'chute' && p.at.slot > at.slot) p.at.slot -= 1;
+      }
+    }
+    best.at = { kind: 'hand', hand };
+    this.carried[hand] = best.id;
+    if (headless) this.carriedDriven[hand] = true;
+    else {
+      sfx.uiHover();
+      buzz(this.world, hand, 0.3, 25);
+    }
+    return best.id;
+  }
+
+  private dropCarried(hand: 'left' | 'right', pos: Vector3): boolean {
+    const id = this.carried[hand];
+    if (id === undefined) return false;
+    const part = plant.parts.find((p) => p.id === id);
+    delete this.carried[hand];
+    delete this.carriedDriven[hand];
+    if (!part) return false;
+
+    // Over the dock: delivered. Over a chest: banked in the crate. Over a
+    // combiner's port tray: fitted. Anywhere else: it's on the floor now.
+    for (const unit of plant.units) {
+      cellCenter(unit.i, unit.j, _c);
+      const d = Math.hypot(pos.x - _c.x, pos.z - _c.z);
+      if (d > FACTORY.dropReach) continue;
+      if (unit.type === 'dock') {
+        deliverPart(part);
+        buzz(this.world, hand, 0.5, 40);
+        return true;
+      }
+      if (unit.type === 'chest' && chestParts(unit.id).length < FACTORY.chestCap) {
+        part.at = { kind: 'chest', unit: unit.id, index: chestParts(unit.id).length };
+        sfx.uiClick();
+        return true;
+      }
+      if (unit.type === 'combiner') {
+        for (const portIdx of [0, 1] as const) {
+          if (unit.ports[portIdx] < 0) {
+            unit.ports[portIdx] = part.id;
+            part.at = { kind: 'port', unit: unit.id, port: portIdx };
+            sfx.uiClick();
+            return true;
+          }
+        }
+      }
+    }
+    part.at = { kind: 'loose', x: pos.x, y: 0.03, z: pos.z };
+    sfx.droopSettle();
+    return true;
+  }
+
+  /* ── the runs: pull, seat, pour, retract ──────────────────────────────── */
+
+  private tickRun(run: FactoryRun, delta: number): void {
+    const hw = this.runHw.get(run.side);
+    if (!hw) return;
+
+    if (run.phase === 'pull' && !site.paused) this.tickPull(run, hw, delta);
+    else if (run.phase === 'retract') this.tickRetract(run, hw, delta);
+    if (run.phase === 'seated' || run.phase === 'flowing') {
+      this.layTube(run, hw, run.extension, true);
+      this.tickPour(run, hw, delta);
+    } else {
+      // Energy dies with the connection.
+      run.energy = Math.max(0, run.energy - delta * 3);
+      for (const seg of hw.segments) {
+        seg.pour.visible = seg.pour.visible && run.energy > 0.01;
+        seg.pourMat.uniforms.uEnergy.value = run.energy;
+      }
+    }
+    this.tickCollarTell(run, hw);
+  }
+
+  private tickPull(run: FactoryRun, hw: RunHw, delta: number): void {
+    _mouth.copy(run.pointA).addScaledVector(run.normalA, 0);
+    run.rattleCool = Math.max(0, run.rattleCool - delta);
+    run.strainCool = Math.max(0, run.strainCool - delta);
+    const maxExt = TUBE.maxLength;
+
+    const hands = this.readHands(run);
+    if (hands.aim) run.aim.copy(hands.aim);
+    run.aimOk = hands.aim !== null;
+
+    if (!run.magnet) {
+      if (hands.holding && !run.held) {
+        run.held = true;
+        run.droop = 0;
+        run.droopVel = 0;
+        sfx.grabLatch();
+        buzz(this.world, 'both', 0.35, 30);
+      } else if (!hands.holding && run.held) {
+        run.held = false;
+        sfx.droopSettle();
+      } else if (!run.held && hands.rattling && run.rattleCool <= 0) {
+        run.rattleCool = TUBE.rattleCooldownS;
+        sfx.oneHandRattle();
+        buzz(this.world, hands.rattleHand, 0.25, 25);
+      }
+    }
+
+    if (run.held && !run.magnet) {
+      const reach = (run.extension - TUBE.stubLength) / Math.max(0.001, maxExt - TUBE.stubLength);
+      const k = TUBE.followStiffness + (TUBE.followStiffnessFar - TUBE.followStiffness) * reach;
+      run.head.lerp(hands.mid, 1 - Math.exp(-k * delta));
+
+      _dir.copy(run.head).sub(_mouth);
+      let ext = _dir.length();
+      if (ext < 1e-4) {
+        _dir.copy(run.normalA);
+        ext = 1e-4;
+      }
+      _dir.divideScalar(ext);
+      if (ext > maxExt) {
+        ext = maxExt;
+        run.head.copy(_mouth).addScaledVector(_dir, ext);
+        if (run.strainCool <= 0) {
+          run.strainCool = 0.9;
+          sfx.strainCreak();
+          buzz(this.world, 'both', 0.5, 70);
+        }
+      } else if (ext < TUBE.stubLength) {
+        ext = TUBE.stubLength;
+        run.head.copy(_mouth).addScaledVector(_dir, ext);
+      }
+
+      const detent = Math.floor(ext / TUBE.detentPitch);
+      if (detent !== run.lastDetent) {
+        run.lastDetent = detent;
+        sfx.segmentClick(detent);
+        buzz(this.world, 'both', 0.18, 14);
+      }
+      const sections = segmentSpans(ext, maxExt).length;
+      if (sections > run.lastSections) {
+        sfx.sectionArrive(sections - 1);
+        buzz(this.world, 'both', 0.4, 40);
+      }
+      run.lastSections = sections;
+      run.extension = ext;
+    }
+
+    // Parked droop.
+    const droopTarget =
+      run.held || run.magnet ? 0 : Math.min(TUBE.droopMax, run.extension * TUBE.droopPerMetre);
+    const spring = 60 / TUBE.droopSettleS;
+    run.droopVel += (droopTarget - run.droop) * spring * delta;
+    run.droopVel *= Math.exp(-4.2 * delta);
+    run.droop += run.droopVel * delta;
+    run.headVisual.copy(run.head).addScaledVector(DOWN, run.droop);
+
+    // THE GLAND DOES THE LAST METRE — whichever free gland is nearest,
+    // offered up roughly square.
+    if (!run.magnet && run.held) {
+      let bestUnit = -1;
+      let bestD = SEAT.snapRadius;
+      for (const unit of plant.units) {
+        if (unit.type !== 'maker' && unit.type !== 'dock') continue;
+        if (runSeatedAt(unit.id)) continue;
+        if (plant.runs.some((r) => r !== run && r.magnet && r.targetUnit === unit.id)) continue;
+        glandPose(unit, _g, _gn);
+        _seat.copy(_g).addScaledVector(_gn, 0.08);
+        const d = run.headVisual.distanceTo(_seat);
+        if (d >= bestD) continue;
+        _entry.copy(_seat).sub(_mouth).normalize();
+        if (_entry.dot(_dir.copy(_gn).negate()) <= SEAT.alignDot) continue;
+        bestD = d;
+        bestUnit = unit.id;
+        run.pointB.copy(_g);
+        run.normalB.copy(_gn);
+      }
+      if (bestUnit >= 0) {
+        run.magnet = true;
+        run.targetUnit = bestUnit;
+        run.seatP = 0;
+        sfx.magnetTake();
+        buzz(this.world, 'both', 0.3, 120);
+      }
+    }
+    if (run.magnet) {
+      _seat.copy(run.pointB).addScaledVector(run.normalB, 0.08);
+      run.seatP = Math.min(1, run.seatP + delta / (SEAT.magnetS + SEAT.seatS));
+      const e = 1 - (1 - run.seatP) ** 3;
+      run.head.lerp(_seat, e);
+      run.headVisual.copy(run.head);
+      run.extension = Math.max(TUBE.stubLength, runLength(_mouth, run.head));
+      if (run.seatP >= 1) this.seatRun(run, hw, _seat);
+    }
+
+    this.layTube(run, hw, run.extension, run.magnet);
+  }
+
+  private seatRun(run: FactoryRun, hw: RunHw, seat: Vector3): void {
+    run.phase = 'seated';
+    run.phaseT = 0;
+    run.front = -1;
+    run.head.copy(seat);
+    run.extension = runLength(_mouth.copy(run.pointA), seat);
+    run.held = false;
+    run.magnet = false;
+    run.droop = 0;
+    if (this.driven.active && this.driven.side === run.side) this.driven.active = false;
+    for (const seg of hw.segments) seg.pour.visible = seg.shell.visible;
+    const gland = this.unitRefs.get(run.targetUnit)?.gland;
+    if (gland) {
+      gland.iris.visible = false;
+      gland.glowMat.color.setHex(run.line.glow);
+      gland.guideMat.color.setHex(run.line.glow);
+    }
+    sfx.seatClunk();
+    sfx.latchDogs();
+    if (run.line.id === 'mains') sfx.steamHiss();
+    else if (run.line.id === 'coolant') sfx.hydraulicSigh();
+    else sfx.arcZap();
+    sfx.chargeRise(FLOW.chargeS);
+    buzz(this.world, 'both', 0.9, 90);
+  }
+
+  private tickPour(run: FactoryRun, hw: RunHw, delta: number): void {
+    run.phaseT += delta;
+    let target = 0;
+    if (run.phase === 'seated') {
+      target = Math.min(1, run.phaseT / FLOW.chargeS);
+      if (run.phaseT >= FLOW.chargeS && run.front < 0) run.front = 0.001;
+      if (run.front >= 0) {
+        run.front += run.line.flowSpeed * delta;
+        if (run.front >= run.extension) {
+          run.front = run.extension + 10;
+          run.phase = 'flowing';
+          run.phaseT = 0;
+          sfx.flowArrive(run.line.id);
+          sfx.startHum(`plant-${run.side}`, run.line.id, run.line.pulseHz);
+          hw.humOn = true;
+          buzz(this.world, 'both', 0.5, 120);
+        }
+      }
+    } else {
+      target = 1;
+    }
+    run.energy += (target - run.energy) * Math.min(1, delta * 6);
+    for (const seg of hw.segments) {
+      const u = seg.pourMat.uniforms;
+      u.uTime.value = this.clock;
+      u.uFront.value = run.front;
+      u.uEnergy.value = run.energy;
+    }
+  }
+
+  private stopRunHum(run: FactoryRun): void {
+    const hw = this.runHw.get(run.side);
+    if (hw?.humOn) {
+      sfx.stopHum(`plant-${run.side}`);
+      hw.humOn = false;
+    }
+    const gland = this.unitRefs.get(run.targetUnit)?.gland;
+    if (gland) gland.iris.visible = true;
+  }
+
+  private tickRetract(run: FactoryRun, hw: RunHw, delta: number): void {
+    if (hw.humOn) {
+      sfx.stopHum(`plant-${run.side}`);
+      hw.humOn = false;
+    }
+    run.phaseT += delta;
+    const t = Math.min(1, run.phaseT / FACTORY.retractS);
+    const ease = 1 - (1 - t) ** 2;
+    const ext = run.extension + (TUBE.stubLength - run.extension) * ease;
+    run.head.copy(run.pointA).addScaledVector(run.normalA, ext);
+    run.headVisual.copy(run.head);
+    this.layTube(run, hw, ext, false);
+    if (t >= 1) {
+      run.phase = 'pull';
+      run.extension = TUBE.stubLength;
+      run.front = -1;
+      run.phaseT = 0;
+      run.lastDetent = Math.floor(TUBE.stubLength / TUBE.detentPitch);
+      run.lastSections = 1;
+      sfx.seatClunk();
+    }
+  }
+
+  /** Both grips (or the tool's driven pair) against ONE run's collar —
+   *  TubeSystem.readHands, forked with a per-run gate: acquisition only
+   *  while no other run is held. */
+  private readHands(run: FactoryRun): {
+    holding: boolean;
+    rattling: boolean;
+    rattleHand: 'left' | 'right';
+    mid: Vector3;
+    aim: Vector3 | null;
+  } {
+    if (this.driven.active && this.driven.side === run.side) {
+      _mid.copy(this.driven.pos);
+      return { holding: true, rattling: false, rattleHand: 'right', mid: _mid, aim: null };
+    }
+    if (this.driven.active) {
+      _mid.copy(run.headVisual);
+      return { holding: false, rattling: false, rattleHand: 'right', mid: _mid, aim: null };
+    }
+
+    const otherHeld = plant.runs.some((r) => r !== run && r.held);
+    const grips = this.world.playerSpaceEntities?.gripSpaces;
+    const objL = grips?.left?.object3D;
+    const objR = grips?.right?.object3D;
+    let holding = 0;
+    let rattleHand: 'left' | 'right' = 'right';
+    if (objL) objL.getWorldPosition(_handL);
+    if (objR) objR.getWorldPosition(_handR);
+    for (const [hand, obj, pos] of [
+      ['left', objL, _handL],
+      ['right', objR, _handR],
+    ] as const) {
+      if (!obj) continue;
+      // A hand that's carrying a part is spoken for.
+      if (this.carried[hand] !== undefined) continue;
+      const gp = this.input.xr.gamepads[hand];
+      const pressed =
+        (gp?.getButtonPressed(InputComponent.Squeeze) ?? false) ||
+        (gp?.getButtonPressed(InputComponent.Trigger) ?? false);
+      const isNear = pos.distanceTo(run.headVisual) < TUBE.grabReach;
+      if (run.held) {
+        const grip = Math.max(
+          gp?.getButtonValue(InputComponent.Squeeze) ?? 0,
+          gp?.getButtonValue(InputComponent.Trigger) ?? 0,
+        );
+        if (pressed || grip > TUBE.holdSqueeze) holding++;
+      } else if (isNear && pressed && !otherHeld) {
+        holding++;
+        rattleHand = hand;
+      }
+    }
+    const rattling = !run.held && holding === 1;
+    _mid.copy(_handL).add(_handR).multiplyScalar(0.5);
+
+    let aim: Vector3 | null = null;
+    const rays = this.world.playerSpaceEntities?.raySpaces;
+    const rayL = rays?.left?.object3D;
+    const rayR = rays?.right?.object3D;
+    if (rayL && rayR) {
+      rayL.getWorldDirection(_aimL).negate();
+      rayR.getWorldDirection(_aimSum).negate().add(_aimL);
+      if (_aimSum.lengthSq() > 0.5) aim = _aimSum.normalize();
+    }
+    return { holding: holding === 2, rattling, rattleHand, mid: _mid, aim };
+  }
+
+  /** TubeSystem.layTube, forked verbatim onto the FactoryRun record. */
+  private layTube(run: FactoryRun, hw: RunHw, ext: number, entering: boolean): void {
+    _mouth.copy(run.pointA);
+    const maxExt = TUBE.maxLength;
+    bendControl(_mouth, run.normalA, ext, _p1);
+    if (entering) {
+      _entry.copy(run.normalB);
+    } else {
+      _chord.copy(run.headVisual).sub(_mouth).normalize();
+      if (run.held && run.aimOk) {
+        _entry
+          .copy(_chord)
+          .multiplyScalar(1 - TUBE.steerBlend)
+          .addScaledVector(run.aim, TUBE.steerBlend);
+        if (_entry.lengthSq() < 0.01) _entry.copy(_chord);
+        _entry.normalize().negate();
+      } else {
+        _entry.copy(_chord).negate();
+      }
+    }
+    endControl(run.headVisual, _entry, ext, _p2, run.held && run.aimOk && !entering ? TUBE.steerReach : 1);
+
+    const spans = segmentSpans(ext, maxExt);
+    const extSafe = Math.max(0.001, ext);
+    for (let i = 0; i < hw.segments.length; i++) {
+      const seg = hw.segments[i];
+      const span = spans[i];
+      const on = Boolean(span);
+      seg.shell.visible = on;
+      seg.rib.visible = on;
+      if (!span) {
+        seg.pour.visible = false;
+        continue;
+      }
+      pathPoint(_mouth, _p1, _p2, run.headVisual, span.s0 / extSafe, _pA);
+      pathPoint(_mouth, _p1, _p2, run.headVisual, Math.min(1, span.s1 / extSafe), _pB);
+      _tangent.copy(_pB).sub(_pA);
+      let chord = _tangent.length();
+      if (chord < 1e-5) {
+        pathTangent(_mouth, _p1, _p2, run.headVisual, span.s0 / extSafe, _tangent);
+        chord = span.s1 - span.s0;
+      } else {
+        _tangent.divideScalar(chord);
+      }
+      _quat.setFromUnitVectors(UP_Y, _tangent);
+      seg.shell.position.copy(_pA).add(_pB).multiplyScalar(0.5);
+      seg.shell.quaternion.copy(_quat);
+      seg.shell.scale.set(span.radius, chord + SHELL_PAD, span.radius);
+      const pour0 = span.s0 - (span.index === 0 ? 0.03 : Math.min(TUBE.pourOverlap, span.s0));
+      pathPoint(_mouth, _p1, _p2, run.headVisual, pour0 / extSafe, _point);
+      _tangent.copy(_pB).sub(_point);
+      const pourChord = Math.max(0.01, _tangent.length());
+      _tangent.normalize();
+      seg.pour.position.copy(_point).add(_pB).multiplyScalar(0.5);
+      seg.pour.quaternion.copy(_quat.setFromUnitVectors(UP_Y, _tangent));
+      seg.pour.scale.set(span.radius * 0.87, pourChord, span.radius * 0.87);
+      seg.pourMat.uniforms.uS0.value = pour0;
+      seg.pourMat.uniforms.uS1.value = span.s1;
+      pathTangent(_mouth, _p1, _p2, run.headVisual, Math.min(1, span.s1 / extSafe), _tangent);
+      seg.rib.position.copy(_pB);
+      seg.rib.quaternion.copy(_quat.setFromUnitVectors(FWD_Z, _tangent));
+    }
+
+    pathTangent(_mouth, _p1, _p2, run.headVisual, 1, _tangent);
+    hw.collar.group.position.copy(run.headVisual);
+    hw.collar.group.quaternion.copy(_quat.setFromUnitVectors(FWD_Z, _tangent));
+  }
+
+  private tickCollarTell(run: FactoryRun, hw: RunHw): void {
+    const breathe = 0.5 + 0.5 * Math.sin(this.clock * 2.6);
+    if (run.phase === 'pull') {
+      if (run.magnet) {
+        hw.collar.capMat.opacity = 0.95;
+        hw.collar.glowMat.opacity = 0.5;
+      } else if (run.held) {
+        hw.collar.capMat.opacity = 0.7;
+        hw.collar.glowMat.opacity = 0.28;
+      } else {
+        hw.collar.capMat.opacity = 0.4 + 0.35 * breathe;
+        hw.collar.glowMat.opacity = 0.12 + 0.16 * breathe;
+      }
+    } else {
+      hw.collar.capMat.opacity = 0.25;
+      hw.collar.glowMat.opacity = 0.1;
+    }
+    // Free glands breathe their guides while any collar is loose or held.
+    const wanting = plant.runs.some((r) => r.phase === 'pull');
+    for (const unit of plant.units) {
+      const gland = this.unitRefs.get(unit.id)?.gland;
+      if (!gland) continue;
+      const seated = runSeatedAt(unit.id);
+      gland.guideMat.opacity = seated ? 0 : wanting ? 0.12 + 0.16 * breathe : 0.06;
+      gland.glowMat.opacity = seated ? 0.45 : 0.15;
+    }
+  }
+
+  /* ── events, parts, dressing, the plate ───────────────────────────────── */
+
+  private drainEvents(): void {
+    for (const ev of plant.events.splice(0)) {
+      if (ev.kind === 'craft') {
+        sfx.segmentClick(3);
+      } else if (ev.kind === 'deliver') {
+        sfx.sectionArrive(1);
+      } else if (ev.kind === 'bank') {
+        sfx.uiHover();
+      } else if (ev.kind === 'feed-wake') {
+        sfx.wallKnock();
+        sfx.socketWake();
+        if (ev.side) this.feedFlash.set(ev.side, 1);
+      } else if (ev.kind === 'post') {
+        sfx.stampDone();
+      } else if (ev.kind === 'complete') {
+        sfx.stampDone();
+        sfx.ceremonyChord();
+        orderComplete();
+      }
+    }
+  }
+
+  private renderParts(): void {
+    const counts = new Map<ItemId, number>();
+    const grips = this.world.playerSpaceEntities?.gripSpaces;
+    for (const part of plant.parts) {
+      const pool = this.partPools.get(part.item);
+      if (!pool) continue;
+      const idx = counts.get(part.item) ?? 0;
+      if (idx >= 64) continue;
+      counts.set(part.item, idx + 1);
+      if (part.at.kind === 'hand') {
+        const obj = grips?.[part.at.hand]?.object3D;
+        if (obj) obj.getWorldPosition(_pA);
+        else partPose(part, _pA);
+      } else {
+        partPose(part, _pA);
+      }
+      _m4.makeTranslation(_pA.x, _pA.y, _pA.z);
+      pool.setMatrixAt(idx, _m4);
+    }
+    for (const [item, pool] of this.partPools) {
+      pool.count = counts.get(item) ?? 0;
+      pool.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  private tickUnitDressing(delta: number): void {
+    void delta;
+    for (const unit of plant.units) {
+      const refs = this.unitRefs.get(unit.id);
+      if (!refs?.lampMat) continue;
+      // The craft lamp: dark idle, pulsing while a craft runs.
+      if (unit.craftT >= 0) {
+        refs.lampMat.opacity = 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(this.clock * 6));
+      } else {
+        refs.lampMat.opacity = 0.12;
+      }
+    }
+  }
+
+  private tickPlate(): void {
+    const dock = plant.units.find((u) => u.type === 'dock');
+    if (!dock) {
+      if (this.plate) this.plate.mesh.visible = false;
+      return;
+    }
+    if (!this.plate) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 224;
+      const g = canvas.getContext('2d')!;
+      const tex = new CanvasTexture(canvas);
+      tex.colorSpace = SRGBColorSpace;
+      const mesh = new Mesh(
+        new PlaneGeometry(0.46, 0.2),
+        new MeshBasicMaterial({ map: tex, transparent: true, side: DoubleSide, depthWrite: false }),
+      );
+      mesh.renderOrder = 13;
+      this.scene.add(mesh);
+      this.plate = { mesh, tex, g, key: '' };
+    }
+    const plate = this.plate;
+    plate.mesh.visible = true;
+    cellCenter(dock.i, dock.j, _c);
+    plate.mesh.position.set(_c.x, UNITS.crate.benchTop + 0.5, _c.z);
+    this.camera.getWorldPosition(_cam);
+    plate.mesh.rotation.set(0, Math.atan2(_cam.x - _c.x, _cam.z - _c.z), 0);
+
+    const spec = orderSpec();
+    const targetName =
+      spec === null
+        ? ''
+        : spec.target.kind === 'item'
+          ? ITEMS[spec.target.item].name
+          : `${spec.target.line.toUpperCase()} DRAUGHTS`;
+    const key = `${plant.orderIndex}|${plant.count}|${spec?.goal ?? 0}|${targetName}`;
+    if (key === plate.key) return;
+    plate.key = key;
+    const g = plate.g;
+    const W = 512;
+    const H = 224;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = 'rgba(10,8,10,0.82)';
+    g.beginPath();
+    g.roundRect(6, 6, W - 12, H - 12, 18);
+    g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.16)';
+    g.lineWidth = 3;
+    g.stroke();
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = font(600, 34);
+    g.fillStyle = 'rgba(242,236,226,0.6)';
+    g.fillText(spec?.name ?? '', W / 2, 52);
+    g.font = font(700, 92);
+    g.fillStyle = '#ffa22e';
+    g.fillText(`${plant.count} / ${spec?.goal ?? 0}`, W / 2, 122);
+    g.font = font(600, 33);
+    g.fillStyle = 'rgba(242,236,226,0.85)';
+    g.fillText(targetName, W / 2, 184);
+    plate.tex.needsUpdate = true;
+  }
+}

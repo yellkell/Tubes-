@@ -12,7 +12,8 @@ import { LINES } from '../config.js';
 export type Screen =
   | 'board' // the work board is up, no shift running
   | 'floor' // marking the site out in hazard tape (FloorSystem's verb)
-  | 'shift' // a job is live: place, pull, seat, pour, repeat
+  | 'shift' // a pipe job is live: place, pull, seat, pour, repeat
+  | 'factory' // a work order is live: feeds, boxes, rails, the dock
   | 'ceremony'; // the last run landed — the room gets its moment
 
 /** One run's life, in order. Every phase is owned by exactly one system:

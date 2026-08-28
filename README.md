@@ -162,6 +162,14 @@ src/
   floor/grid.ts          the world-anchored build lattice + occupancy
   floor/tape.ts          the tape rig: striped bands, bench posts,
                          grab rings, deck line, lattice hint
+  factory/state.ts       the plant singleton: units, supply runs, parts,
+                         the live sheet, the bank, the event bus
+  factory/sim.ts         the factory's heartbeat, pure of scene and
+                         speaker: feeds pour, makers stamp, belts carry,
+                         combiners fit, the dock counts
+  factory/units.ts       bench hardware: maker/combiner/rail/chest/dock,
+                         the gland (a socket on legs), feed pillars,
+                         part silhouettes per lineage
   tube/geometry.ts       telescoping maths: cubic path, root-first
                          section fill, spans, stops
   tube/build.ts          the hardware: flange / socket / segments /
@@ -174,7 +182,11 @@ src/
   systems/WallSystem.ts       scan → registry (+ the hint frames)
   systems/FloorSystem.ts      the floor adjust verb: grab a tape side,
                               drag it to your wall, Ⓐ when done
-  systems/BuildSystem.ts      crate holograms stamped onto the lattice
+  systems/BuildSystem.ts      unit holograms stamped onto the lattice
+                              (armed from the shift card; Ⓑ unbolts)
+  systems/FactorySystem.ts    the shift: feeds, the factory pull (the
+                              two-hand verb, re-aimed at glands), pours,
+                              the sim's beat, parts, the dock's counter
   systems/PlacementSystem.ts  the reticle, the mount, the wake
   systems/TubeSystem.ts       the pull: grab, ratchet, park, magnet, seat
   systems/FlowSystem.ts       the payoff: charge, pour, bloom, shaft,
@@ -187,6 +199,9 @@ tools/
                          headlessly, with phase/unlock/budget/joint asserts
   floor-walk.mjs         THE FLOOR: tape defaults, clamps, snap, lattice
                          stamping, the plant law, persistence — asserted
+  order-walk.mjs         THE WORK BOOK: all five factory sheets filled
+                         headlessly — the draught, the carry, the rails,
+                         the combiner, the re-plumb, the bank
   preview-shot.mjs       screenshots of the moments that carry the look
   socket-look.mjs        a socket from 14 angles — the anti-culling check
                          (open geometry looks whole from one viewpoint and
@@ -195,8 +210,11 @@ tools/
 
 `DESIGN.md` has the full design notes and the roadmap. `FACTORY.md`
 carries the factory direction — PIECEWORK: the genre research, the whole
-design, and the phased build; phase 0 (THE FLOOR: hazard tape round the
-shop floor, dragged to your real walls) is in.
+design, and the phased build. Phases 0–2 are in: mark the floor out in
+hazard tape, and the board's ORDERS tab opens a five-sheet work book —
+feeds on the tape's sides, the two-handed pull re-aimed at bench
+machines, rails, the combiner, the chest, the dock counting every
+delivery and banking the surplus.
 
 ## Checks
 
@@ -205,6 +223,7 @@ npm run typecheck        # strict TS, no emit
 npm run dev &            # then:
 node tools/job-walk.mjs  # the whole ladder, asserted (exits non-zero on fail)
 node tools/floor-walk.mjs     # the factory floor: tape, clamps, lattice
+node tools/order-walk.mjs     # the factory book: all five sheets, filled
 node tools/preview-shot.mjs   # shots/ of the landing, board, pull, pour
 node tools/socket-look.mjs    # shots/socket/ — one socket, 14 angles
 ```

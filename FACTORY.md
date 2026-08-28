@@ -500,11 +500,24 @@ Five phases, each ending green on `npm run typecheck` + a headless walk.
   the plant law, and the layout surviving a reload — with the original
   five-job ladder still walking green beside it
   (`npm run dev`, then `node tools/floor-walk.mjs`).
-- **Phase 1 — SUPPLY.** Feed pillars, spout glands, TubeSystem seats into
-  a maker intake, continuous pour, maker ejects parts, dock + hand-carry.
-  *Orders 1–2 playable end to end.*
-- **Phase 2 — LOGISTICS.** Rails, tees, dock hopper, chest. *Orders 3–5;
-  factory-walk asserts an unattended 10-part run.*
+- **Phase 1 — SUPPLY.** ✅ **SHIPPED.** Feed pillars stand on the tape's
+  sides in their lines' metalwork (PEARL dormant on the fourth); the
+  two-handed pull forked onto the shop floor (`systems/FactorySystem.ts`
+  — same constants, same five rules, one honest difference: no
+  predetermined socket, every free GLAND is a candidate and the nearest
+  one inside the snap window takes the head); continuous pours + per-run
+  hums; makers drink colour and stamp parts; the dock with its gland,
+  hopper and live counter plate; grip-carry (you are the first
+  conveyor); Ⓑ unbolts in two steps (run first, unit second).
+- **Phase 2 — LOGISTICS.** ✅ **SHIPPED.** Rails with visible parts,
+  chute push, combiner ports fed from both sides, the chest, the ORDERS
+  tab + the Ⓐ shift card with the BUILD catalogue, sheets 1–5 posting
+  into one persistent shift, per-sheet best times, and the bank already
+  tallying every surplus delivery (its BILLS wait for phase 3).
+  `tools/order-walk.mjs` fills the whole book headlessly — the draught,
+  the hand-carried gears, cells riding unattended, pumps from two lines,
+  the mid-shift re-plumb to lamps, the chest, the bank — with the floor
+  and job walks still green beside it.
 - **Phase 3 — ECONOMY.** The bank, upgrade bills, SECOND SPOUT with the
   colour dial. *Orders 6–7, both ENGINE solutions walk green.*
 - **Phase 4 — DEPTH & POLISH.** Tiers 3–4, two-target sheets, the finale
