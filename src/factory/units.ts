@@ -594,7 +594,6 @@ export function buildUnit(type: UnitType): UnitRefs {
     // drives the whole thing down onto the anvil by moving one mesh.
     const ram = new Mesh(boxGeo(), hubMat);
     ram.scale.set(0.1, 0.16, 0.1);
-    ram.position.set(0, anvilY + 0.135, -0.005);
     const die = new Mesh(boxGeo(), wearMat);
     die.scale.set(1.16, 0.14, 1.16); // ram-local: it inherits the ram's scale
     die.position.y = -0.56;
@@ -602,7 +601,16 @@ export function buildUnit(type: UnitType): UnitRefs {
     const ramEdge = new LineSegments(boxEdges(), edgeMat);
     ram.add(ramEdge);
     group.add(ram);
-    anim = { mesh: ram, baseY: anvilY + 0.135, travel: -0.085 };
+    // THE STROKE, measured rather than guessed. The die hangs 0.1008 m
+    // under the ram's centre and the anvil's face is at anvilY + 0.015,
+    // so the rest height and the travel are derived from those two — an
+    // eyeballed 0.085 stroke put the die 6 cm THROUGH the anvil at the
+    // bottom of every hit, which is exactly the sort of thing nobody
+    // notices in a still and everybody notices in a headset.
+    const DIE_DROP = 0.1008;
+    const restY = anvilY + 0.015 + DIE_DROP + 0.06; // 6 cm of daylight at rest
+    ram.position.set(0, restY, -0.005);
+    anim = { mesh: ram, baseY: restY, travel: -0.058 };
     // THE FEEDSTOCK HOPPER, at the back, over the gland: what the tube
     // pours into. A folded funnel, mouth up, bolted to the columns.
     const hop = new Mesh(hopperGeo(0.085, 0.042), ironOpenMat);

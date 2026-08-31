@@ -1280,14 +1280,6 @@ export class MenuSystem extends createSystem({}) {
     return true;
   }
 
-  private billText(id: UpgradeId): string {
-    const spec = UPGRADES.find((u) => u.id === id);
-    if (!spec) return '';
-    return Object.entries(spec.bill)
-      .map(([item, n]) => `${n} ${ITEMS[item as ItemId].name}`)
-      .join(' + ');
-  }
-
   /**
    * THE SHIFT CARD — Ⓐ, dead ahead, and the only menu a shift has.
    * Three pages: BUILD (the plant, plus the wrecking bar), GOALS (the
@@ -1392,9 +1384,9 @@ export class MenuSystem extends createSystem({}) {
           label: 'ALL GOALS',
           small: true,
           x: CARD_PAD,
-          y: ch - CARD_FOOT,
+          y: ch - CARD_FOOT - 10,
           w: 190,
-          h: 46,
+          h: 44,
         });
       }
     } else {
@@ -1405,9 +1397,9 @@ export class MenuSystem extends createSystem({}) {
           ghost: true,
           disabled: upgradeOwned(u.id) || !this.canAfford(u.id),
           x: CARD_PAD,
-          y: CARD_BODY - 6 + i * 46,
+          y: CARD_BODY + i * billRowStep(ch),
           w: cw - 2 * CARD_PAD,
-          h: 42,
+          h: billRowStep(ch) - 8,
         });
       });
     }
@@ -1459,7 +1451,7 @@ export class MenuSystem extends createSystem({}) {
         }
 
         if (this.cardMode === 'goals') this.paintGoals(g, cw, ch);
-        else if (this.cardMode === 'supply') this.paintBills(g, cw);
+        else if (this.cardMode === 'supply') this.paintBills(g, cw, ch);
         else {
           g.textAlign = 'center';
           g.font = font(500, 20);
@@ -1574,9 +1566,9 @@ export class MenuSystem extends createSystem({}) {
     g.font = font(500, 17);
     g.fillStyle = UI.faint;
     g.fillText(
-      next ? `next · ${next.name}` : 'last sheet — then the shop is yours',
+      next ? `next \u00b7 ${next.name}` : 'last sheet \u2014 then the shop is yours',
       cw - CARD_PAD,
-      ch - CARD_FOOT + 23,
+      ch - CARD_FOOT + 12,
     );
   }
 
@@ -1872,39 +1864,74 @@ export class MenuSystem extends createSystem({}) {
     );
   }
 
-  /** The bank's bills (the SUPPLY page's body). */
-  private paintBills(g: CanvasRenderingContext2D, cw: number): void {
+  /**
+   * THE BANK'S BILLS.
+   *
+   * The old cut printed a bill as a run of words — "8 CELL + 4 PUMP" —
+   * on a row of grey text, which told you the price and nothing at all
+   * about whether you could pay it: you had to hold the number in your
+   * head and go and look at the bank. Every bill is CHIPS now, one per
+   * ingredient, each carrying the part's own drawing, what it costs, and
+   * what the bank actually holds — and each chip turns green on its own
+   * the moment that line of the bill is covered. You can see at a glance
+   * which single part you are short of, which is the only question
+   * anybody ever asks this page.
+   */
+  private paintBills(g: CanvasRenderingContext2D, cw: number, ch: number): void {
     const hoverOf = (id: string): number => this.card.hoverOf(id);
+    const step = billRowStep(ch);
+    const h = step - 8;
+    const CHIP = 94;
     UPGRADES.forEach((u, i) => {
-      const y = CARD_BODY - 6 + i * 46;
+      const y = CARD_BODY + i * step;
       const owned = upgradeOwned(u.id);
       const afford = this.canAfford(u.id);
       const hov = hoverOf(`buy:${u.id}`);
-      g.fillStyle = `rgba(255,255,255,${(owned ? 0.02 : 0.04 + 0.05 * hov).toFixed(3)})`;
+      g.fillStyle = owned
+        ? UI.accentFaint
+        : `rgba(255,255,255,${(0.035 + 0.05 * hov).toFixed(3)})`;
       g.beginPath();
-      g.roundRect(CARD_PAD, y, cw - 2 * CARD_PAD, 42, 10);
+      g.roundRect(CARD_PAD, y, cw - 2 * CARD_PAD, h, 12);
       g.fill();
       g.strokeStyle = owned
-        ? 'rgba(255,162,46,0.35)'
-        : `rgba(255,255,255,${(0.08 + 0.18 * hov).toFixed(3)})`;
+        ? 'rgba(255,162,46,0.5)'
+        : `rgba(255,255,255,${(0.08 + 0.2 * hov).toFixed(3)})`;
       g.lineWidth = 2;
       g.stroke();
+
+      const bill = Object.entries(u.bill) as Array<[ItemId, number]>;
+      const billW = owned ? 96 : bill.length * CHIP;
       g.textAlign = 'left';
-      g.font = font(600, 20);
+      g.textBaseline = 'middle';
+      g.font = font(600, 21);
       g.fillStyle = owned ? UI.dim : afford ? UI.text : UI.disabled;
-      g.fillText(u.name, CARD_PAD + 16, y + 15);
-      g.font = font(500, 15);
+      g.fillText(u.name, CARD_PAD + 18, y + h / 2 - 12, cw - 2 * CARD_PAD - billW - 40);
+      g.font = font(500, 16);
       g.fillStyle = UI.faint;
-      g.fillText(u.effect, CARD_PAD + 16, y + 32);
-      g.textAlign = 'right';
-      g.font = font(600, 17);
+      g.fillText(u.effect, CARD_PAD + 18, y + h / 2 + 13, cw - 2 * CARD_PAD - billW - 40);
+
       if (owned) {
+        g.textAlign = 'right';
+        g.font = font(700, 19);
         g.fillStyle = UI.accent;
-        g.fillText('FITTED', cw - CARD_PAD - 16, y + 22);
-      } else {
-        g.fillStyle = afford ? UI.positive : UI.faint;
-        g.fillText(this.billText(u.id), cw - CARD_PAD - 16, y + 22);
+        g.fillText('FITTED', cw - CARD_PAD - 20, y + h / 2);
+        return;
       }
+      // One chip per ingredient: the drawing, the price, and what the
+      // bank has against it.
+      bill.forEach(([item, need], n) => {
+        const have = plant.bank[item] ?? 0;
+        const covered = have >= (need ?? 0);
+        const x = cw - CARD_PAD - billW + n * CHIP + 6;
+        itemGlyph(g, item, x, y + h / 2 - 17, 34, covered ? GLYPH_LIVE : GLYPH_DEAD);
+        g.textAlign = 'left';
+        g.font = font(700, 19);
+        g.fillStyle = covered ? UI.positive : UI.warn;
+        g.fillText(String(need ?? 0), x + 40, y + h / 2 - 9);
+        g.font = font(500, 14);
+        g.fillStyle = UI.faint;
+        g.fillText(`bank ${have}`, x + 40, y + h / 2 + 12);
+      });
     });
   }
 
@@ -1940,14 +1967,25 @@ const CARD_PAD = 34;
 const CARD_GAP = 8;
 /** Where a page's body may start — clear of the tabs at y 162. */
 const CARD_BODY = 220;
-/** How much of the bottom belongs to the footer, measured up from ch. */
-const CARD_FOOT = 150;
+/** How much of the bottom belongs to the footer, measured up from ch.
+ *  BACK TO IT / QUIT sit at ch − 84 and stand 64 tall, so 124 is that
+ *  band plus a hairline of air — the old 150 was sized for a shorter
+ *  card and left every page a dead stripe it could have been reading
+ *  in. */
+const CARD_FOOT = 124;
 
 /** Row pitch for the goals ladder: share the body band out over the
  *  book, so a longer book tightens up instead of running off the card. */
 function goalRowStep(ch: number): number {
   const band = ch - CARD_FOOT - 26 - CARD_BODY;
-  return Math.max(30, Math.min(46, Math.floor(band / Math.max(1, ORDERS.length))));
+  return Math.max(30, Math.min(54, Math.floor(band / Math.max(1, ORDERS.length))));
+}
+
+/** The same share-out for the bills. They are fatter than goal rows
+ *  because each one carries its bill as chips rather than as words. */
+function billRowStep(ch: number): number {
+  const band = ch - CARD_FOOT - 26 - CARD_BODY;
+  return Math.max(46, Math.min(72, Math.floor(band / Math.max(1, UPGRADES.length))));
 }
 
 function wrapText(
