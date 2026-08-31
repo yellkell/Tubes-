@@ -22,19 +22,40 @@
  * hands (placement and the pull ignore input under the card) but never
  * the room: a pour mid-race keeps racing, because the machine doesn't
  * know you stopped.
+ *
+ * THREE THINGS THIS FILE LEARNED LATE:
+ *
+ *  · ONE DOOR. The board used to list every sheet in the book and let
+ *    you START any of them — which meant starting sheet four on an empty
+ *    floor, with no feeds awake, no rails and no gears, and no way to
+ *    get any. Every entry but the first was a trap dressed as a choice.
+ *    The tab is called FACTORY now, it offers exactly one button, and
+ *    the book advances inside the shift where the plant you built is
+ *    still standing.
+ *  · PICTURES. A catalogue of seven words in one weight is a list you
+ *    read every single time. Every build button carries its machine's
+ *    shop drawing (ui/icons.ts) over the word, and so does every part
+ *    on every sheet.
+ *  · THE BOX PANEL. Click any standing plant and a small card says what
+ *    is inside it and what is plumbed into it — and carries UNPLUG,
+ *    which is the verb that did not exist at all until playtest went
+ *    looking for it and found DELETE instead.
  */
 
 import { InputComponent, createSystem } from '@iwsdk/core';
 import { Raycaster, Vector3, type Intersection, type Object3D } from 'three';
 import {
   BOARD,
+  FACTORY,
   GAME_TITLE,
   ITEMS,
   JOBS,
   LINES,
   ORDERS,
+  UNITS,
   UPGRADES,
   type ItemId,
+  type OrderSpec,
   type UnitType,
   type UpgradeId,
 } from '../config.js';
@@ -50,6 +71,7 @@ import {
 } from '../game/flow.js';
 import {
   bestMs,
+  chestBonus,
   orderBestMs,
   ordersUnlocked,
   ownedUpgrades,
@@ -58,12 +80,68 @@ import {
   upgradeOwned,
 } from '../game/progress.js';
 import { site } from '../game/state.js';
-import { bankTotal, orderSpec, plant } from '../factory/state.js';
+import {
+  bankTotal,
+  chestParts,
+  chuteParts,
+  orderSpec,
+  plant,
+  runSeatedAt,
+  takesTube,
+  unitById,
+} from '../factory/state.js';
+import { removeUnit } from '../factory/sim.js';
 import { buildView, typeAvailable, type BuildTool } from './BuildSystem.js';
+import { factoryView } from './FactorySystem.js';
 import { font } from '../ui/fonts.js';
+import {
+  GLYPH_DEAD,
+  GLYPH_LIVE,
+  goopGlyph,
+  itemGlyph,
+  unitGlyph,
+  type GlyphId,
+} from '../ui/icons.js';
 import { Panel, UI, type PanelButton } from '../ui/panel.js';
 import { PointerRay } from '../ui/pointer.js';
 import { walls } from './WallSystem.js';
+
+/** A button's picture: the machine's own shop drawing, greyed with the
+ *  plate when the catalogue is refusing it. */
+const toolGlyph =
+  (id: GlyphId): NonNullable<PanelButton['glyph']> =>
+  (g, x, y, size, dead) =>
+    unitGlyph(g, id, x, y, size, dead ? GLYPH_DEAD : GLYPH_LIVE);
+
+/** The same, for a part. */
+const partGlyph =
+  (item: ItemId): NonNullable<PanelButton['glyph']> =>
+  (g, x, y, size, dead) =>
+    itemGlyph(g, item, x, y, size, dead ? GLYPH_DEAD : GLYPH_LIVE);
+
+/** What a piece of plant is CALLED on a card. The catalogue's words and
+ *  the box panel's title come from one table, so they can never drift. */
+export const UNIT_NAME: Record<UnitType, string> = {
+  dock: 'BANK',
+  maker: 'MAKER',
+  belt: 'RAIL',
+  combiner: 'COMBINER',
+  chest: 'CHEST',
+  post: 'POST',
+  vat: 'VAT',
+};
+
+/** One line on what each piece of plant is FOR — the box panel's
+ *  subtitle, and the catalogue's tooltip line. */
+const UNIT_DOCKET: Record<UnitType, string> = {
+  dock: 'where parts leave the floor — the sheet counts what lands in it',
+  maker: 'drinks a line and stamps its part onto the chute',
+  belt: 'carries parts one cell; haul a run of them in one gesture',
+  combiner: 'two parts in the sides, one deeper part out the front',
+  chest: 'holds what runs ahead of the line',
+  post: 'a stick a hauled rail bends to visit',
+  vat: 'drinks the fourth manifold. Nobody knows what for',
+};
 
 /** Canvas geometry of the board. */
 const W = BOARD.pxW;
@@ -83,7 +161,7 @@ const SHEET_W = W - SHEET_X - 34;
 const SYS_Y0 = 196;
 const SYS_PITCH = 140;
 
-type Tab = 'jobs' | 'orders' | 'sys';
+type Tab = 'jobs' | 'factory' | 'sys';
 
 /** Headless/dev hooks (wired into __tubes in main.ts) — drive the board
  *  without controllers: hover, press, read what's offered. */
@@ -106,6 +184,17 @@ export const menuView: {
   cardRects?: () => Array<{ id: string; x: number; y: number; w: number; h: number }>;
   /** The card's pixel frame those rects have to fit inside. */
   cardLayout?: () => { w: number; h: number };
+  /** THE BOX PANEL, headless: open one on a unit id, read what it is
+   *  offering, and see it close. */
+  inspect?: (unitId: number) => void;
+  boxButtons?: () => string[];
+  boxLabels?: () => string[];
+  boxRects?: () => Array<{ id: string; x: number; y: number; w: number; h: number }>;
+  boxLayout?: () => { w: number; h: number };
+  snapBox?: () => string;
+  /** THANKS FOR PLAYING — is it up, and what does it say. */
+  finaleUp?: () => boolean;
+  snapFinale?: () => string;
 } = {};
 
 const _origin = new Vector3();
@@ -115,6 +204,10 @@ const _fwd = new Vector3();
 export class MenuSystem extends createSystem({}) {
   private board!: Panel;
   private card!: Panel;
+  /** THE BOX PANEL — one standing machine, opened up. */
+  private box!: Panel;
+  /** THANKS FOR PLAYING. */
+  private finale!: Panel;
   private pointers!: Record<'left' | 'right', PointerRay>;
   private ray = new Raycaster();
   private hits: Intersection[] = [];
@@ -132,8 +225,6 @@ export class MenuSystem extends createSystem({}) {
    *  PROGRESS has always had, for the same reason. Seconds remaining. */
   private quitArm = 0;
   private lastScreen = '';
-  /** The ORDERS tab's selected sheet. */
-  private orderSel = 0;
   /** The factory card's page: the catalogue, or the bank's bills. */
   private cardMode: 'build' | 'goals' | 'supply' = 'build';
   /** The GOALS page's open sheet (null = the list). */
@@ -146,6 +237,14 @@ export class MenuSystem extends createSystem({}) {
     this.card = new Panel(BOARD.cardW, BOARD.cardH, BOARD.cardPx[0], BOARD.cardPx[1]);
     this.card.setShown(false, true);
     this.scene.add(this.card.group);
+
+    this.box = new Panel(BOARD.boxW, BOARD.boxH, BOARD.boxPx[0], BOARD.boxPx[1]);
+    this.box.setShown(false, true);
+    this.scene.add(this.box.group);
+
+    this.finale = new Panel(BOARD.widthM * 0.78, BOARD.heightM * 0.78, 1060, 700);
+    this.finale.setShown(false, true);
+    this.scene.add(this.finale.group);
 
     this.pointers = { left: new PointerRay(this.scene), right: new PointerRay(this.scene) };
 
@@ -171,6 +270,20 @@ export class MenuSystem extends createSystem({}) {
     menuView.cardRects = () => this.card.buttonRects();
     menuView.cardLabels = () => this.card.buttonLabels();
     menuView.cardLayout = () => this.card.layout();
+    menuView.inspect = (unitId) => {
+      if (!unitById(unitId)) return;
+      site.inspect = unitId;
+      site.paused = true;
+      this.lastKey = '';
+    };
+    menuView.boxButtons = () => this.box.buttonIds();
+    menuView.boxLabels = () => this.box.buttonLabels();
+    menuView.boxRects = () => this.box.buttonRects();
+    menuView.boxLayout = () => this.box.layout();
+    menuView.snapBox = () => (this.box.ctx().canvas as HTMLCanvasElement).toDataURL('image/png');
+    menuView.finaleUp = () => site.finale;
+    menuView.snapFinale = () =>
+      (this.finale.ctx().canvas as HTMLCanvasElement).toDataURL('image/png');
   }
 
   /** Plant a panel in front of the player's face: forward on the floor
@@ -199,21 +312,38 @@ export class MenuSystem extends createSystem({}) {
 
     if (site.screen === 'shift') site.elapsedMs += delta * 1000;
 
-    // Mid-shift (pipe jobs and factory orders alike), Ⓐ raises the card.
+    // Mid-shift (pipe jobs and factory orders alike), Ⓐ raises the card —
+    // and, if the box panel happens to be open, puts THAT away first.
+    // One button, one back-step, which is what a hand expects of it.
     const midShift = site.screen === 'shift' || site.screen === 'factory';
     if (midShift) {
       if (this.input.xr.gamepads.right?.getButtonDown(InputComponent.A_Button)) {
         sfx.uiClick();
-        site.paused = !site.paused;
-        if (site.paused) this.plant(this.card.group, BOARD.cardPosition[1], 1.0);
+        if (site.inspect >= 0) {
+          this.closeBox();
+        } else {
+          site.paused = !site.paused;
+          if (site.paused) this.plant(this.card.group, BOARD.cardPosition[1], 1.0);
+        }
         this.lastKey = '';
       }
     } else if (site.paused) {
       site.paused = false;
+      site.inspect = -1;
     }
 
+    // A box that stopped existing (the wrecking bar, DOWN TOOLS) closes
+    // its own panel rather than painting a card about nothing.
+    if (site.inspect >= 0 && (!unitById(site.inspect) || site.screen !== 'factory')) {
+      this.closeBox();
+    }
+
+    // THANKS FOR PLAYING outranks everything: it comes up once, and it
+    // is not something to have a box panel open in front of.
     const boardUp = site.screen === 'board';
-    const cardUp = site.paused && midShift;
+    const finaleUp = site.finale;
+    const boxUp = site.inspect >= 0 && site.screen === 'factory' && !finaleUp;
+    const cardUp = site.paused && midShift && !boxUp && !finaleUp;
 
     // The board re-plants every time it comes back — you wandered.
     if (site.screen !== this.lastScreen) {
@@ -223,17 +353,26 @@ export class MenuSystem extends createSystem({}) {
         this.lastKey = '';
       }
     }
+    // The box panel and the finale card come to WHERE YOU ARE, the same
+    // as everything else in this file: you clicked a box from wherever
+    // you were standing, so that is where the answer appears.
+    if (boxUp && !this.box.isShown) this.plant(this.box.group, BOARD.boxPosition[1], 0.86);
+    if (finaleUp && !this.finale.isShown) this.plant(this.finale.group, 1.4, 1.5);
 
     this.board.setShown(boardUp);
     this.card.setShown(cardUp);
+    this.box.setShown(boxUp);
+    this.finale.setShown(finaleUp);
 
     const pulse = this.chug();
 
-    if (!boardUp && !cardUp) {
+    if (!boardUp && !cardUp && !boxUp && !finaleUp) {
       this.pointers.left.hide();
       this.pointers.right.hide();
       this.board.tick(delta, pulse);
       this.card.tick(delta, pulse);
+      this.box.tick(delta, pulse);
+      this.finale.tick(delta, pulse);
       return;
     }
 
@@ -241,6 +380,8 @@ export class MenuSystem extends createSystem({}) {
     const targets: Object3D[] = [];
     if (boardUp) targets.push(this.board.mesh);
     if (cardUp) targets.push(this.card.mesh);
+    if (boxUp) targets.push(this.box.mesh);
+    if (finaleUp) targets.push(this.finale.mesh);
 
     let hover: string | null = null;
     let clicked: string | null = null;
@@ -248,8 +389,8 @@ export class MenuSystem extends createSystem({}) {
     for (const hand of ['left', 'right'] as const) {
       const hit = this.updatePointer(hand, delta, targets);
       if (hit?.uv) {
-        const panel = hit.object === this.board.mesh ? this.board : this.card;
-        const id = panel.buttonAt(hit.uv.x, hit.uv.y);
+        const panel = this.panelOf(hit.object);
+        const id = panel?.buttonAt(hit.uv.x, hit.uv.y) ?? null;
         if (id) {
           hover = id;
           if (this.input.xr.gamepads[hand]?.getButtonDown(InputComponent.Trigger)) {
@@ -283,9 +424,27 @@ export class MenuSystem extends createSystem({}) {
       }
     }
 
-    this.repaintIfNeeded(boardUp, cardUp);
+    this.repaintIfNeeded(boardUp, cardUp, boxUp, finaleUp);
     this.board.tick(delta, pulse);
     this.card.tick(delta, pulse);
+    this.box.tick(delta, pulse);
+    this.finale.tick(delta, pulse);
+  }
+
+  /** Which of our four panels a raycast landed on. */
+  private panelOf(obj: Object3D): Panel | null {
+    if (obj === this.board.mesh) return this.board;
+    if (obj === this.card.mesh) return this.card;
+    if (obj === this.box.mesh) return this.box;
+    if (obj === this.finale.mesh) return this.finale;
+    return null;
+  }
+
+  /** Put the box panel away and give the hands back. */
+  private closeBox(): void {
+    site.inspect = -1;
+    site.paused = false;
+    this.lastKey = '';
   }
 
   private updatePointer(
@@ -305,8 +464,7 @@ export class MenuSystem extends createSystem({}) {
     this.hits.length = 0;
     const hit = this.ray.intersectObjects(targets, false, this.hits)[0];
     const overButton = Boolean(
-      hit?.uv &&
-        (hit.object === this.board.mesh ? this.board : this.card).buttonAt(hit.uv.x, hit.uv.y),
+      hit?.uv && this.panelOf(hit.object)?.buttonAt(hit.uv.x, hit.uv.y),
     );
     p.update(delta, _origin, hit ? hit.point : null, overButton);
     return hit;
@@ -316,18 +474,25 @@ export class MenuSystem extends createSystem({}) {
 
   private action(id: string): void {
     if (id === 'tab:jobs') this.tab = 'jobs';
-    else if (id === 'tab:orders') this.tab = 'orders';
+    // 'tab:orders' is kept as an alias on purpose: the tools and anyone's
+    // muscle memory both still say it, and a renamed tab is no reason to
+    // break a door that already works.
+    else if (id === 'tab:factory' || id === 'tab:orders') this.tab = 'factory';
     else if (id === 'tab:sys') this.tab = 'sys';
     else if (id.startsWith('job:')) {
       const i = Number(id.slice(4));
       if (i < unlockedJobs()) site.jobIndex = i;
     } else if (id === 'start') {
       startJob(site.jobIndex);
-    } else if (id.startsWith('order:')) {
-      const i = Number(id.slice(6));
-      if (i < ordersUnlocked()) this.orderSel = i;
     } else if (id === 'start-order') {
-      startShop(this.orderSel);
+      // ONE DOOR. The shift always opens at the top of the book and the
+      // book advances inside it — there is nothing to select any more.
+      startShop(0);
+    } else if (id.startsWith('box:')) {
+      this.boxAction(id.slice(4));
+    } else if (id === 'finale:close') {
+      site.finale = false;
+      plant.goop = 'done';
     } else if (id.startsWith('build:')) {
       // Arm the tool and put the card away — the hands do the rest.
       buildView.arm?.(id.slice(6) as BuildTool);
@@ -367,6 +532,7 @@ export class MenuSystem extends createSystem({}) {
       }
     } else if (id === 'resume') {
       site.paused = false;
+      site.inspect = -1;
       this.quitArm = 0;
     } else if (id === 'quit') {
       // Ask once. Everything standing on the floor is about to go.
@@ -382,9 +548,54 @@ export class MenuSystem extends createSystem({}) {
     this.lastKey = '';
   }
 
+  /**
+   * THE BOX PANEL'S VERBS.
+   *
+   * UNPLUG is the one that had to exist: playtest said "we can't
+   * disconnect the tubes when they're connected to the boxes — I delete
+   * the boxes at the moment", which is a sentence about a missing verb,
+   * not a missing button. The tug (both hands on the collar, haul and
+   * hold) is still the good way to do it in the room; this is the way
+   * you can find, and it goes through the same sim door, so the hum
+   * stops and the iris shuts identically.
+   */
+  private boxAction(what: string): void {
+    const unit = unitById(site.inspect);
+    if (!unit) {
+      this.closeBox();
+      return;
+    }
+    if (what === 'close') {
+      this.closeBox();
+      return;
+    }
+    if (what === 'unplug') {
+      if (factoryView.unseat?.(unit.id)) sfx.boltSpin();
+      else sfx.oneHandRattle();
+      return;
+    }
+    if (what === 'turn') {
+      unit.rot = ((unit.rot + 1) % 4) as typeof unit.rot;
+      plant.generation++;
+      sfx.segmentClick(unit.rot);
+      return;
+    }
+    if (what === 'remove') {
+      removeUnit(unit);
+      sfx.boltSpin();
+      sfx.droopSettle();
+      this.closeBox();
+    }
+  }
+
   /* ── painting ─────────────────────────────────────────────────────────── */
 
-  private repaintIfNeeded(boardUp: boolean, cardUp: boolean): void {
+  private repaintIfNeeded(
+    boardUp: boolean,
+    cardUp: boolean,
+    boxUp: boolean,
+    finaleUp: boolean,
+  ): void {
     const runsKey = site.runs.map((r) => r.phase).join(',');
     const key = [
       site.screen,
@@ -400,19 +611,26 @@ export class MenuSystem extends createSystem({}) {
       walls.length,
       site.fallbackRoom,
       runsKey,
-      this.orderSel,
       ordersUnlocked(),
       ORDERS.map((o) => orderBestMs(o.id) ?? 0).join(','),
       plant.mode,
       plant.orderIndex,
       plant.count,
+      plant.goop,
+      Math.floor(plant.brewT * 4),
       bankTotal(),
+      Object.entries(plant.bank).map(([k, n]) => `${k}${n}`).join(''),
       buildView.armed?.() ?? '',
       this.cardMode,
       this.goalOpen,
       plant.goalsDone,
-      buildView.armed?.() ?? '',
       ownedUpgrades().join(','),
+      site.inspect,
+      // The box panel is a LIVE window on one machine: a part landing in
+      // the chest you are looking at has to appear, so the contents are
+      // part of the key.
+      boxUp ? this.boxKey() : '',
+      site.finale,
       cardUp
         ? Math.floor((site.screen === 'factory' ? plant.elapsedMs : site.elapsedMs) / 100)
         : 0,
@@ -421,6 +639,30 @@ export class MenuSystem extends createSystem({}) {
     this.lastKey = key;
     if (boardUp) this.paintBoard();
     if (cardUp) this.paintCard();
+    if (boxUp) this.paintBox();
+    if (finaleUp) this.paintFinale();
+  }
+
+  /** Everything about the inspected box that could change under you. */
+  private boxKey(): string {
+    const unit = unitById(site.inspect);
+    if (!unit) return 'gone';
+    const held = [
+      ...chestParts(unit.id),
+      ...chuteParts(unit.id),
+      ...plant.parts.filter((p) => p.at.kind === 'belt' && p.at.unit === unit.id),
+    ]
+      .map((p) => p.item)
+      .join(',');
+    const run = runSeatedAt(unit.id);
+    return [
+      unit.id,
+      unit.rot,
+      held,
+      unit.ports.join('/'),
+      unit.craftT >= 0,
+      run ? `${run.line.id}:${run.phase}` : '-',
+    ].join('~');
   }
 
   private paintBoard(): void {
@@ -429,7 +671,7 @@ export class MenuSystem extends createSystem({}) {
     // The rail.
     const tabs: Array<{ id: string; tab: Tab; label: string }> = [
       { id: 'tab:jobs', tab: 'jobs', label: 'JOBS' },
-      { id: 'tab:orders', tab: 'orders', label: 'ORDERS' },
+      { id: 'tab:factory', tab: 'factory', label: 'FACTORY' },
       { id: 'tab:sys', tab: 'sys', label: 'SYSTEM' },
     ];
     tabs.forEach((t, i) => {
@@ -451,7 +693,7 @@ export class MenuSystem extends createSystem({}) {
     this.boardOrdersBody = null;
     this.boardSysBody = null;
     if (this.tab === 'jobs') this.paintJobs(buttons);
-    else if (this.tab === 'orders') this.paintOrders(buttons);
+    else if (this.tab === 'factory') this.paintFactoryTab(buttons);
     else this.paintSystem(buttons);
 
     this.board.paint('', (g) => this.paintBoardBody(g), buttons, this.hover);
@@ -653,61 +895,79 @@ export class MenuSystem extends createSystem({}) {
   private boardOrdersBody: ((g: CanvasRenderingContext2D) => void) | null = null;
   private boardSysBody: ((g: CanvasRenderingContext2D) => void) | null = null;
 
-  /* ── ORDERS tab (the factory's book) ──────────────────────────────────── */
+  /* ── FACTORY tab (one door into the book) ────────────────────────────── */
 
-  private targetOf(spec: (typeof ORDERS)[number]): {
+  /** What a sheet is asking for, in one shape: the words, the lineage
+   *  dots, the docket line, the picture, and the VERB (stamp / deliver /
+   *  brew) — because "10 × GEAR" means three different things depending
+   *  on where the gear has to end up. */
+  private targetOf(spec: OrderSpec): {
     name: string;
+    verb: string;
     dots: string[];
     docket: string;
+    glyph: NonNullable<PanelButton['glyph']>;
   } {
-    if (spec.target.kind === 'fluid') {
-      const line = LINES[spec.target.line];
+    if (spec.target.kind === 'brew') {
       return {
-        name: `${line.name} DRAUGHTS`,
-        dots: [line.hex],
-        docket: 'the works drinks straight from its own wall — and remembers the taste',
+        name: 'THE GOOP',
+        verb: 'BREW',
+        dots: [LINES.pearl.hex],
+        docket: 'nobody wrote a docket for this one. It writes its own',
+        glyph: (g, x, y, size, dead) => goopGlyph(g, x, y, size, !dead),
       };
     }
     const item = ITEMS[spec.target.item];
     return {
       name: item.name,
+      verb: spec.target.kind === 'craft' ? 'STAMP' : 'DELIVER',
       dots: item.lineage.map((l) => LINES[l].hex),
       docket: item.docket,
+      glyph: partGlyph(item.id),
     };
   }
 
-  private paintOrders(buttons: PanelButton[]): void {
-    const unlocked = ordersUnlocked();
-    ORDERS.forEach((_o, i) => {
-      buttons.push({
-        id: `order:${i}`,
-        label: '',
-        ghost: true,
-        disabled: i >= unlocked,
-        x: ROW_X,
-        y: ROW_Y0 + i * ROW_PITCH,
-        w: ROW_W,
-        h: ROW_H,
-      });
-    });
-    this.orderSel = Math.min(this.orderSel, ORDERS.length - 1);
-    const sel = ORDERS[this.orderSel];
-    const locked = this.orderSel >= unlocked;
+  /** How far down the book this headset has ever got — the FACTORY tab
+   *  paints ticks off it, and nothing else uses it any more (there is
+   *  nothing to unlock a START button for). */
+  private bookProgress(): number {
+    return Math.min(ORDERS.length, Math.max(0, ordersUnlocked() - 1));
+  }
+
+  /**
+   * THE FACTORY TAB — the book, and ONE button.
+   *
+   * It used to be a list of five startable sheets and it was actively
+   * hostile: pressing sheet four dealt you a bare floor with sheet
+   * four's demands and none of sheet one, two or three's plant, feeds or
+   * parts. There was no way to succeed and no way to tell. Every row is
+   * read-only now; the ladder is a MAP of the shift, not a menu of
+   * shifts, and the shift itself has one entrance.
+   */
+  private paintFactoryTab(buttons: PanelButton[]): void {
+    const done = this.bookProgress();
     buttons.push(
       {
         id: 'start-order',
-        label: locked ? 'LOCKED' : 'OPEN THE SHOP',
-        sub: locked ? 'fill the sheet above it' : sel.name,
-        primary: !locked,
-        disabled: locked || !site.wallsReady,
+        label: 'OPEN THE FACTORY',
+        // A shift always starts with a bare floor, so it always starts
+        // at the top of the book. What you keep between shifts is the
+        // BANK — say so, rather than implying a resume that isn't one.
+        sub: done > 0 ? 'from the top — the bank keeps what it holds' : ORDERS[0].name,
+        primary: true,
+        disabled: !site.wallsReady,
         x: SHEET_X + 10,
         y: H - 182,
         w: SHEET_W - 20,
         h: 96,
       },
       {
+        // THE ONE CONTROL NOBODY CAN GUESS. Every instruction in the
+        // shift lives on the Ⓐ card, which means the very first thing a
+        // player has to know is that Ⓐ exists — and the only place to
+        // tell them is here, before they go in.
         id: 'shop-note',
-        label: 'one shift — the goals advance as you build',
+        label: '\u24b6 on the right controller raises the card',
         display: true,
         small: true,
         x: SHEET_X + 10,
@@ -717,118 +977,132 @@ export class MenuSystem extends createSystem({}) {
       },
     );
 
-    const hoverOf = (id: string): number => this.board.hoverOf(id);
+    const ROW = 74;
+    const RH = 66;
     this.boardOrdersBody = (g: CanvasRenderingContext2D): void => {
-      const unlockedNow = ordersUnlocked();
+      g.textAlign = 'left';
+      g.textBaseline = 'middle';
+      g.font = font(600, 24);
+      g.fillStyle = UI.faint;
+      g.letterSpacing = '2px';
+      g.fillText('THE BOOK', ROW_X + 2, ROW_Y0 - 22);
+      g.letterSpacing = '0px';
+
       ORDERS.forEach((o, i) => {
-        const y = ROW_Y0 + i * ROW_PITCH;
-        const open = i < unlockedNow;
-        const selected = i === this.orderSel;
-        const hov = hoverOf(`order:${i}`);
-        g.fillStyle = selected
-          ? UI.accentFaint
-          : `rgba(255,255,255,${(open ? 0.045 + 0.045 * hov : 0.02).toFixed(3)})`;
+        const y = ROW_Y0 + i * ROW;
+        const filled = i < done;
+        const here = i === done;
+        const t = this.targetOf(o);
+        // The plate: the sheet you are up to is the only lit one.
+        g.fillStyle = here ? UI.accentFaint : 'rgba(255,255,255,0.028)';
         g.beginPath();
-        g.roundRect(ROW_X, y, ROW_W, ROW_H, 16);
+        g.roundRect(ROW_X, y, ROW_W, RH, 12);
         g.fill();
         g.lineWidth = 2;
-        g.strokeStyle = selected
-          ? 'rgba(255,162,46,0.9)'
-          : `rgba(255,255,255,${(open ? 0.1 + 0.2 * hov : 0.05).toFixed(3)})`;
+        g.strokeStyle = here ? 'rgba(255,162,46,0.85)' : 'rgba(255,255,255,0.07)';
         g.stroke();
-        if (selected) {
-          g.fillStyle = UI.accent;
-          g.beginPath();
-          g.roundRect(ROW_X + 7, y + 12, 5, ROW_H - 24, 2.5);
-          g.fill();
-        }
+
+        // The state mark: a filled tick, the live arrow, or a dot.
+        g.textAlign = 'center';
+        g.font = font(700, 26);
+        g.fillStyle = filled ? UI.positive : here ? UI.accent : UI.disabled;
+        g.fillText(filled ? '\u2713' : here ? '\u25b8' : '\u00b7', ROW_X + 30, y + RH / 2);
+
         g.textAlign = 'left';
-        g.textBaseline = 'middle';
-        g.font = font(600, 33);
-        g.letterSpacing = '1.5px';
-        g.fillStyle = open ? UI.text : UI.disabled;
-        g.fillText(`${i + 1}. ${o.name}`, ROW_X + 26, y + 36, ROW_W - 150);
+        g.font = font(600, 28);
+        g.letterSpacing = '1.2px';
+        g.fillStyle = filled ? UI.dim : here ? UI.textHi : UI.faint;
+        g.fillText(`${i + 1}. ${o.name}`, ROW_X + 54, y + RH / 2 - 11, ROW_W - 250);
         g.letterSpacing = '0px';
-        const target = this.targetOf(o);
-        target.dots.forEach((hex, r) => {
-          g.fillStyle = open ? hex : 'rgba(255,255,255,0.14)';
-          g.beginPath();
-          g.arc(ROW_X + 34 + r * 30, y + 82, 9, 0, Math.PI * 2);
-          g.fill();
-        });
-        g.font = font(500, 23);
-        g.fillStyle = open ? UI.dim : UI.disabled;
-        g.fillText(
-          `${o.goal} × ${target.name}`,
-          ROW_X + 34 + target.dots.length * 30 + 8,
-          y + 82,
-        );
-        g.textAlign = 'right';
-        g.font = font(500, 24);
-        if (!open) {
-          g.fillStyle = UI.disabled;
-          g.fillText('LOCKED', ROW_X + ROW_W - 22, y + 82);
-        } else {
-          const best = orderBestMs(o.id);
-          g.fillStyle = best === null ? UI.faint : UI.dim;
-          g.fillText(best === null ? '—' : fmtMs(best), ROW_X + ROW_W - 22, y + 82);
+        g.font = font(500, 20);
+        g.fillStyle = UI.faint;
+        g.fillText(`${t.verb} ${o.goal} \u00d7 ${t.name}`, ROW_X + 54, y + RH / 2 + 16);
+
+        // The picture, on the right of its own row.
+        t.glyph(g, ROW_X + ROW_W - 58, y + 9, 48, !filled && !here);
+        // Best time, if this headset has one.
+        const best = orderBestMs(o.id);
+        if (best !== null) {
+          g.textAlign = 'right';
+          g.font = font(500, 20);
+          g.fillStyle = UI.dim;
+          g.fillText(fmtMs(best), ROW_X + ROW_W - 72, y + RH / 2);
         }
       });
 
-      // THE ORDER SHEET.
-      const sheet = ORDERS[this.orderSel];
-      const target = this.targetOf(sheet);
+      // THE SHIFT SHEET.
+      const sheetH = H - ROW_Y0 - 190;
       g.fillStyle = UI.well;
       g.beginPath();
-      g.roundRect(SHEET_X, ROW_Y0, SHEET_W, H - ROW_Y0 - 190, 18);
+      g.roundRect(SHEET_X, ROW_Y0, SHEET_W, sheetH, 18);
       g.fill();
       g.textAlign = 'left';
-      g.font = font(700, 42);
+      g.font = font(700, 40);
       g.letterSpacing = '2px';
       g.fillStyle = UI.textHi;
-      g.fillText(sheet.name, SHEET_X + 26, ROW_Y0 + 52);
+      g.fillText('THE SHOP FLOOR', SHEET_X + 26, ROW_Y0 + 50);
       g.letterSpacing = '0px';
-      wrapText(g, sheet.brief, SHEET_X + 26, ROW_Y0 + 106, SHEET_W - 52, 32, font(500, 25), UI.dim);
-      // DELIVER: the target, worn in its lineage's dots.
-      g.font = font(500, 24);
-      g.fillStyle = UI.faint;
-      g.fillText('DELIVER', SHEET_X + 26, ROW_Y0 + 268);
-      target.dots.forEach((hex, r) => {
-        g.fillStyle = hex;
-        g.beginPath();
-        g.arc(SHEET_X + 142 + r * 30, ROW_Y0 + 264, 11, 0, Math.PI * 2);
-        g.fill();
-      });
-      g.font = font(600, 32);
-      g.fillStyle = UI.text;
-      g.fillText(
-        `${sheet.goal} × ${target.name}`,
-        SHEET_X + 142 + target.dots.length * 30 + 12,
-        ROW_Y0 + 266,
-      );
-      // THE DOCKET — what the works is going to DO with them.
+      let y = ROW_Y0 + 96;
+      y +=
+        30 *
+          wrapText(
+            g,
+            'Your floor becomes the shop. Feeds wake on its four sides, you haul supply tubes into the boxes you stand, and rails carry what they make. The book asks for one thing at a time and posts the next onto the same floor \u2014 nothing is ever taken off you. Everything you build comes off the \u24b6 card; point at any machine with an empty hand to open it up.',
+            SHEET_X + 26,
+            y,
+            SHEET_W - 52,
+            30,
+            font(500, 24),
+            UI.dim,
+          ) +
+        18;
+
+      // WHERE YOU ARE.
+      const at = ORDERS[Math.min(done, ORDERS.length - 1)];
+      const t = this.targetOf(at);
       g.font = font(500, 22);
       g.fillStyle = UI.faint;
-      wrapText(g, `docket: ${target.docket}`, SHEET_X + 26, ROW_Y0 + 312, SHEET_W - 52, 28, font(500, 22), UI.faint);
-      const best = orderBestMs(sheet.id);
-      g.font = font(500, 24);
+      g.fillText(done >= ORDERS.length ? 'THE BOOK IS FILLED' : 'UP NEXT', SHEET_X + 26, y);
+      y += 34;
+      t.glyph(g, SHEET_X + 26, y - 22, 44, false);
+      g.font = font(600, 30);
+      g.fillStyle = UI.text;
+      g.fillText(at.name, SHEET_X + 84, y);
+      g.font = font(500, 21);
       g.fillStyle = UI.faint;
-      g.fillText('BEST', SHEET_X + 26, ROW_Y0 + 386);
-      g.font = font(600, 34);
-      g.fillStyle = best === null ? UI.faint : UI.text;
-      g.fillText(best === null ? 'no time on the sheet' : fmtMs(best), SHEET_X + 108, ROW_Y0 + 386);
-      const banked = bankTotal();
-      g.font = font(500, 23);
-      g.fillStyle = banked > 0 ? UI.dim : UI.faint;
-      g.fillText(
-        banked > 0 ? `the bank holds ${banked} surplus part${banked === 1 ? '' : 's'} — the card's SUPPLY page spends them` : 'the bank stands empty — surplus deliveries keep',
-        SHEET_X + 26,
-        ROW_Y0 + 440,
+      g.fillText(`${t.verb} ${at.goal} \u00d7 ${t.name}`, SHEET_X + 84, y + 26);
+      y += 62;
+
+      // THE BANK, itemised — it survives between shifts and pays for the
+      // fittings, so it deserves better than one number.
+      g.font = font(500, 22);
+      g.fillStyle = UI.faint;
+      g.fillText('THE BANK', SHEET_X + 26, y);
+      y += 30;
+      const held = (Object.entries(plant.bank) as Array<[ItemId, number]>).filter(
+        ([, n]) => (n ?? 0) > 0,
       );
+      if (held.length === 0) {
+        g.font = font(500, 21);
+        g.fillStyle = UI.faint;
+        g.fillText('empty \u2014 surplus deliveries keep here', SHEET_X + 26, y + 6);
+      } else {
+        held.slice(0, 6).forEach(([item, n], i) => {
+          const cx = SHEET_X + 26 + (i % 3) * 106;
+          const cy = y - 12 + Math.floor(i / 3) * 56;
+          itemGlyph(g, item, cx, cy, 34);
+          g.textAlign = 'left';
+          g.font = font(600, 22);
+          g.fillStyle = UI.text;
+          g.fillText(`\u00d7${n}`, cx + 40, cy + 18);
+        });
+      }
+
       if (!site.wallsReady) {
+        g.textAlign = 'left';
         g.font = font(500, 23);
         g.fillStyle = UI.warn;
-        g.fillText('waiting for walls — look around the room', SHEET_X + 26, ROW_Y0 + 488);
+        g.fillText('waiting for walls \u2014 look around the room', SHEET_X + 26, ROW_Y0 + sheetH - 26);
       }
     };
   }
@@ -891,17 +1165,22 @@ export class MenuSystem extends createSystem({}) {
     this.boardSysBody = (g: CanvasRenderingContext2D): void => {
       g.textAlign = 'left';
       g.textBaseline = 'middle';
+      // THE LABEL COLUMN HAS A WIDTH, and the sub-line has to respect
+      // it: the controls start at CONTENT_X + 330, and a sub that ran
+      // long used to print straight through SET THE FLOOR. Clamped, not
+      // trusted.
+      const labelW = 306;
       const label = (text: string, sub: string, y: number): void => {
         g.font = font(600, 30);
         g.fillStyle = UI.text;
-        g.fillText(text, CONTENT_X + 10, y + 34);
+        g.fillText(text, CONTENT_X + 10, y + 34, labelW);
         g.font = font(500, 22);
         g.fillStyle = UI.faint;
-        g.fillText(sub, CONTENT_X + 10, y + 68);
+        g.fillText(sub, CONTENT_X + 10, y + 68, labelW);
       };
       label('SOUND', 'the shop, the ratchet, the pour', SYS_Y0);
       label('WALL FRAMES', 'hairlines on what the scan found', SYS_Y0 + SYS_PITCH);
-      label('THE FLOOR', 'hazard tape round the shop floor — drag the sides to your walls', SYS_Y0 + SYS_PITCH * 2);
+      label('THE FLOOR', 'hazard tape — drag its sides to your walls', SYS_Y0 + SYS_PITCH * 2);
       label('THE SHEET', 'tear it up, start the trade again', SYS_Y0 + SYS_PITCH * 3);
 
       const real = walls.filter((w) => w.real && w.kind === 'wall').length;
@@ -1060,15 +1339,21 @@ export class MenuSystem extends createSystem({}) {
     ];
 
     if (this.cardMode === 'build') {
+      // EVERY TOOL CARRIES ITS PICTURE. Seven words in one weight is a
+      // list you re-read every time you open the card; seven silhouettes
+      // is a thing you learn once and then recognise on the floor,
+      // because the ghost on your ray wears the same shape.
+      //
       // The wrecking bar sits in the catalogue like any other tool —
       // playtest went looking for a delete and found nothing.
       const kit: Array<{ tool: BuildTool; label: string }> = [
-        { tool: 'dock', label: 'BANK' },
         { tool: 'maker', label: 'MAKER' },
+        { tool: 'dock', label: 'BANK' },
         { tool: 'belt', label: 'RAIL' },
         { tool: 'combiner', label: 'COMBINER' },
         { tool: 'chest', label: 'CHEST' },
         { tool: 'post', label: 'POST' },
+        { tool: 'vat', label: 'VAT' },
         { tool: 'delete', label: 'DELETE' },
       ];
       kit.forEach((entry, i) => {
@@ -1076,13 +1361,15 @@ export class MenuSystem extends createSystem({}) {
           id: `build:${entry.tool}`,
           label: entry.label,
           small: true,
+          px: 22,
+          glyph: toolGlyph(entry.tool),
           disabled: entry.tool === 'delete' ? false : !typeAvailable(entry.tool as UnitType),
           selected: armed === entry.tool,
           tone: entry.tool === 'delete' ? UI.danger : undefined,
           x: colX(i % 3),
-          y: CARD_BODY + Math.floor(i / 3) * 66,
+          y: CARD_BODY + Math.floor(i / 3) * 100,
           w: colW,
-          h: 58,
+          h: 92,
         });
       });
     } else if (this.cardMode === 'goals') {
@@ -1143,10 +1430,24 @@ export class MenuSystem extends createSystem({}) {
           g.textAlign = 'right';
           g.font = font(700, 46);
           g.fillStyle = UI.accent;
-          g.fillText(`${plant.count} / ${spec.goal}`, cw - 40, 112);
+          g.fillText(`${plant.count} / ${spec.goal}`, cw - 96, 112);
           g.font = font(600, 22);
           g.fillStyle = UI.dim;
-          g.fillText(target.name, cw - 40, 144);
+          g.fillText(target.name, cw - 96, 144);
+          target.glyph(g, cw - 84, 92, 48, false);
+          // THE BREW has no counter worth reading — one of one — so the
+          // vat gets a level bar instead, which is the honest gauge.
+          if (spec.target.kind === 'brew' && plant.goop !== 'none') {
+            const p = Math.min(1, plant.brewT / UNITS.vat.brewS);
+            g.fillStyle = 'rgba(255,255,255,0.08)';
+            g.beginPath();
+            g.roundRect(36, 150, cw - 200, 10, 5);
+            g.fill();
+            g.fillStyle = LINES.pearl.hex;
+            g.beginPath();
+            g.roundRect(36, 150, Math.max(6, (cw - 200) * p), 10, 5);
+            g.fill();
+          }
         } else if (plant.goalsDone) {
           g.textAlign = 'right';
           g.font = font(600, 24);
@@ -1159,7 +1460,7 @@ export class MenuSystem extends createSystem({}) {
 
         if (this.cardMode === 'goals') this.paintGoals(g, cw, ch);
         else if (this.cardMode === 'supply') this.paintBills(g, cw);
-        else if (armed) {
+        else {
           g.textAlign = 'center';
           g.font = font(500, 20);
           g.fillStyle = UI.faint;
@@ -1167,10 +1468,14 @@ export class MenuSystem extends createSystem({}) {
             armed === 'delete'
               ? 'point at plant and pull the trigger to take it out'
               : armed === 'belt'
-                ? 'stand one, then HOLD the trigger and haul the run out'
+                ? 'stand one, then HOLD the trigger and haul the run out \u2014 it bends round anything'
                 : armed === 'post'
                   ? 'plant a stick where you want a hauled rail to bend'
-                  : 'aim at the floor — it turns itself to connect, Ⓑ turns it yourself',
+                  : armed === 'vat'
+                    ? 'stand it with room around it, then bring it the green line'
+                    : armed
+                      ? 'aim at the floor \u2014 it turns itself to connect, \u24d1 turns it yourself'
+                      : 'empty-handed, the trigger OPENS a box: what is in it, and UNPLUG',
             cw / 2,
             ch - CARD_FOOT - 26,
           );
@@ -1213,12 +1518,18 @@ export class MenuSystem extends createSystem({}) {
         g.textAlign = 'left';
         g.font = font(600, 20);
         g.fillStyle = done ? UI.dim : now ? UI.textHi : UI.faint;
-        g.fillText(`${done ? '✓' : now ? '▸' : '·'}  ${o.name}`, CARD_PAD + 20, y + h / 2);
+        g.fillText(`${done ? '\u2713' : now ? '\u25b8' : '\u00b7'}  ${o.name}`, CARD_PAD + 20, y + h / 2);
         const t = this.targetOf(o);
+        const gs = Math.min(h - 10, 30);
+        t.glyph(g, cw - CARD_PAD - 20 - gs, y + (h - gs) / 2, gs, !done && !now);
         g.textAlign = 'right';
         g.font = font(500, 18);
         g.fillStyle = UI.faint;
-        g.fillText(`${o.goal} × ${t.name}`, cw - CARD_PAD - 16, y + h / 2);
+        g.fillText(
+          `${t.verb} ${o.goal} \u00d7 ${t.name}`,
+          cw - CARD_PAD - 28 - gs,
+          y + h / 2,
+        );
       });
       g.textAlign = 'center';
       g.font = font(500, 18);
@@ -1235,14 +1546,15 @@ export class MenuSystem extends createSystem({}) {
     }
     const t = this.targetOf(o);
     const left = CARD_PAD + 2;
-    const wide = cw - 2 * left;
+    const wide = cw - 2 * left - 62;
     g.textAlign = 'left';
     g.font = font(700, 26);
     g.fillStyle = UI.textHi;
     g.fillText(o.name, left, CARD_BODY + 10);
     g.font = font(600, 20);
     g.fillStyle = UI.accent;
-    g.fillText(`${o.goal} × ${t.name}`, left, CARD_BODY + 38);
+    g.fillText(`${t.verb} ${o.goal} \u00d7 ${t.name}`, left, CARD_BODY + 38);
+    t.glyph(g, cw - CARD_PAD - 56, CARD_BODY - 8, 54, false);
     // The docket advances the cursor by however many lines it took.
     let y = CARD_BODY + 66;
     y += 22 * wrapText(g, t.docket, left, y, wide, 22, font(500, 17), UI.faint) + 14;
@@ -1265,6 +1577,298 @@ export class MenuSystem extends createSystem({}) {
       next ? `next · ${next.name}` : 'last sheet — then the shop is yours',
       cw - CARD_PAD,
       ch - CARD_FOOT + 23,
+    );
+  }
+
+  /* ── THE BOX PANEL ────────────────────────────────────────────────────
+   * Point at any standing plant with an empty hand, pull the trigger,
+   * and this opens: what the box IS, what it is HOLDING, what is
+   * PLUMBED into it, and the three verbs that were homeless until now.
+   *
+   * Two playtest notes, one panel:
+   *   "we should be able to check what is in a chest by clicking on it
+   *    and seeing a menu with the stuff"          → the contents grid
+   *   "we can't disconnect the tubes when they're connected to the
+   *    boxes — I delete the boxes at the moment"  → UNPLUG
+   *
+   * The tug (both hands on the collar, haul and hold) is still the good
+   * way to break a seal, and it is still there. This is the way you can
+   * FIND, which is a different requirement and needs its own answer.
+   */
+  private paintBox(): void {
+    const unit = unitById(site.inspect);
+    if (!unit) return;
+    const [cw, ch] = BOARD.boxPx;
+    const run = runSeatedAt(unit.id);
+    const cap = FACTORY.chestCap + chestBonus();
+    // WHAT IS IN IT depends entirely on what it is: a crate has a stack,
+    // a maker has a chute, a combiner has two ports, a rail has whatever
+    // is riding it, the bank has the whole vault, and the vat has a
+    // level rather than any parts at all. One shape, per machine.
+    const stack =
+      unit.type === 'combiner'
+        ? (unit.ports
+            .map((id) => (id >= 0 ? plant.parts.find((p) => p.id === id) : undefined))
+            .filter(Boolean) as Array<{ item: ItemId }>)
+        : unit.type === 'chest'
+          ? chestParts(unit.id)
+          : unit.type === 'belt'
+            ? plant.parts.filter((p) => p.at.kind === 'belt' && p.at.unit === unit.id)
+            : unit.type === 'dock'
+              ? (Object.entries(plant.bank) as Array<[ItemId, number]>)
+                  .filter(([, n]) => (n ?? 0) > 0)
+                  .flatMap(([item, n]) => Array.from({ length: n ?? 0 }, () => ({ item })))
+              : chuteParts(unit.id);
+    const heading =
+      unit.type === 'combiner'
+        ? 'IN THE PORTS'
+        : unit.type === 'chest'
+          ? `IN THE CRATE \u00b7 ${stack.length} / ${cap}`
+          : unit.type === 'belt'
+            ? 'ON THE RAIL'
+            : unit.type === 'dock'
+              ? 'IN THE VAULT'
+              : unit.type === 'vat'
+                ? 'IN THE TANK'
+                : unit.type === 'post'
+                  ? ''
+                  : 'ON THE CHUTE';
+    const emptyLine =
+      unit.type === 'dock'
+        ? 'nothing banked yet \u2014 surplus deliveries keep here'
+        : unit.type === 'belt'
+          ? 'nothing riding it'
+          : 'empty';
+
+    const PAD = 26;
+    const footY = ch - 74;
+    const third = (cw - PAD * 2 - 16) / 3;
+    const buttons: PanelButton[] = [
+      {
+        id: 'box:unplug',
+        label: run ? 'UNPLUG' : 'NOTHING PLUMBED',
+        small: true,
+        px: 20,
+        disabled: !run,
+        tone: run ? UI.warn : undefined,
+        x: PAD,
+        y: footY,
+        w: third,
+        h: 54,
+      },
+      {
+        id: 'box:turn',
+        label: 'TURN',
+        small: true,
+        px: 20,
+        // Sinks have no out face to turn, and a turn on one would look
+        // like a bug rather than a choice.
+        disabled: unit.type === 'dock' || unit.type === 'chest' || unit.type === 'vat',
+        x: PAD + third + 8,
+        y: footY,
+        w: third,
+        h: 54,
+      },
+      {
+        id: 'box:remove',
+        label: 'TAKE IT OUT',
+        small: true,
+        px: 20,
+        tone: UI.danger,
+        x: PAD + (third + 8) * 2,
+        y: footY,
+        w: third,
+        h: 54,
+      },
+      {
+        // CLOSE lives in the corner, away from the three verbs — one of
+        // which takes the machine off the floor. Nobody should be able
+        // to reach for "put this away" and hit "TAKE IT OUT".
+        id: 'box:close',
+        label: 'CLOSE',
+        small: true,
+        px: 19,
+        x: cw - PAD - 92,
+        y: 22,
+        w: 92,
+        h: 42,
+      },
+    ];
+
+    this.box.paint(
+      UNIT_NAME[unit.type],
+      (g) => {
+        g.textAlign = 'left';
+        g.textBaseline = 'middle';
+        // The machine's own drawing, top left, at a size worth looking at.
+        unitGlyph(g, unit.type, PAD, 108, 74);
+        wrapText(g, UNIT_DOCKET[unit.type], PAD + 92, 126, cw - PAD * 2 - 96, 24, font(500, 19), UI.dim);
+
+        // THE PLUMBING — what line is in it, and how it is doing.
+        let y = 206;
+        g.font = font(500, 19);
+        g.fillStyle = UI.faint;
+        g.fillText('PLUMBING', PAD, y);
+        y += 30;
+        if (run) {
+          g.fillStyle = run.line.hex;
+          g.beginPath();
+          g.arc(PAD + 10, y, 9, 0, Math.PI * 2);
+          g.fill();
+          g.font = font(600, 23);
+          g.fillStyle = UI.text;
+          g.fillText(run.line.name, PAD + 30, y);
+          g.font = font(500, 19);
+          g.fillStyle = run.phase === 'flowing' ? UI.positive : UI.dim;
+          g.fillText(run.phase === 'flowing' ? 'FLOWING' : 'CHARGING', PAD + 158, y);
+          if (unit.type === 'vat') {
+            const p = Math.min(1, plant.brewT / UNITS.vat.brewS);
+            g.fillStyle = 'rgba(255,255,255,0.08)';
+            g.beginPath();
+            g.roundRect(PAD + 250, y - 7, cw - PAD * 2 - 250, 14, 7);
+            g.fill();
+            g.fillStyle = LINES.pearl.hex;
+            g.beginPath();
+            g.roundRect(PAD + 250, y - 7, Math.max(8, (cw - PAD * 2 - 250) * p), 14, 7);
+            g.fill();
+          }
+        } else {
+          g.font = font(500, 20);
+          g.fillStyle = UI.faint;
+          g.fillText(
+            takesTube(unit)
+              ? 'no line seated \u2014 haul one over and it will take it'
+              : unit.type === 'post'
+                ? 'a stick. A hauled rail bends to visit it, and takes its place'
+                : 'this one takes rails, not tubes',
+            PAD,
+            y,
+          );
+        }
+
+        // WHAT IS IN IT.
+        if (!heading) return;
+        y += 48;
+        g.textAlign = 'left';
+        g.font = font(500, 19);
+        g.fillStyle = UI.faint;
+        g.fillText(heading, PAD, y);
+        y += 22;
+        if (unit.type === 'vat') {
+          // The vat holds no parts, ever — it holds a LEVEL, and that is
+          // the only number about it worth reading.
+          const p = Math.min(1, plant.brewT / UNITS.vat.brewS);
+          g.fillStyle = 'rgba(255,255,255,0.07)';
+          g.beginPath();
+          g.roundRect(PAD, y + 10, cw - PAD * 2, 26, 13);
+          g.fill();
+          g.fillStyle = LINES.pearl.hex;
+          g.beginPath();
+          g.roundRect(PAD, y + 10, Math.max(10, (cw - PAD * 2) * p), 26, 13);
+          g.fill();
+          g.font = font(600, 20);
+          // The label rides INSIDE the track, clear of the fill's own
+          // minimum nub — a dry tank should not print its first letter
+          // over a sliver of green.
+          g.fillStyle = p > 0.45 ? UI.onAccent : UI.dim;
+          g.fillText(
+            plant.goop === 'none'
+              ? 'dry \u2014 nothing green has reached it'
+              : plant.goop === 'brewing'
+                ? `${Math.round(p * 100)}% \u2014 something is taking shape in there`
+                : 'whatever was in here is out here now',
+            PAD + 24,
+            y + 24,
+          );
+          return;
+        }
+        if (stack.length === 0) {
+          g.font = font(500, 20);
+          g.fillStyle = UI.faint;
+          g.fillText(emptyLine, PAD, y + 22);
+          return;
+        }
+        const counts = new Map<ItemId, number>();
+        for (const part of stack) counts.set(part.item, (counts.get(part.item) ?? 0) + 1);
+        [...counts.entries()].slice(0, 5).forEach(([item, n], i) => {
+          const x = PAD + i * 96;
+          itemGlyph(g, item, x, y, 42);
+          g.textAlign = 'left';
+          g.font = font(600, 21);
+          g.fillStyle = UI.text;
+          g.fillText(`\u00d7${n}`, x + 48, y + 26);
+          g.font = font(500, 15);
+          g.fillStyle = UI.faint;
+          g.fillText(ITEMS[item].name, x + 2, y + 56);
+        });
+      },
+      buttons,
+      this.hover,
+    );
+  }
+
+  /**
+   * THANKS FOR PLAYING — the last card in the game.
+   *
+   * It comes up once, on its own, while the goop is dancing on your
+   * actual floor behind it. Deliberately the only screen in TUBES that
+   * is not made of shop chrome: no rail, no tabs, no counters. One
+   * picture, one line, one button that gets out of the way so you can
+   * watch the thing you built.
+   */
+  private paintFinale(): void {
+    const cw = 1060;
+    const ch = 700;
+    const buttons: PanelButton[] = [
+      {
+        id: 'finale:close',
+        label: 'WATCH IT DANCE',
+        primary: true,
+        x: cw / 2 - 220,
+        y: ch - 148,
+        w: 440,
+        h: 96,
+      },
+    ];
+    this.finale.paint(
+      '',
+      (g) => {
+        // EVERY Y HERE FLOWS. The first cut nailed the clock to a fixed
+        // offset and the closing paragraph grew into it — the same class
+        // of bug the GOALS page was rebuilt to kill, and it deserves no
+        // more mercy on the last screen in the game than it got there.
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        goopGlyph(g, cw / 2 - 84, 58, 168, true);
+        g.font = font(700, 72);
+        g.letterSpacing = '8px';
+        g.fillStyle = UI.textHi;
+        g.fillText('THANKS FOR PLAYING', cw / 2, 292);
+        g.letterSpacing = '0px';
+        g.font = font(600, 26);
+        g.fillStyle = LINES.pearl.hex;
+        g.fillText('the fourth manifold is open, and something came out of it', cw / 2, 344);
+        let y = 400;
+        y +=
+          31 *
+          wrapText(
+            g,
+            'You stood a maker in an empty room and ran one tube into it. Everything after that \u2014 the bank, the lanes, the combiner, the chest, six servos and a vat \u2014 you built. The shop stays open: every feed is yours, the catalogue is yours, and nobody is going to ask you for ten of anything ever again.',
+            cw / 2 - 380,
+            y,
+            760,
+            31,
+            font(500, 23),
+            UI.dim,
+            'center',
+          );
+        g.textAlign = 'center';
+        g.font = font(500, 20);
+        g.fillStyle = UI.faint;
+        g.fillText(`the works ran for ${fmtMs(plant.elapsedMs)}`, cw / 2, y + 6);
+      },
+      buttons,
+      this.hover,
     );
   }
 
@@ -1355,10 +1959,14 @@ function wrapText(
   lineH: number,
   fontStr: string,
   color: string,
+  align: CanvasTextAlign = 'left',
 ): number {
   g.font = fontStr;
   g.fillStyle = color;
-  g.textAlign = 'left';
+  g.textAlign = align;
+  // Centred blocks are measured from the middle of the box, so the
+  // caller still passes the box's LEFT edge and gets what they drew.
+  const at = align === 'center' ? x + maxW / 2 : x;
   const words = text.split(' ');
   let line = '';
   let yy = y;
@@ -1366,7 +1974,7 @@ function wrapText(
   for (const word of words) {
     const probe = line ? `${line} ${word}` : word;
     if (g.measureText(probe).width > maxW && line) {
-      g.fillText(line, x, yy);
+      g.fillText(line, at, yy);
       lines++;
       line = word;
       yy += lineH;
@@ -1375,8 +1983,9 @@ function wrapText(
     }
   }
   if (line) {
-    g.fillText(line, x, yy);
+    g.fillText(line, at, yy);
     lines++;
   }
+  g.textAlign = 'left';
   return lines;
 }

@@ -762,3 +762,68 @@ Five phases, each ending green on `npm run typecheck` + a headless walk.
 - This repo: `README.md`, `DESIGN.md` (pillars, roadmap), `src/*` as
   inventoried above. goopboxing2: `arena/ringLayout.ts`,
   `systems/ArenaSystem.ts` (the ring adjust verb), `README.md`.
+
+
+---
+
+## Appendix — THE PLAYTEST PASS (what actually shipped)
+
+The build above is the design; this is the record of what the first real
+playtest changed, because every item on it was a case of the design being
+right on paper and wrong in a headset.
+
+**"All those extra options other than the first one are completely
+useless in that sub menu."** The board listed five startable sheets. A
+shift always begins on a bare floor, so starting sheet four dealt sheet
+four's demands with none of sheets one to three's feeds, plant or parts —
+unwinnable, and silently so. The tab is called **FACTORY**, it offers one
+button, and THE BOOK advances inside the shift onto the same floor.
+
+**"The first mission of build 10 draughts is stupid."** It was: a sheet
+about a hole in a box. Sheet one is **FIRST GEAR** now — stand a MAKER,
+run the amber feed into it, watch it stamp, and lift one off the chute
+with your fist when the chute fills (which is also how the carry gets
+taught). **THE BANK** is sheet two, arriving with the rail, when there is
+finally something to put in it. Fluid targets left the game with the
+draughts, and the bank lost its gland with them: the magnet takes the
+NEAREST free gland, so a bank standing between you and a maker used to
+snatch every tube you walked past it.
+
+**"We can't disconnect the tubes from when they're connected to the
+boxes. I'd delete the boxes at the moment."** A missing verb, not a
+missing button. **THE BOX PANEL** — empty hand, trigger, any standing
+plant — carries UNPLUG, TURN and TAKE IT OUT, and every unplug route now
+goes through one sim door so the hum and the iris can never disagree.
+
+**"We should be able to check what is in her chest by clicking on it."**
+Same panel: a crate's stack, a chute's queue, a combiner's ports, a
+rail's cargo, the bank's whole vault, the vat's level — each with the
+part's own drawing beside the count.
+
+**"They're too circular, they're all too similar. They're making a
+factory, not a steam machine."** Every chassis was re-cut from flat
+stock: boxes, four-panel folded hoppers, bolt rows, welded gussets, and
+`flatShading: true` on every material — which is the single flag that
+stops an eight-sided prism reading as a smooth pipe. Silhouettes now
+differ in height and mass as well as plan.
+
+**"We want the rails to actually bend when we pull them, bend around
+objects."** `haulRoute` is a Dijkstra over (cell, direction) with a turn
+penalty. A clear floor still lays the one-cornered L a hand would draw;
+an obstructed one goes around. And a MAKER stood on an empty floor last
+sheet turns its chute onto the first rail that lands beside it, because
+otherwise its facing was frozen at whatever angle your hand happened to
+be at when there was nothing to face.
+
+**"When we select and build it should show a picture and the word."**
+`ui/icons.ts`: a line-art elevation of every machine and every part, on
+the catalogue, the goal ladder, the sheets and the box panel.
+
+**"Grab the goop from RAVE RAID... a machine that activates the final
+tube socket which is green... that creates the goop and it dances and a
+screen pops up that says thanks for playing."** Sheets six and seven.
+Six servos crank the fourth manifold's bolted gate off the near pillar;
+PEARL is green; the VAT is the only thing that drinks it; and what climbs
+out of the tank is the club's own gel creature (`src/goop/`, the fight
+left behind) dancing on your real floor with THANKS FOR PLAYING over its
+shoulder.

@@ -22,8 +22,14 @@
  *     the boxes and paints its target red — which freed Ⓑ up.
  *  4. AND Ⓑ TURNS THE PIECE. Auto-facing is the default, not a cage:
  *     with a piece in hand Ⓑ ratchets it a quarter turn and that
- *     choice wins until it lands. Empty-handed, Ⓑ unbolts as it always
- *     did. One button, and what you are holding says which verb it is.
+ *     choice wins until it lands. Empty-handed, Ⓑ UNPLUGS whatever the
+ *     ray is on if a line is seated there, and unbolts it otherwise.
+ *     One button, and what you are holding says which verb it is.
+ *  5. AND AN EMPTY HAND OPENS THE BOX. With no tool armed, the trigger
+ *     on standing plant raises THE BOX PANEL — what is inside it, what
+ *     is plumbed into it, UNPLUG, TURN, TAKE IT OUT. Playtest went
+ *     looking for a chest's contents and for a way to pull a tube off a
+ *     maker, and found neither; both live there now.
  *
  * This system MUTATES the plant only (factory/sim.ts's doors) — meshes
  * belong to FactorySystem.
@@ -213,7 +219,7 @@ export class BuildSystem extends createSystem({}) {
     // maker's drum and piston, the combiner's twin lobes, the bank's
     // mouth, the crate's bands, a post's stick. One is shown at a time.
     this.bodies = new Map();
-    for (const type of ['dock', 'maker', 'belt', 'combiner', 'chest', 'post'] as UnitType[]) {
+    for (const type of ['dock', 'maker', 'belt', 'combiner', 'chest', 'post', 'vat'] as UnitType[]) {
       const body = buildUnit(type).group;
       body.traverse((o) => {
         const m = o as Mesh;
@@ -311,9 +317,9 @@ export class BuildSystem extends createSystem({}) {
       return true;
     };
     buildView.catalogue = () => ({
-      available: (['dock', 'maker', 'belt', 'combiner', 'chest', 'post'] as UnitType[]).filter(
-        (t) => typeAvailable(t),
-      ),
+      available: (
+        ['dock', 'maker', 'belt', 'combiner', 'chest', 'post', 'vat'] as UnitType[]
+      ).filter((t) => typeAvailable(t)),
     });
     buildView.count = () => occupiedCount();
     buildView.cells = () => occupiedCells();
@@ -329,6 +335,16 @@ export class BuildSystem extends createSystem({}) {
       const h = this.headless;
       if (!h) return false;
       const cell = worldToCell(h.x, h.z);
+      // With nothing armed the trigger OPENS THE BOX, exactly as the
+      // controller's does — so a walk can prove the panel is reachable
+      // by pointing and pressing, not only by calling into the menu.
+      if (!this.armed) {
+        const standing = unitAtCell(cell.i, cell.j);
+        if (!standing) return false;
+        site.inspect = standing.id;
+        site.paused = true;
+        return true;
+      }
       const ok = this.commit(this.resolve(cell, h.handRot));
       // A landed rail is a haul waiting to happen — the same as the
       // press. haulTo/haulRelease then drive it, or ignore it, and a
@@ -512,6 +528,16 @@ export class BuildSystem extends createSystem({}) {
       aiming && Boolean(this.view?.placeable),
     );
 
+    // AN EMPTY HAND OPENS THE BOX. Nothing armed and the ray on standing
+    // plant: raise the box panel instead of doing nothing at all, which
+    // is what the trigger used to do here.
+    if (pad?.getButtonDown(InputComponent.Trigger) && !this.armed && cell && occupied) {
+      site.inspect = occupied.id;
+      site.paused = true;
+      this.pointer.click();
+      sfx.uiClick();
+      buzz(this.world, 'right', 0.3, 25);
+    }
     if (pad?.getButtonDown(InputComponent.Trigger) && this.armed && cell) {
       if (this.commit(this.view)) {
         this.pointer.click();
@@ -540,6 +566,10 @@ export class BuildSystem extends createSystem({}) {
         sfx.segmentClick(this.forced); // the tube's own detent, reused
         buzz(this.world, 'right', 0.3, 25);
       } else if (cell && occupied !== undefined) {
+        // Ⓑ ON PLANT: a plumbed box UNPLUGS, a bare one comes out. The
+        // seated line retracts through sim.retractRun, which is the one
+        // door every unplug goes through — so the hum stops and the iris
+        // shuts however the seal was broken.
         const unit = unitAtCell(cell.i, cell.j);
         if (unit) {
           const run = runSeatedAt(unit.id);
@@ -668,6 +698,9 @@ export function typeAvailable(type: UnitType): boolean {
   // fitting is paid for, and then they are yours for good.
   if (type === 'post') return postsUnlocked();
   if (plant.mode === 'idle') return type === 'chest';
+  // One bank, and one vat: the shop only ever needs one of each, and a
+  // second of either is a way to confuse yourself, not a strategy.
   if (type === 'dock' && plant.units.some((u) => u.type === 'dock')) return false;
+  if (type === 'vat' && plant.units.some((u) => u.type === 'vat')) return false;
   return plant.unitsAvailable.includes(type);
 }

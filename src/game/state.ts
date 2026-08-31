@@ -72,6 +72,25 @@ export interface Site {
   ceremonyT: number;
   /** THE JOB CARD is up: hands are ignored, the machine is not. */
   paused: boolean;
+  /**
+   * THE BOX PANEL — the unit id you have clicked on to look inside, or
+   * −1. Playtest asked two things of this in one breath: "we should be
+   * able to check what is in a chest by clicking on it", and "we can't
+   * disconnect the tubes once they're connected to the boxes — I delete
+   * the boxes at the moment". Both are the same panel: point at any
+   * standing plant with nothing in your hand, pull the trigger, and the
+   * box tells you what it is holding and offers you UNPLUG.
+   *
+   * Like the shift card it pauses the HANDS (so the trigger that opened
+   * it can't also stamp a rail) and never the machine.
+   */
+  inspect: number;
+  /**
+   * THANKS FOR PLAYING. Raised once, when the goop is on its feet and
+   * dancing on your actual floor. Nothing else in the game sets it and
+   * nothing but the card's own button clears it.
+   */
+  finale: boolean;
   /** Bumped to make every system rebuild what it owns. */
   generation: number;
   /** WallSystem reports: any walls at all, and whether they're synthetic. */
@@ -92,6 +111,8 @@ export const site: Site = {
   elapsedMs: 0,
   ceremonyT: 0,
   paused: false,
+  inspect: -1,
+  finale: false,
   generation: 0,
   wallsReady: false,
   fallbackRoom: false,

@@ -141,7 +141,7 @@ export function canLink(into: Unit, travel: Rot): boolean {
     const enterFrom = ((travel + 2) % 4) as Rot;
     return enterFrom === portDir(into, 0) || enterFrom === portDir(into, 1);
   }
-  return false; // makers take a tube, not a rail
+  return false; // makers and the vat take a tube, not a rail
 }
 
 /** Does this unit push parts out of its OUT face? */
@@ -166,8 +166,9 @@ export function linkAhead(unit: Unit): Unit | null {
  * with a piece of plant already surrounded by other plant.
  */
 export function bestRot(type: UnitType, i: number, j: number, handRot: Rot): Rot {
-  // Sinks don't care which way they face; keep the hand honest.
-  if (type === 'dock' || type === 'chest' || type === 'post') return handRot;
+  // Sinks don't care which way they face; keep the hand honest. (The VAT
+  // has no out face at all — what comes out of it walks.)
+  if (type === 'dock' || type === 'chest' || type === 'post' || type === 'vat') return handRot;
   let best = handRot;
   let bestScore = -Infinity;
   for (let r = 0; r < 4; r++) {
@@ -204,6 +205,20 @@ export function bestRot(type: UnitType, i: number, j: number, handRot: Rot): Rot
  * run ratchets out of it toward wherever you point, the way a tube
  * ratchets out of a wall. Everything about the shape of that run lives
  * here, so the ghost you drag and the rails that land can never disagree.
+ *
+ * AND IT BENDS. The first cut walked a plain Manhattan L and STOPPED
+ * dead the moment it met anything — which meant that on a floor with any
+ * plant on it at all (i.e. any floor worth laying a lane across) half
+ * your hauls fetched up against the side of a maker and died. A lane
+ * that will not go round a box is not a lane.
+ *
+ * So the route is a real search now: Dijkstra over (cell, direction),
+ * one unit per step and TURN_COST per corner. The turn penalty is what
+ * keeps a clear floor honest — with nothing in the way it still lays the
+ * single-cornered L a hand would draw — while an obstructed floor gets a
+ * lane that goes AROUND, hugging the straight line and bending only
+ * where it has to. Posts stay what they always were: waypoints the run
+ * visits in order, and the sticks are spent as the rail passes.
  */
 
 /** A cell on a haul, in order, with the way the rail there must face. */
@@ -213,50 +228,137 @@ export interface HaulStep {
   rot: Rot;
 }
 
-/** One Manhattan leg, longer axis first — an L, which is what a hand
- *  drawing a lane across a room actually does. Excludes `from`. */
-function legCells(from: Cell, to: Cell): Cell[] {
-  const out: Cell[] = [];
-  let { i, j } = from;
-  const di = Math.sign(to.i - i);
-  const dj = Math.sign(to.j - j);
-  const iFirst = Math.abs(to.i - i) >= Math.abs(to.j - j);
-  const runI = (): void => {
-    while (i !== to.i) {
-      i += di;
-      out.push({ i, j });
-    }
-  };
-  const runJ = (): void => {
-    while (j !== to.j) {
-      j += dj;
-      out.push({ i, j });
-    }
-  };
-  if (iFirst) {
-    runI();
-    runJ();
-  } else {
-    runJ();
-    runI();
+/** Corners cost. High enough that a clear floor gets one bend and not a
+ *  staircase; low enough that going round a box never loses to giving
+ *  up. (It cannot be free: every monotone Manhattan path is the same
+ *  length, so with no penalty the search would pick an arbitrary one and
+ *  the lane would writhe as you dragged.) */
+const TURN_COST = 1.6;
+
+/** Can a hauled rail stand on this cell? Posts are passable — the whole
+ *  point of a stick is that the run goes THROUGH it and takes its place. */
+function haulPassable(i: number, j: number): boolean {
+  if (!cellInFloor(i, j)) return false;
+  const standing = unitAtCell(i, j);
+  return !standing || standing.type === 'post';
+}
+
+const KEY = (i: number, j: number): number => (i + 512) * 4096 + (j + 512);
+
+/**
+ * One leg of a haul: the cheapest bending path from `from` to `to`,
+ * EXCLUDING `from` and including `to`. `blocked` is the set of cells
+ * already claimed by earlier legs (so a route can never cross itself),
+ * `enter` the direction the run is already travelling in (−1 = the first
+ * leg, where any first step is free of a turn penalty).
+ *
+ * Search space is clamped to the box between the two ends, opened out by
+ * SEARCH_PAD, so a haul across a small floor never walks the whole
+ * unbounded lattice looking for a way round.
+ */
+const SEARCH_PAD = 6;
+
+function routeLeg(
+  from: Cell,
+  to: Cell,
+  blocked: Set<number>,
+  enter: Rot | -1,
+  limit: number,
+): { cells: Cell[]; exit: Rot } | null {
+  if (from.i === to.i && from.j === to.j) return { cells: [], exit: enter === -1 ? 0 : enter };
+  const lo = { i: Math.min(from.i, to.i) - SEARCH_PAD, j: Math.min(from.j, to.j) - SEARCH_PAD };
+  const hi = { i: Math.max(from.i, to.i) + SEARCH_PAD, j: Math.max(from.j, to.j) + SEARCH_PAD };
+
+  interface Node {
+    i: number;
+    j: number;
+    rot: Rot;
+    cost: number;
+    steps: number;
+    prev: Node | null;
   }
-  return out;
+  const seen = new Map<number, number>(); // (cell,rot) → best cost
+  // A tiny sorted frontier: the floors this runs on are at most a few
+  // hundred cells, so an array with a linear extract-min is faster than
+  // any heap once you count the allocations.
+  const open: Node[] = [];
+  const push = (n: Node): void => {
+    const k = KEY(n.i, n.j) * 4 + n.rot;
+    const was = seen.get(k);
+    if (was !== undefined && was <= n.cost) return;
+    seen.set(k, n.cost);
+    open.push(n);
+  };
+  for (let r = 0; r < 4; r++) {
+    const rot = r as Rot;
+    if (enter !== -1 && rot !== enter) continue;
+    push({ i: from.i, j: from.j, rot, cost: 0, steps: 0, prev: null });
+  }
+  if (enter === -1) {
+    // No history: seed one zero-cost node per heading off the anchor.
+    seen.clear();
+    open.length = 0;
+    for (let r = 0; r < 4; r++) {
+      open.push({ i: from.i, j: from.j, rot: r as Rot, cost: 0, steps: 0, prev: null });
+      seen.set(KEY(from.i, from.j) * 4 + r, 0);
+    }
+  }
+
+  let expansions = 0;
+  while (open.length && expansions < FACTORY.routeBudget) {
+    let best = 0;
+    for (let n = 1; n < open.length; n++) if (open[n].cost < open[best].cost) best = n;
+    const node = open.splice(best, 1)[0];
+    expansions++;
+    if (node.i === to.i && node.j === to.j) {
+      const cells: Cell[] = [];
+      for (let n: Node | null = node; n && n.prev; n = n.prev) cells.unshift({ i: n.i, j: n.j });
+      return { cells, exit: node.rot };
+    }
+    if (node.steps >= limit) continue;
+    for (let r = 0; r < 4; r++) {
+      const rot = r as Rot;
+      const d = DIRS[rot];
+      const ni = node.i + d.di;
+      const nj = node.j + d.dj;
+      if (ni < lo.i || ni > hi.i || nj < lo.j || nj > hi.j) continue;
+      if (blocked.has(KEY(ni, nj))) continue;
+      if (!haulPassable(ni, nj)) continue;
+      const turn = node.prev === null && enter === -1 ? 0 : rot === node.rot ? 0 : TURN_COST;
+      push({ i: ni, j: nj, rot, cost: node.cost + 1 + turn, steps: node.steps + 1, prev: node });
+    }
+  }
+  return null;
+}
+
+/** The nearest passable cell beside a blocked one, preferring the side
+ *  the run is coming from — where a lane ENDS when it has arrived at
+ *  something it cannot stand on (the bank, a maker, a chest). */
+function approachCell(target: Cell, from: Cell, blocked: Set<number>): Cell | null {
+  let best: Cell | null = null;
+  let bestD = Infinity;
+  for (let r = 0; r < 4; r++) {
+    const d = DIRS[r as Rot];
+    const c = { i: target.i + d.di, j: target.j + d.dj };
+    if (blocked.has(KEY(c.i, c.j)) || !haulPassable(c.i, c.j)) continue;
+    const dist = Math.abs(c.i - from.i) + Math.abs(c.j - from.j);
+    if (dist < bestD) {
+      bestD = dist;
+      best = c;
+    }
+  }
+  return best;
 }
 
 /**
  * THE ROUTE a haul from `anchor` toward `to` would take.
  *
- * Direct by default — an L across the floor. But every POST standing
- * between the two (inside their bounding box) is a waypoint the run
- * visits in order, nearest first: that is the whole point of the sticks.
- * Plant it where you want the corner and the lane bends to meet it,
- * instead of you having to draw the corner with your arm.
- *
- * The run stops the moment it meets something it cannot pass: a post is
- * consumed and passed through, empty floor is laid on, and anything else
- * ENDS the haul — before the obstacle, so the last rail simply points
- * into it. A rail that fetches up against the bank has arrived; one
- * against a maker has hit a wall. Same rule, and canLink says which.
+ * Bends round standing plant; visits every POST between the two ends, in
+ * order, nearest first; and when the point you are aiming at is itself
+ * occupied, arrives BESIDE it with the last rail pointing in — so
+ * dragging a lane onto the bank is how you connect to the bank, and
+ * dragging one onto a maker still just stops beside it (canLink decides
+ * whether that join means anything, not this).
  */
 export function haulRoute(anchor: Cell, to: Cell, limit: number): HaulStep[] {
   // The catchment: the box between the two ends, opened out by
@@ -266,39 +368,53 @@ export function haulRoute(anchor: Cell, to: Cell, limit: number): HaulStep[] {
   const lo = { i: Math.min(anchor.i, to.i) - reach, j: Math.min(anchor.j, to.j) - reach };
   const hi = { i: Math.max(anchor.i, to.i) + reach, j: Math.max(anchor.j, to.j) + reach };
   const dist = (c: Cell): number => Math.abs(c.i - anchor.i) + Math.abs(c.j - anchor.j);
-  const posts = plant.units
-    .filter(
-      (u) => u.type === 'post' && u.i >= lo.i && u.i <= hi.i && u.j >= lo.j && u.j <= hi.j,
-    )
+  const posts: Cell[] = plant.units
+    .filter((u) => u.type === 'post' && u.i >= lo.i && u.i <= hi.i && u.j >= lo.j && u.j <= hi.j)
     .map((u) => ({ i: u.i, j: u.j }))
     .sort((a, b) => dist(a) - dist(b));
 
-  // anchor → each post in turn → where the hand is pointing.
+  const blocked = new Set<number>([KEY(anchor.i, anchor.j)]);
   const cells: Cell[] = [];
   let from: Cell = { i: anchor.i, j: anchor.j };
-  for (const way of [...posts, to]) {
+  let heading: Rot | -1 = -1;
+  /** The occupied cell the finished run should point INTO, if any. */
+  let aimAt: Cell | null = null;
+
+  for (const [n, way] of [...posts, to].entries()) {
+    const last = n === posts.length;
     if (way.i === from.i && way.j === from.j) continue;
-    for (const c of legCells(from, way)) {
-      if (cells.some((x) => x.i === c.i && x.j === c.j)) continue;
-      cells.push(c);
+    let goal: Cell | null = way;
+    if (!haulPassable(way.i, way.j) || blocked.has(KEY(way.i, way.j))) {
+      // Arrived at something you cannot stand on. On the LAST waypoint
+      // that is the whole point (you dragged the lane onto the bank);
+      // on a post it means the stick has already been consumed by this
+      // very route, and the leg is simply skipped.
+      if (!last) continue;
+      goal = approachCell(way, from, blocked);
+      aimAt = way;
+      if (!goal) break;
     }
-    from = way;
+    const leg = routeLeg(from, goal, blocked, heading, limit - cells.length);
+    if (!leg) {
+      // Nowhere to go — stop with what we have rather than teleporting.
+      if (last) aimAt = null;
+      break;
+    }
+    for (const c of leg.cells) {
+      cells.push(c);
+      blocked.add(KEY(c.i, c.j));
+    }
+    heading = leg.exit;
+    from = goal;
+    if (cells.length >= limit) break;
   }
 
   const steps: HaulStep[] = [];
   for (let n = 0; n < cells.length && steps.length < limit; n++) {
     const c = cells[n];
-    if (!cellInFloor(c.i, c.j)) break;
-    const standing = unitAtCell(c.i, c.j);
-    if (standing && standing.type !== 'post') break; // arrived, or blocked
-    const nextCell = cells[n + 1];
+    const next = cells[n + 1] ?? (n === cells.length - 1 ? aimAt : null);
     const prev: Cell = n === 0 ? anchor : cells[n - 1];
-    const towards = nextCell ?? null;
-    steps.push({
-      i: c.i,
-      j: c.j,
-      rot: towards ? dirTo(c, towards) : dirTo(prev, c),
-    });
+    steps.push({ i: c.i, j: c.j, rot: next ? dirTo(c, next) : dirTo(prev, c) });
   }
   return steps;
 }
@@ -342,7 +458,23 @@ export function placementFor(type: UnitType, i: number, j: number, rot: Rot): Ro
   return cellInFloor(i, j) ? rot : null;
 }
 
-/** Stand a unit on a cell. The catalogue and the lattice both get a vote. */
+/**
+ * Stand a unit on a cell. The catalogue and the lattice both get a vote.
+ *
+ * AND THE CHUTE FINDS THE LANE. bestRot faces a piece as it lands, which
+ * is right for everything laid INTO an existing floor — but the very
+ * first machine on a sheet is laid into an empty one, and it keeps
+ * whatever way your hand happened to be pointing forever. Sheet 1 stands
+ * a maker in an open room; sheet 2 rails past it; and the maker went on
+ * stamping gears into thin air with no way to fix it short of deleting
+ * it (playtest found exactly this, and blamed the rails).
+ *
+ * So when a part-taking piece lands beside a MAKER that has nowhere to
+ * send, the maker turns its chute onto it. Only makers, only when they
+ * are feeding nothing at all, and only toward something that can
+ * actually take what they make — the same "the facing is our problem,
+ * not yours" law bestRot runs on, applied one move later.
+ */
 export function placeUnit(type: UnitType, i: number, j: number, rot: Rot): Unit | null {
   if (!unitAvailable(type)) return null;
   if (type === 'dock' && dockUnit()) return null;
@@ -354,8 +486,22 @@ export function placeUnit(type: UnitType, i: number, j: number, rot: Rot): Unit 
   plant.nextUnit++;
   const unit: Unit = { id, type, i, j, rot, craftT: -1, ports: [-1, -1] };
   plant.units.push(unit);
+  faceStrandedMakers(unit);
   plant.generation++;
   return unit;
+}
+
+/** Turn any adjacent maker that is sending nowhere onto `unit`. */
+function faceStrandedMakers(unit: Unit): void {
+  for (let r = 0; r < 4; r++) {
+    const d = DIRS[r as Rot];
+    const neighbour = unitAtCell(unit.i + d.di, unit.j + d.dj);
+    if (!neighbour || neighbour.type !== 'maker') continue;
+    if (linkAhead(neighbour)) continue; // it already has somewhere to go
+    const towards = ((r + 2) % 4) as Rot; // from the neighbour back to us
+    if (!canLink(unit, towards)) continue;
+    neighbour.rot = towards;
+  }
 }
 
 /** Unbolt a unit: its seated run retracts, its parts spill loose. */
@@ -378,24 +524,51 @@ export function removeUnit(unit: Unit): void {
   plant.generation++;
 }
 
-/** Unseat a run: the tube telescopes home and the stub waits again. */
+/**
+ * UNPLUG — the tube telescopes home and the stub waits on the spout again.
+ *
+ * There are three ways to break a seal now (the tug with both hands, the
+ * box panel's UNPLUG, the wrecking bar taking the whole box) and they all
+ * come through here, so the hum stops and the iris shuts exactly once
+ * however it happened. The old Ⓑ path called this directly and left a
+ * unit humming at a tube that was no longer there.
+ */
 export function retractRun(run: (typeof plant.runs)[number]): void {
+  const was = run.targetUnit;
   run.phase = 'retract';
   run.phaseT = 0;
   run.held = false;
   run.magnet = false;
+  run.strain = 0;
   run.targetUnit = -1;
   run.front = -1;
+  // A vat that loses its line stops brewing where it stands: come back,
+  // plug it in again, and the level carries on from there.
+  if (was >= 0) plant.events.push({ kind: 'unseat', unit: was, side: run.side });
 }
 
-/** A part lands in the dock: the sheet counts it, or the bank does. */
+/** One tick of progress on the live sheet, and the stamp when it fills.
+ *  Every target kind funnels through here so "the sheet is done" is
+ *  decided in exactly one place. */
+function scoreGoal(): void {
+  const spec = orderSpec();
+  if (!spec) return;
+  plant.count++;
+  if (plant.count >= spec.goal) plant.events.push({ kind: 'complete', order: plant.orderIndex });
+}
+
+/** A part lands in the bank: the sheet counts it, or the vault does. */
 export function deliverPart(part: Part): void {
   const spec = orderSpec();
   plant.parts.splice(plant.parts.indexOf(part), 1);
-  if (spec && spec.target.kind === 'item' && spec.target.item === part.item && plant.count < spec.goal) {
-    plant.count++;
+  if (
+    spec &&
+    spec.target.kind === 'item' &&
+    spec.target.item === part.item &&
+    plant.count < spec.goal
+  ) {
     plant.events.push({ kind: 'deliver', item: part.item });
-    if (plant.count >= spec.goal) plant.events.push({ kind: 'complete', order: plant.orderIndex });
+    scoreGoal();
   } else {
     plant.bank[part.item] = (plant.bank[part.item] ?? 0) + 1;
     plant.events.push({ kind: 'bank', item: part.item });
@@ -406,6 +579,13 @@ function spawnPart(item: ItemId, unit: Unit): void {
   const slot = chuteParts(unit.id).length;
   plant.parts.push({ id: plant.nextPart++, item, at: { kind: 'chute', unit: unit.id, slot }, p: 0 });
   plant.events.push({ kind: 'craft', unit: unit.id, item });
+  // SHEET ONE COUNTS STAMPS, NOT DELIVERIES. It has to: the first sheet
+  // in the book is about one maker and one tube, and there is no bank on
+  // the floor yet to deliver anything into.
+  const spec = orderSpec();
+  if (spec && spec.target.kind === 'craft' && spec.target.item === item && plant.count < spec.goal) {
+    scoreGoal();
+  }
 }
 
 /* ── the tick ───────────────────────────────────────────────────────────── */
@@ -413,42 +593,42 @@ function spawnPart(item: ItemId, unit: Unit): void {
 export function simTick(dt: number): void {
   const spec = orderSpec();
 
-  // THE FEEDS POUR. A flowing run into the dock's gland is a delivery of
-  // fluid; into a maker it's the maker's appetite answered (read below).
+  // THE VAT DRINKS. The fourth manifold pouring into a vat is the only
+  // thing in the shop that makes no part at all — it fills a tank, and
+  // when the tank is full, THE GOOP. A vat fed anything else just sits
+  // there wearing a puddle of the wrong colour.
   for (const run of plant.runs) {
     if (run.phase !== 'flowing') continue;
     const target = unitById(run.targetUnit);
-    if (
-      target?.type === 'dock' &&
-      spec?.target.kind === 'fluid' &&
-      spec.target.line === run.line.id &&
-      plant.count < spec.goal
-    ) {
-      plant.fluidAcc += FACTORY.fluidRate * dt;
-      while (plant.fluidAcc >= 1 && plant.count < spec.goal) {
-        plant.fluidAcc -= 1;
-        plant.count++;
-        plant.events.push({ kind: 'deliver' });
-        if (plant.count >= spec.goal) plant.events.push({ kind: 'complete', order: plant.orderIndex });
-      }
+    if (target?.type !== 'vat' || run.line.id !== 'pearl') continue;
+    if (plant.goop === 'none') plant.goop = 'brewing';
+    if (plant.goop !== 'brewing') continue;
+    plant.goopUnit = target.id;
+    plant.brewT = Math.min(UNITS.vat.brewS, plant.brewT + dt);
+    if (plant.brewT >= UNITS.vat.brewS) {
+      plant.goop = 'born';
+      plant.events.push({ kind: 'goop', unit: target.id });
+      if (spec?.target.kind === 'brew' && plant.count < spec.goal) scoreGoal();
     }
   }
 
   // MAKERS drink and stamp. QUICK BOXES (a paid fitting) shortens every
-  // craft.
+  // craft. A maker handed PEARL makes nothing — MAKES has no entry for
+  // the fourth manifold, and it is the vat's line, not the shop's.
   const makerS = FACTORY.makerS * craftFactor();
   const combinerS = FACTORY.combinerS * craftFactor();
   for (const unit of plant.units) {
     if (unit.type !== 'maker') continue;
     const run = runSeatedAt(unit.id);
-    const supplied = run?.phase === 'flowing';
+    const makes = run ? MAKES[run.line.id] : undefined;
+    const supplied = run?.phase === 'flowing' && makes !== undefined;
     const space = chuteParts(unit.id).length < FACTORY.chuteSlots;
     if (unit.craftT < 0 && supplied && space) unit.craftT = 0;
     else if (unit.craftT >= 0) {
       if (supplied || unit.craftT > 0) unit.craftT += dt;
       if (unit.craftT >= makerS) {
-        if (space && run) {
-          spawnPart(MAKES[run.line.id], unit);
+        if (space && makes) {
+          spawnPart(makes, unit);
           unit.craftT = supplied ? 0 : -1;
         } else {
           unit.craftT = makerS; // done, waiting on the chute

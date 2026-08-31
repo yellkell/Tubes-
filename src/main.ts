@@ -20,6 +20,7 @@ import { BuildSystem, buildView } from './systems/BuildSystem.js';
 import { FactorySystem, factoryView } from './systems/FactorySystem.js';
 import { FloorSystem, floorView } from './systems/FloorSystem.js';
 import { FlowSystem, flowView } from './systems/FlowSystem.js';
+import { GoopSystem, goopView } from './systems/GoopSystem.js';
 import { MenuSystem, menuView } from './systems/MenuSystem.js';
 import { PlacementSystem, placeView } from './systems/PlacementSystem.js';
 import { TubeSystem, tubeView } from './systems/TubeSystem.js';
@@ -94,6 +95,7 @@ World.create(container, {
   world.registerSystem(PlacementSystem);
   world.registerSystem(TubeSystem);
   world.registerSystem(FlowSystem);
+  world.registerSystem(GoopSystem); // the finale — reads the plant, owns the goop
   world.registerSystem(MenuSystem);
 
   const arSupported = navigator.xr
@@ -165,10 +167,15 @@ declare global {
       tube: typeof tubeView;
       /** The pour: fronts, energies, what's landed. */
       flow: typeof flowView;
+      /** THE GOOP: the finale's own state (null until the vat is full). */
+      goop: typeof goopView;
       /** Draw calls / triangles this frame — the budget check. */
       info: () => { calls: number; triangles: number } | null;
-      /** Park the player rig at (x, z) facing `yaw` — headless walks. */
-      rig: (x: number, z: number, yaw?: number, y?: number) => void;
+      /** Park the player rig at (x, z) facing `yaw` — headless walks.
+       *  `pitch` tips the whole rig, which no player can do and every
+       *  screenshot wants (a level camera at bench height sees the shop
+       *  edge-on). Shot tools only. */
+      rig: (x: number, z: number, yaw?: number, y?: number, pitch?: number) => void;
       /** The live scene graph — probes walk it by name. */
       scene: () => import('three').Scene | null;
     };
@@ -189,15 +196,22 @@ window.__tubes = {
   abandonFactory,
   tube: tubeView,
   flow: flowView,
+  goop: goopView,
   info: () => {
     const r = worldRef?.renderer;
     return r ? { calls: r.info.render.calls, triangles: r.info.render.triangles } : null;
   },
-  rig: (x, z, yaw = 0, y = 0) => {
+  rig: (x, z, yaw = 0, y = 0, pitch = 0) => {
     const w = worldRef;
     if (!w) return;
     w.player.position.set(x, y, z);
     w.player.rotation.set(0, yaw, 0);
+    if (pitch) {
+      // Yaw-then-pitch, applied to the rig itself: good enough for a
+      // still, and nothing in play ever sets it.
+      w.player.rotation.order = 'YXZ';
+      w.player.rotation.set(pitch, yaw, 0);
+    }
   },
   scene: () => worldRef?.scene ?? null,
 };

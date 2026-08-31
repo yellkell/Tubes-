@@ -394,13 +394,16 @@ export function chargeRise(dur: number): void {
 
 /** The front lands in the socket: each line gets its own resolution.
  *  MAINS lands a warm major third low; COOLANT a bright fifth; VOLT an
- *  electric octave with bite. All three share the same soft boom under. */
-export function flowArrive(line: 'mains' | 'coolant' | 'volt'): void {
+ *  electric octave with bite; PEARL a low open fifth that sounds WET —
+ *  the fourth manifold does not arrive like plant, it arrives like
+ *  something waking up. All four share the same soft boom under. */
+export function flowArrive(line: 'mains' | 'coolant' | 'volt' | 'pearl'): void {
   subSwell(80, 38, 0.5, 0.2, 0, 0.015);
   const chords: Record<typeof line, number[]> = {
     mains: [220, 277, 330],
     coolant: [330, 494, 660],
     volt: [262, 524, 1048],
+    pearl: [146, 220, 293],
   };
   chords[line].forEach((f, i) => {
     tone({ freq: f, type: 'triangle', dur: 0.7 - i * 0.1, gain: 0.07, delay: 0.05 + i * 0.06 });
@@ -436,7 +439,11 @@ interface Hum {
 
 const hums = new Map<string, Hum>();
 
-export function startHum(id: string, line: 'mains' | 'coolant' | 'volt', pulseHz: number): void {
+export function startHum(
+  id: string,
+  line: 'mains' | 'coolant' | 'volt' | 'pearl',
+  pulseHz: number,
+): void {
   const c = ready();
   if (!c || hums.has(id)) return;
   const t0 = c.currentTime;
@@ -449,7 +456,45 @@ export function startHum(id: string, line: 'mains' | 'coolant' | 'volt', pulseHz
   let noise: AudioBufferSourceNode | undefined;
   let lfo: OscillatorNode | undefined;
 
-  if (line === 'mains') {
+  if (line === 'pearl') {
+    // THE FOURTH MANIFOLD. Not a machine noise at all: a slow wet breath
+    // under a low drone, filtered so dark it reads as something big
+    // moving in a tank rather than plant running.
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 180;
+    lp.connect(gain);
+    for (const f of [41, 61.5]) {
+      const osc = c.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = f * detune;
+      osc.connect(lp);
+      osc.start(t0);
+      nodes.push(osc);
+    }
+    const frames = c.sampleRate * 2;
+    const buf = c.createBuffer(1, frames, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+    noise = c.createBufferSource();
+    noise.buffer = buf;
+    noise.loop = true;
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 320;
+    bp.Q.value = 1.4;
+    const ng = c.createGain();
+    ng.gain.value = 0.35;
+    // The breath: a slow LFO swelling the wet band in and out.
+    lfo = c.createOscillator();
+    lfo.frequency.value = 0.22;
+    const depth = c.createGain();
+    depth.gain.value = 0.28;
+    lfo.connect(depth).connect(ng.gain);
+    lfo.start(t0);
+    noise.connect(bp).connect(ng).connect(gain);
+    noise.start(t0);
+  } else if (line === 'mains') {
     // A boiler two rooms over: two low saws a hair apart, darkened hard.
     const lp = c.createBiquadFilter();
     lp.type = 'lowpass';
@@ -534,4 +579,56 @@ export function stopHum(id: string): void {
 /** Silence every hum (job resolved, board back up). */
 export function stopAllHums(): void {
   for (const id of [...hums.keys()]) stopHum(id);
+}
+
+/* ── THE GOOP (the last sheet) ───────────────────────────────────────────
+ * The fourth manifold does not sound like plant. Everything below is wet:
+ * pitch-bent sines with no attack, low-passed noise with a swallow in it,
+ * and not one struck plate anywhere. The shop has spent a whole book
+ * sounding like iron — the point of these is that something else has
+ * arrived.
+ */
+
+/** A bubble breaking the surface of the vat. Pitch rises as the level
+ *  does, so the brew audibly fills up. */
+export function vatBubble(fill = 0.5): void {
+  const base = 160 + fill * 260;
+  tone({ freq: base * 0.6, to: base, type: 'sine', dur: 0.13, gain: 0.09 });
+  whooshNoise(0.09, 0.03, 320, 140);
+}
+
+/** The vat takes the green line: a long swallow, not a latch. */
+export function vatFill(): void {
+  subSwell(30, 70, 2.2, 0.16, 0, 0.5);
+  whooshNoise(1.6, 0.05, 200, 600);
+  tone({ freq: 98, to: 147, type: 'sine', dur: 1.4, gain: 0.08, delay: 0.2 });
+}
+
+/** IT STANDS UP. The one moment the whole book has been walking toward:
+ *  a rising wet swell, a tear as it comes off the vat's rim, and a low
+ *  chord underneath that is nearly the ceremony's, one third flatter. */
+export function goopRise(): void {
+  subSwell(28, 96, 1.9, 0.24, 0, 0.12);
+  whooshNoise(1.2, 0.09, 180, 900);
+  for (const [i, f] of [147, 220, 262, 349].entries()) {
+    tone({ freq: f * 0.5, to: f, type: 'sine', dur: 1.5 - i * 0.15, gain: 0.075, delay: 0.25 + i * 0.11 });
+  }
+}
+
+/** A dance step: gel landing on your real floor. Soft, fat, no ring. */
+export function goopStep(hard = false): void {
+  const g = hard ? 0.14 : 0.08;
+  subSwell(70, 34, 0.24, g, 0, 0.005);
+  whooshNoise(0.16, g * 0.5, 520, 180);
+}
+
+/** THANKS FOR PLAYING. Everything the works has, at once, and then a
+ *  long open fifth left ringing over your actual room. */
+export function finaleChord(): void {
+  subSwell(44, 22, 2.6, 0.26, 0, 0.06);
+  const spread = [147, 220, 294, 370, 440, 588, 740, 880];
+  spread.forEach((f, i) => {
+    tone({ freq: f, type: 'triangle', dur: 2.4 - i * 0.14, gain: 0.05, delay: 0.1 + i * 0.1 });
+  });
+  whooshNoise(1.4, 0.06, 400, 3600, 0.25);
 }

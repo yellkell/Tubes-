@@ -10,7 +10,6 @@ import { CEREMONY_S, JOBS, ORDERS, UPGRADES, type ItemId, type UpgradeId } from 
 import { freshSeed } from './rng.js';
 import {
   loadBank,
-  ordersUnlocked,
   recordJobDone,
   recordOrderDone,
   recordUpgrade,
@@ -74,17 +73,31 @@ export function runLanded(runIndex: number): void {
 
 /* ── the factory (FACTORY.md phases 1–2) ─────────────────────────────────── */
 
-/** OPEN THE SHOP. One entrance, one continuous session: the goals
- *  advance in place as you fill them and the catalogue grows with them,
- *  and when the book runs out the shop simply stays open. You never go
- *  back to the board for the next thing. The bank rides in from the
- *  shelf. */
+/**
+ * OPEN THE FACTORY. ONE ENTRANCE, and it always opens at the top of the
+ * book.
+ *
+ * The board used to let you pick any sheet you had ever reached, which
+ * sounds generous and was a trap: a shift starts with a bare floor, so
+ * choosing sheet four dealt you sheet four's demands with none of sheets
+ * one to three's feeds, plant or parts, and no way to get them. There
+ * was no way to succeed and no way to find that out except by trying.
+ *
+ * So `index` is a tools-only door now (a walk that wants to jump the
+ * ladder can still ask). A player gets sheet one, and the book advances
+ * INSIDE the shift, onto the same floor, with everything they built
+ * still standing. The bank rides in from the shelf, and what it holds is
+ * the only thing a returning player actually keeps — which is right: the
+ * parts persist, the plant is yours to stand again.
+ */
 export function startShop(index = 0): void {
   if (site.screen !== 'board') return;
-  const at = Math.max(0, Math.min(index, ORDERS.length - 1, ordersUnlocked() - 1));
+  const at = Math.max(0, Math.min(index, ORDERS.length - 1));
   clearPlant();
   plant.bank = loadBank();
   site.paused = false;
+  site.inspect = -1;
+  site.finale = false;
   site.screen = 'factory';
   postOrder(at);
   site.generation++;
@@ -97,6 +110,8 @@ export function abandonFactory(): void {
   saveBank(plant.bank);
   clearPlant();
   site.screen = 'board';
+  site.inspect = -1;
+  site.finale = false;
   sfx.stopAllHums();
   site.generation++;
 }
@@ -108,6 +123,10 @@ export function abandonFactory(): void {
 export function orderComplete(): void {
   const spec = orderSpec();
   if (!spec || site.screen !== 'factory') return;
+  // The clock is the SHIFT's, not the sheet's — the book advances in
+  // place and never resets it — so a sheet's "best" is honestly "how
+  // fast you got this far from an empty floor", which is the only
+  // comparable number a continuous session can offer.
   recordOrderDone(spec.id, plant.elapsedMs);
   saveBank(plant.bank);
   const next = plant.orderIndex + 1;

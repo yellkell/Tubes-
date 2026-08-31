@@ -146,7 +146,8 @@ room you're in.
 ```
 src/
   config.ts              every tunable: walls, tube, seat, wake, flow,
-                         the three lines, the five jobs, the board
+                         the four lines, the five jobs, THE BOOK (the
+                         factory's seven sheets), the board
   main.ts                IWSDK world boot (immersive-ar) + systems
   audio/sfx.ts           synthesised industrial sound kit (RAVE RAID
                          lineage: tone / whooshNoise / clank / servo /
@@ -163,14 +164,28 @@ src/
   floor/tape.ts          the tape rig: striped bands, bench posts,
                          grab rings, deck line, lattice hint
   factory/state.ts       the plant singleton: units, supply runs, parts,
-                         the live sheet, the bank, the event bus
+                         the live sheet, the bank, the brew, the event bus
   factory/sim.ts         the factory's heartbeat, pure of scene and
                          speaker: feeds pour, makers stamp, belts carry,
-                         combiners fit, the dock counts
-  factory/units.ts       bench hardware: maker/combiner/rail/chest/dock,
-                         the gland (a socket on legs), feed pillars, and
-                         the part KITS — every item a little assembly in
-                         its lineage's plate language, instanced
+                         combiners fit, the bank counts, the vat brews —
+                         and THE ROUTE, a real search over the lattice so
+                         a hauled rail run BENDS round standing plant
+  factory/units.ts       bench hardware cut from FLAT STOCK: the press,
+                         the strongbox, the H-frame, the pallet crate,
+                         the slatted rail, the glass vat — boxes, folded
+                         hoppers, bolt rows and gussets, everything flat-
+                         shaded so a low-poly prism reads as cut plate
+                         and not as spun pipe. Plus the gland (a socket
+                         on legs), the four feed columns, and the part
+                         KITS — every item a little assembly in its
+                         lineage's plate language, instanced
+  goop/                  THE GOOP, vendored whole from RAVE RAID: the
+                         blob sim, the raymarched gel surface, the body
+                         plan and the club's dance stances — with the
+                         entire fight (moveset, KO, lumps) left behind
+  ui/icons.ts            the shop drawings: a line-art elevation of every
+                         machine and every part, for the catalogue, the
+                         sheets and the box panel
   tube/geometry.ts       telescoping maths: cubic path, root-first
                          section fill, spans, stops
   tube/build.ts          the hardware: flange / socket / segments /
@@ -191,12 +206,18 @@ src/
                               Ⓑ empty-handed unbolts)
   systems/FactorySystem.ts    the shift: feeds, the factory pull (the
                               two-hand verb, re-aimed at glands), pours,
-                              the sim's beat, parts, the dock's counter
+                              the sim's beat, parts, the bank's halo, the
+                              vat's level, and the fourth gate coming off
+  systems/GoopSystem.ts       the finale's choreography: the birth in the
+                              tank, the climb out, standing up, and the
+                              dance — the creature itself knows none of it
   systems/PlacementSystem.ts  the reticle, the mount, the wake
   systems/TubeSystem.ts       the pull: grab, ratchet, park, magnet, seat
   systems/FlowSystem.ts       the payoff: charge, pour, bloom, shaft,
                               hums, ceremony
-  systems/MenuSystem.ts       the board + THE JOB CARD (panel kit)
+  systems/MenuSystem.ts       the board (one door into the factory), THE
+                              JOB CARD, THE BOX PANEL (what is in a box,
+                              and UNPLUG) and THANKS FOR PLAYING
   ui/panel.ts, ui/pointer.ts, ui/fonts.ts   the RAVE RAID surface
                               language, re-accented furnace amber
 tools/
@@ -205,13 +226,18 @@ tools/
   floor-walk.mjs         THE FLOOR: tape defaults, clamps, snap, lattice
                          stamping, the plant law, persistence — asserted
   order-walk.mjs         THE SHOP, built BY HAND: the same aim + trigger
-                         the controller runs — auto-facing, Ⓑ's override,
-                         the link law, refusals, the delete tool, goals
-                         advancing in place, and the card's geometry
-                         (nothing over anything, nothing off the edge)
-  card-look.mjs          the Ⓐ card, page by page, as PNGs — painted text
-                         has no rects to assert, and "the text was
-                         obscured" is invisible to every state check
+                         the controller runs — one door, auto-facing, Ⓑ's
+                         override, the link law, refusals, the delete
+                         tool, lanes that BEND round plant, the box panel
+                         and its UNPLUG, the whole book advancing in
+                         place, the fourth gate, the vat, THE GOOP, and
+                         every card's geometry (nothing over anything,
+                         nothing off the edge)
+  card-look.mjs          every menu surface as a PNG — the board's tabs,
+                         the Ⓐ card's pages, the box panel on one of each
+                         machine, and THANKS FOR PLAYING. Painted text has
+                         no rects to assert, and "the text was obscured"
+                         is invisible to every state check
   preview-shot.mjs       screenshots of the moments that carry the look
   socket-look.mjs        a socket from 14 angles — the anti-culling check
                          (open geometry looks whole from one viewpoint and
@@ -220,19 +246,37 @@ tools/
 
 `DESIGN.md` has the full design notes and the roadmap. `FACTORY.md`
 carries the factory direction — PIECEWORK: the genre research, the whole
-design, and the phased build. Phases 0–2 are in (plus the bank's BILLS
-from phase 3): mark the floor out in hazard tape — it comes down once
-you're set up — and the board's ORDERS tab opens a five-sheet work book:
-feeds on the floor's sides, the two-handed pull re-aimed at bench
-machines whose intakes SWIVEL to meet the tube, rails and boxes that
-TURN THEMSELVES to connect — and Ⓑ turns one yourself when you disagree —
-rails you PULL out in one gesture rather than stamp a cell at a time
-(with bought sticks to bend the lane where you want it), supply lines you
-can HAUL back off a box to re-plumb it, a chest, a combiner, and a BANK
-counting every delivery. One entrance,
-one continuous session: goals advance in place on the Ⓐ card as you fill
-them, the catalogue grows with them, and when the book runs out the shop
-just stays open.
+design, and the phased build.
+
+**THE FACTORY** is in. Mark the floor out in hazard tape — it comes down
+once you're set up — and the board's **FACTORY** tab opens with exactly
+one button, because a menu of sheets you could start cold was a menu of
+traps. Inside, THE BOOK runs seven sheets deep and advances **in place**,
+onto the same floor, with everything you have built still standing:
+
+1. **FIRST GEAR** — stand a MAKER, run the amber feed into it, and watch
+   it stamp. Lift one off the chute with your fist to keep it stamping.
+2. **THE BANK** — stand the bank, stand ONE rail at the chute and HOLD
+   the trigger: the run hauls out of it like a tube out of a wall, and
+   **bends round anything in its way**.
+3. **THE LINE** — cyan wakes; a second maker, a second lane.
+4. **FIRST FITTING** — the COMBINER: two lanes become one.
+5. **NIGHT SHIFT** — violet, the CHEST, and re-plumbing a box you already
+   built by hauling its collar off in both hands.
+6. **THE FOURTH GATE** — six SERVOS into the bank, and the manifold on
+   the near side of your floor that has never opened, opens.
+7. **THE GOOP** — it is GREEN, nothing in the catalogue drinks it, and
+   the last thing in the book is a glass VAT. Fill it and something
+   climbs out onto your actual floor and dances.
+
+Along the way: feeds on the floor's four sides, the two-handed pull
+re-aimed at bench machines whose intakes SWIVEL to meet the tube, rails
+and boxes that TURN THEMSELVES to connect (and Ⓑ turns one yourself when
+you disagree), bought sticks to bend a lane exactly where you want it, a
+BOX PANEL on every machine — click one to see what is inside it and to
+UNPLUG its line without unbolting the machine — and a BANK counting every
+delivery. When the book runs out the shop just stays open: every feed,
+the whole catalogue, and nobody asking you for ten of anything.
 
 ## Checks
 

@@ -219,11 +219,98 @@ Runs are sequential (place → pull → pour, then the next flange), which
 keeps the loop tight and the teaching honest. Best time per job on the
 sheet; a rerun rolls a fresh seed, so the room deals new walls.
 
+## The shop floor
+
+The factory half of the game, and the half playtest reshaped hardest.
+Four things carry it now, and each one replaced something that was
+actively working against the player:
+
+- **ONE DOOR.** The board's FACTORY tab offers a single button. It used
+  to list every sheet you had ever reached and let you START any of
+  them — which dealt you sheet four's demands on a bare floor with none
+  of sheets one to three's feeds, plant or parts, and no way to get any.
+  Every entry but the first was a trap dressed as a choice. THE BOOK
+  advances inside the shift instead, posting the next sheet onto the
+  same floor with everything you built still standing.
+- **THE LADDER STARTS WITH THE MACHINE.** Sheet one used to ask for ten
+  draughts of fluid into a bank — a sheet about a hole in a box. It
+  asks for three stamped GEARS now: stand a MAKER, run the amber feed
+  into it, and watch the works make something. The bank arrives on
+  sheet two, when there is finally something to put in it, and the rail
+  arrives with it. The bank also stopped wearing a gland when the
+  draughts went: the magnet takes the NEAREST free one, and a bank that
+  caught every tube walked past it was the most-cursed object in the
+  game.
+- **CUT PLATE, NOT SPUN PIPE.** The first floor was built out of
+  cylinders — a drum for the maker, a drum for the bank, a round pillar
+  for every feed — and it read as a steam museum. Round is the shape of
+  things that HOLD; a shop floor is the trade of things that WORK. Every
+  chassis is a box now, every hopper a four-panel folded funnel, every
+  heavy joint a row of hex bolt heads and every span a welded gusset —
+  and every material shades FLAT, which is the one flag that turns a
+  low-poly prism from a smooth pipe into cut steel. Silhouettes differ in
+  height and mass, not only in plan: a tall press, a low strongbox, a
+  squat wide H, a pallet crate, a slatted deck, and one tank of glass.
+- **THE LANE BENDS.** A hauled rail run used to walk a plain Manhattan L
+  and stop dead at the first thing in its way, which on any floor worth
+  laying a lane across meant half your hauls died against the side of a
+  maker. The route is a real search over the lattice now — Dijkstra over
+  (cell, direction) with a turn penalty — so a clear floor still gets
+  the single-cornered L a hand would draw, and an obstructed one gets a
+  lane that goes AROUND. Posts still bend it deliberately where you
+  want the corner.
+
+## The box panel
+
+Point at any standing plant with an empty hand and pull the trigger.
+Two playtest notes, one panel: *"we should be able to check what is in a
+chest by clicking on it"* and *"we can't disconnect the tubes when
+they're connected to the boxes — I delete the boxes at the moment."*
+Both are the same card. It says what the machine is, what it is holding
+(a crate's stack, a chute's queue, a combiner's ports, a rail's cargo,
+the bank's whole vault, the vat's level) and what line is plumbed into
+it — and it carries UNPLUG, TURN and TAKE IT OUT.
+
+The two-handed TUG (grab the collar, haul it clear, hold while the joint
+strains) is still the good way to break a seal in the room, and is
+untouched. UNPLUG is the way you can FIND, which is a different
+requirement and deserved its own answer. Every route — the tug, UNPLUG,
+Ⓑ on a plumbed box, the wrecking bar — goes through one sim door now, so
+the hum stops and the iris shuts exactly once however it happened.
+
+## THE GOOP
+
+The book ends with a machine you cannot use. Six SERVOS crank the fourth
+manifold's gate off the near pillar — a hatch with crossed straps and
+eight bolt heads that has visibly never been opened — and behind it is
+PEARL, which is GREEN, and nothing in the catalogue drinks green. The
+last sheet hands you the VAT, the only glass on the floor, and asks you
+to run the green line into it.
+
+What climbs out is RAVE RAID's headliner, vendored whole (`src/goop/`):
+the same twenty-blob verlet soup fused by a smooth-min into one
+raymarched isosurface, the same overdamped wobble, the same club dance
+stances. What did NOT come across is the fight — no moveset, no
+telegraphs, no KO, no torn-off lumps, no hit detection. Nothing in a
+factory throws a jab.
+
+The arc is four beats and every one of them is a real object in your
+room: the dome gathers inside the tank; it swells over the rim and pours
+down the outside onto the boards; it stands up out of the puddle (the
+sim's own glob→boxer morph, the trick this creature was built around);
+and then it dances, hitting a stance on every beat and keeping you in
+its eyes. THANKS FOR PLAYING comes up over its shoulder, and dismissing
+the card leaves it dancing.
+
 ## The board
 
 RAVE RAID's live-service lobby discipline, sized to a shop: one rail
-(JOBS / SYSTEM), one content region, THE sheet on the right with the one
-primary CTA. AR-specific: the board RE-PLANTS in front of wherever the
+(JOBS / FACTORY / SYSTEM), one content region, THE sheet on the right
+with the one primary CTA. Every machine and every part carries its own
+line-art SHOP DRAWING (`ui/icons.ts`) on the catalogue, on the goal
+ladder and in the box panel — a list of seven words in one weight is a
+thing you re-read every time; seven silhouettes is a thing you learn
+once, and the ghost on your ray wears the same shape. AR-specific: the board RE-PLANTS in front of wherever the
 player is standing every time it returns — in passthrough the menu comes
 to the room, not the room to the menu. Mid-shift it's gone entirely;
 right Ⓐ raises THE JOB CARD (live run states, the clock, BACK TO IT /
@@ -269,4 +356,14 @@ and the fiction is the boss here.
 - **More services.** STEAM (billowing, scalding, and now that the
   ceiling takes ports, it would live up there on principle), DATA
   (glass fibre, light packets, wants corners). Each must earn a
-  distinct pour, voice and metal or it doesn't ship.
+  distinct pour, voice and metal or it doesn't ship. PEARL is spent —
+  the fourth manifold got its one, unrepeatable moment.
+- **After the goop.** It dances until you down tools, which is the right
+  ending and not yet a right AFTERWARDS. It should have somewhere to be:
+  wandering the floor, watching the machines, sitting on the bank. And
+  the shop should acknowledge it — a maker that stops when it walks past,
+  a rail it steps over.
+- **A second vat.** The catalogue refuses one on purpose (one goop is the
+  whole point of the goop), but the machine underneath is general: a tank
+  that drinks a line and produces something that is not a part is the
+  hook for whatever comes after the book.

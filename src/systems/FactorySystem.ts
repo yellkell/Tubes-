@@ -33,7 +33,7 @@ import {
   Quaternion,
   Vector3,
 } from 'three';
-import { FACTORY, FLOW, ITEMS, LINES, SEAT, TUBE, UNITS, type ItemId } from '../config.js';
+import { FACTORY, FLOW, ITEMS, LINES, ORDERS, SEAT, TUBE, UNITS, type ItemId } from '../config.js';
 import * as sfx from '../audio/sfx.js';
 import { buzz } from '../game/haptics.js';
 import { orderComplete } from '../game/flow.js';
@@ -46,10 +46,13 @@ import {
   chestParts,
   chuteParts,
   freshRun,
+  openShopFully,
   orderSpec,
   plant,
+  postOrder,
   runForSide,
   runSeatedAt,
+  takesTube,
   type FactoryRun,
   type Part,
 } from '../factory/state.js';
@@ -94,6 +97,9 @@ export const factoryView: {
     parts: number;
     units: number;
     bank: Partial<Record<ItemId, number>>;
+    /** THE FINALE: where the goop is, and how full the vat is (0..1). */
+    goop?: string;
+    brew?: number;
   };
   /** How close a seated line is to coming off its gland (0..1). */
   strain?: (side: FloorSide) => number;
@@ -137,6 +143,13 @@ export const factoryView: {
   drop?: (x: number, y: number, z: number) => boolean;
   timeScale?: (s: number) => void;
   parts?: () => Array<{ id: number; item: ItemId; kind: string; unit?: number }>;
+  /** TOOLS ONLY. Open every feed and the whole catalogue without walking
+   *  the book — a look-tool wants one of each machine on the floor, and
+   *  a finale walk wants to be standing at the last sheet. Neither is a
+   *  door the game itself ever opens. */
+  openAll?: () => void;
+  /** TOOLS ONLY. Post a specific sheet into the live shift. */
+  postSheet?: (index: number) => void;
 } = {};
 
 const SHELL_PAD = 0.03;
@@ -209,6 +222,13 @@ export class FactorySystem extends createSystem({}) {
   /** When each part first appeared — a new one POPS, so "something came
    *  out of the maker" is impossible to miss. */
   private partSeen = new Map<number, number>();
+  /** THE FOURTH GATE, coming off: seconds into PEARL's hatch dropping.
+   *  It is a one-shot piece of theatre and it only ever plays once. */
+  private hatchT = new Map<FloorSide, number>();
+  /** The vat draining as the goop climbs out of it (0 = full, 1 = dry). */
+  private vatDrain = 0;
+  /** Seconds until the next bubble breaks the brew's surface. */
+  private bubbleT = 0;
 
   init(): void {
     factoryView.state = () => {
@@ -232,6 +252,8 @@ export class FactorySystem extends createSystem({}) {
         units: plant.units.length,
         bank: { ...plant.bank },
         upgrades: ownedUpgrades(),
+        goop: plant.goop,
+        brew: plant.brewT / UNITS.vat.brewS,
       };
     };
     /** Every unit as it stands: type, cell, facing, and where it sends.
@@ -259,7 +281,7 @@ export class FactorySystem extends createSystem({}) {
     factoryView.glands = (side) => {
       const from = side ? runForSide(side)?.pointA : undefined;
       return plant.units
-        .filter((u) => u.type === 'maker' || u.type === 'dock')
+        .filter((u) => takesTube(u))
         .map((u) => {
           glandPose(u, _g, _gn, from);
           return {
@@ -303,9 +325,9 @@ export class FactorySystem extends createSystem({}) {
     factoryView.unseat = (unitId) => {
       const run = runSeatedAt(unitId);
       if (!run) return false;
-      this.stopRunHum(run);
+      // retractRun pushes the 'unseat' event; drainEvents kills the hum
+      // and shuts the iris, so there is exactly one code path for it.
       retractRun(run);
-      sfx.boltSpin();
       sfx.droopSettle();
       return true;
     };
@@ -313,6 +335,10 @@ export class FactorySystem extends createSystem({}) {
     factoryView.drop = (x, y, z) => this.dropCarried('right', _g.set(x, y, z));
     factoryView.timeScale = (s) => {
       plant.timeScale = Math.max(0.1, Math.min(30, s));
+    };
+    factoryView.openAll = () => openShopFully();
+    factoryView.postSheet = (index) => {
+      if (index >= 0 && index < ORDERS.length) postOrder(index);
     };
     factoryView.parts = () =>
       plant.parts.map((p) => ({
@@ -337,7 +363,7 @@ export class FactorySystem extends createSystem({}) {
 
     // The feeds stand on the tape's sides — reposed every frame (cheap,
     // and the floor may have moved between shifts).
-    this.poseFeeds();
+    this.poseFeeds(delta);
 
     // Hands: the pull and the carry — only mid-shift, never under the card.
     if (active && !site.paused) this.tickHands(delta);
@@ -373,6 +399,8 @@ export class FactorySystem extends createSystem({}) {
     if (!live) {
       for (const refs of this.feeds.values()) refs.group.removeFromParent();
       this.feeds.clear();
+      this.hatchT.clear();
+      this.vatDrain = 0;
       for (const hw of this.runHw.values()) this.dropRunHw(hw);
       this.runHw.clear();
       for (const refs of this.unitRefs.values()) this.dropUnitRefs(refs);
@@ -527,6 +555,9 @@ export class FactorySystem extends createSystem({}) {
       refs.gland.guideMat.dispose();
     }
     if (refs.lampMat) refs.lampMat.dispose();
+    if (refs.halo) refs.halo.dispose();
+    if (refs.fill) refs.fill.mat.dispose();
+    if (refs.vatGlow) refs.vatGlow.dispose();
   }
 
   /* ── feeds ────────────────────────────────────────────────────────────── */
@@ -547,7 +578,7 @@ export class FactorySystem extends createSystem({}) {
     point.addScaledVector(normal, refs.mouthOffset).setY(FACTORY.spoutHeight);
   }
 
-  private poseFeeds(): void {
+  private poseFeeds(delta: number): void {
     for (const [side, refs] of this.feeds) {
       this.sideMid(side, _g);
       refs.group.position.set(_g.x, 0, _g.z);
@@ -555,7 +586,30 @@ export class FactorySystem extends createSystem({}) {
       refs.group.rotation.y = Math.atan2(n.x, n.z);
       const awake = Boolean(plant.feedsAwake[side]);
       const flash = this.feedFlash.get(side) ?? 0;
-      if (flash > 0) this.feedFlash.set(side, flash - 0.016);
+      if (flash > 0) this.feedFlash.set(side, flash - delta);
+
+      // THE FOURTH GATE COMES OFF. PEARL is built with a bolted hatch
+      // over its spout — a door that has visibly never been opened — and
+      // this is the one time it ever moves: the straps let go, the plate
+      // tips off its bottom edge, and it falls away down the face of the
+      // column. Six servos bought this; it is worth two seconds.
+      if (refs.hatch) {
+        if (!awake) {
+          refs.hatch.visible = true;
+        } else {
+          const t = (this.hatchT.get(side) ?? 0) + delta;
+          this.hatchT.set(side, t);
+          const p = Math.min(1, t / 1.6);
+          const swing = p * p; // it accelerates, because it is heavy
+          refs.hatch.rotation.x = -swing * 1.5;
+          refs.hatch.position.y = -swing * 1.1;
+          refs.hatch.position.z = swing * 0.16;
+          if (p >= 1) {
+            refs.hatch.removeFromParent();
+            refs.hatch = null;
+          }
+        }
+      }
       const breathe = 0.5 + 0.5 * Math.sin(this.clock * 2.2);
       refs.glowMat.opacity = awake
         ? 0.25 + 0.2 * breathe + Math.max(0, flash) * 0.5
@@ -794,7 +848,11 @@ export class FactorySystem extends createSystem({}) {
       let bestUnit = -1;
       let bestD = FACTORY.seatRadius;
       for (const unit of plant.units) {
-        if (unit.type !== 'maker' && unit.type !== 'dock') continue;
+        // ONLY A MAKER OR THE VAT. The bank used to wear a gland too,
+        // back when a sheet counted draughts — and since the magnet takes
+        // the NEAREST free one, walking a collar past a bank on the way
+        // to a maker had it snatched out of your hands every time.
+        if (!takesTube(unit)) continue;
         if (runSeatedAt(unit.id)) continue;
         // A GLAND YOU JUST TORE THE LINE OFF DOESN'T GRAB IT BACK. The
         // head is, by definition, right beside the box you just hauled
@@ -1196,6 +1254,29 @@ export class FactorySystem extends createSystem({}) {
         if (ev.side) this.feedFlash.set(ev.side, 1);
       } else if (ev.kind === 'post') {
         sfx.stampDone();
+      } else if (ev.kind === 'unseat') {
+        // ONE DOOR FOR EVERY UNPLUG. The tug, the box panel's UNPLUG, Ⓑ
+        // on a plumbed box and the wrecking bar all end in sim's
+        // retractRun, which pushes this — so the hum stops and the iris
+        // shuts exactly once, however the seal was broken. (Ⓑ used to
+        // call retractRun straight and leave a maker humming at a tube
+        // that had gone home.)
+        if (ev.side) {
+          const hw = this.runHw.get(ev.side);
+          if (hw?.humOn) {
+            sfx.stopHum(`plant-${ev.side}`);
+            hw.humOn = false;
+          }
+        }
+        const gland = ev.unit !== undefined ? this.unitRefs.get(ev.unit)?.gland : null;
+        if (gland) gland.iris.visible = true;
+        // A vat that loses its line keeps its level and waits.
+        sfx.boltSpin();
+      } else if (ev.kind === 'goop') {
+        // THE VAT IS FULL. GoopSystem watches plant.goop and does the
+        // rest; this is the noise and the shove in the wrists.
+        sfx.goopRise();
+        buzz(this.world, 'both', 1, 220);
       } else if (ev.kind === 'complete') {
         sfx.stampDone();
         sfx.ceremonyChord();
@@ -1261,6 +1342,29 @@ export class FactorySystem extends createSystem({}) {
   private tickUnitDressing(delta: number): void {
     this.dockFlash = Math.max(0, this.dockFlash - delta * 2.2);
     const breathe = 0.5 + 0.5 * Math.sin(this.clock * 2.2);
+    // THE BREW. The level in the vat is the only progress bar in TUBES
+    // that is a real object in your room, and it is worth the fuss: it
+    // comes up while the green line pours, bubbles as it goes, and
+    // DRAINS as the thing inside it stands up and climbs out.
+    const brewing = plant.goop === 'brewing';
+    if (plant.goop === 'born' || plant.goop === 'dancing' || plant.goop === 'done') {
+      this.vatDrain = Math.min(1, this.vatDrain + delta / 1.8);
+    } else if (plant.goop === 'none') {
+      this.vatDrain = 0;
+    }
+    if (brewing) {
+      this.bubbleT -= delta;
+      if (this.bubbleT <= 0) {
+        const fill = Math.min(1, plant.brewT / UNITS.vat.brewS);
+        this.bubbleT = 1.5 - fill * 1.0;
+        sfx.vatBubble(fill);
+      }
+    } else {
+      this.bubbleT = 0;
+    }
+    const brewP =
+      Math.min(1, plant.brewT / UNITS.vat.brewS) * (1 - this.vatDrain);
+
     for (const unit of plant.units) {
       const refs = this.unitRefs.get(unit.id);
       if (!refs) continue;
@@ -1276,6 +1380,20 @@ export class FactorySystem extends createSystem({}) {
       }
       if (refs.halo) {
         refs.halo.opacity = 0.16 + 0.14 * breathe + 0.55 * this.dockFlash;
+      }
+      if (refs.fill) {
+        // The level, in the tank's own local space. It surges a little as
+        // it fills — a tank that comes up perfectly smoothly reads as a
+        // loading bar, and this is meant to read as a liquid.
+        const surge = brewing ? 1 + 0.035 * Math.sin(this.clock * 3.4) : 1;
+        const h = Math.max(0.0005, refs.fill.top * brewP * surge);
+        refs.fill.mesh.visible = brewP > 0.002;
+        refs.fill.mesh.scale.y = h;
+        refs.fill.mesh.position.y = refs.fill.floor + h / 2;
+        refs.fill.mat.emissiveIntensity = 0.6 + 0.5 * breathe;
+      }
+      if (refs.vatGlow) {
+        refs.vatGlow.opacity = 0.1 + 0.12 * breathe + 0.35 * brewP;
       }
     }
   }

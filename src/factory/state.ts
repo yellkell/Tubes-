@@ -17,6 +17,7 @@ import {
   ORDERS,
   TUBE,
   type ItemId,
+  type LineId,
   type LineSpec,
   type OrderSpec,
   type UnitType,
@@ -107,7 +108,19 @@ export interface Part {
 
 /** One-shot happenings the sim reports and FactorySystem performs. */
 export interface PlantEvent {
-  kind: 'craft' | 'deliver' | 'bank' | 'complete' | 'post' | 'feed-wake';
+  kind:
+    | 'craft'
+    | 'deliver'
+    | 'bank'
+    | 'complete'
+    | 'post'
+    | 'feed-wake'
+    /** A seated line came off a gland — by the tug, by the wrecking bar,
+     *  or by the box panel's UNPLUG. One event, so the hum stops and the
+     *  iris shuts exactly once however the line was freed. */
+    | 'unseat'
+    /** The vat is full: THE GOOP is born. */
+    | 'goop';
   unit?: number;
   item?: ItemId;
   side?: FloorSide;
@@ -128,16 +141,16 @@ export interface Plant {
   orderIndex: number;
   /** The book is done — the shop stays open with nothing left to ask. */
   goalsDone: boolean;
-  /** Delivered toward the live sheet (fluid sheets count draughts). */
+  /** Progress toward the live sheet: parts stamped, parts banked, or the
+   *  one brew, depending on the sheet's target kind. */
   count: number;
-  /** Fluid accumulator (whole draughts peel off into `count`). */
-  fluidAcc: number;
   units: Unit[];
   nextUnit: number;
   runs: FactoryRun[];
   parts: Part[];
   nextPart: number;
-  /** Which feeds are awake (posted sheets wake them; PEARL never). */
+  /** Which feeds are awake. The book wakes three of them; the fourth
+   *  (PEARL, on the near side) waits for its gate to be paid for. */
   feedsAwake: Partial<Record<FloorSide, boolean>>;
   /** Build catalogue switched on by the sheets so far. */
   unitsAvailable: UnitType[];
@@ -146,6 +159,17 @@ export interface Plant {
   elapsedMs: number;
   /** Sim pace multiplier — the tools' fast-forward; play is 1. */
   timeScale: number;
+  /** THE BREW — seconds of PEARL that have poured into the vat. The vat
+   *  is the only machine in the shop that does not make a PART, so its
+   *  progress lives here rather than in a chute. */
+  brewT: number;
+  /** Where the finale stands. 'none' until a vat is drinking green;
+   *  'brewing' while the level comes up; 'born' the instant it is full
+   *  (GoopSystem takes it from there); 'dancing' once it is on its feet;
+   *  'done' when the card has been raised. */
+  goop: 'none' | 'brewing' | 'born' | 'dancing' | 'done';
+  /** The vat the goop came out of (−1 = none yet). */
+  goopUnit: number;
   /** Bumped on any structural change; systems rebuild what they own. */
   generation: number;
   events: PlantEvent[];
@@ -156,7 +180,6 @@ export const plant: Plant = {
   orderIndex: -1,
   goalsDone: false,
   count: 0,
-  fluidAcc: 0,
   units: [],
   nextUnit: 1,
   runs: [],
@@ -167,6 +190,9 @@ export const plant: Plant = {
   bank: {},
   elapsedMs: 0,
   timeScale: 1,
+  brewT: 0,
+  goop: 'none',
+  goopUnit: -1,
   generation: 0,
   events: [],
 };
@@ -217,6 +243,25 @@ export function bankTotal(): number {
   return Object.values(plant.bank).reduce((s, n) => s + (n ?? 0), 0);
 }
 
+/** Does this kind of plant take a supply tube? Only two do — the MAKER,
+ *  which drinks a colour and stamps its part, and the VAT, which drinks
+ *  the fourth manifold and makes something else entirely. The BANK used
+ *  to, back when a sheet counted draughts, and every player who walked a
+ *  collar past one had it snatched out of their hands. */
+export function takesTube(unit: Unit): boolean {
+  return unit.type === 'maker' || unit.type === 'vat';
+}
+
+/** Everything the given box is holding right now, for the box panel:
+ *  a chest's stack, a chute's queue, a combiner's two ports. */
+export function unitContents(unitId: number): Part[] {
+  return plant.parts.filter(
+    (p) =>
+      (p.at.kind === 'chest' || p.at.kind === 'chute' || p.at.kind === 'port') &&
+      p.at.unit === unitId,
+  );
+}
+
 /** A fresh spout run: the capped stub, straight out of the pillar. */
 export function freshRun(side: FloorSide, line: LineSpec, spout: Vector3, normal: Vector3): FactoryRun {
   const head = spout.clone().addScaledVector(normal, TUBE.stubLength);
@@ -258,7 +303,6 @@ export function clearPlant(): void {
   plant.orderIndex = -1;
   plant.goalsDone = false;
   plant.count = 0;
-  plant.fluidAcc = 0;
   plant.units = [];
   plant.runs = [];
   plant.parts = [];
@@ -266,23 +310,24 @@ export function clearPlant(): void {
   plant.unitsAvailable = [];
   plant.elapsedMs = 0;
   plant.timeScale = 1;
+  plant.brewT = 0;
+  plant.goop = 'none';
+  plant.goopUnit = -1;
   plant.events.length = 0;
   plant.generation++;
 }
 
-/** Post a sheet into the live shift: wake its feeds, open its catalogue. */
+/** Post a sheet into the live shift: wake its feeds, open its catalogue.
+ *  `elapsedMs` is NOT reset — the shift is one continuous session and the
+ *  card's clock is the shift's clock, not the sheet's. */
 export function postOrder(index: number): void {
   const spec = ORDERS[index];
   plant.mode = 'shop';
   plant.orderIndex = index;
   plant.goalsDone = false;
   plant.count = 0;
-  plant.fluidAcc = 0;
-  plant.elapsedMs = 0;
   for (const feedLine of spec.wakes.feeds ?? []) {
-    for (const [side, line] of Object.entries(FACTORY.sides) as Array<
-      [FloorSide, 'mains' | 'coolant' | 'volt' | null]
-    >) {
+    for (const [side, line] of Object.entries(FACTORY.sides) as Array<[FloorSide, LineId]>) {
       if (line === feedLine && !plant.feedsAwake[side]) {
         plant.feedsAwake[side] = true;
         plant.events.push({ kind: 'feed-wake', side });
@@ -306,15 +351,12 @@ export function openShopFully(): void {
   plant.orderIndex = -1;
   plant.goalsDone = true;
   plant.count = 0;
-  plant.fluidAcc = 0;
-  for (const [side, line] of Object.entries(FACTORY.sides) as Array<
-    [FloorSide, 'mains' | 'coolant' | 'volt' | null]
-  >) {
+  for (const [side, line] of Object.entries(FACTORY.sides) as Array<[FloorSide, LineId]>) {
     if (line && !plant.feedsAwake[side]) {
       plant.feedsAwake[side] = true;
       plant.events.push({ kind: 'feed-wake', side });
     }
   }
-  plant.unitsAvailable = ['dock', 'maker', 'belt', 'combiner', 'chest'];
+  plant.unitsAvailable = ['dock', 'maker', 'belt', 'combiner', 'chest', 'vat'];
   plant.generation++;
 }

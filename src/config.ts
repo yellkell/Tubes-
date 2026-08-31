@@ -210,8 +210,16 @@ export const FLOW = {
  *            violet plasma that travels in pulses and BITES when it
  *            lands. Crackle, arc, zap.
  */
+/** Every service the works runs. The first three are the trade; PEARL is
+ *  the fourth manifold — bolted shut for the whole book, and GREEN when
+ *  it finally cracks (see THE GOOP, the last sheet). */
+export type LineId = 'mains' | 'coolant' | 'volt' | 'pearl';
+/** The three lines a MAKER can drink: the ones that stamp parts. PEARL
+ *  makes nothing — it pours the goop, and only the VAT takes it. */
+export type CoreLineId = 'mains' | 'coolant' | 'volt';
+
 export interface LineSpec {
-  id: 'mains' | 'coolant' | 'volt';
+  id: LineId;
   name: string;
   /** UI + text accents. */
   hex: string;
@@ -230,7 +238,7 @@ export interface LineSpec {
   chop: number;
 }
 
-export const LINES: Record<'mains' | 'coolant' | 'volt', LineSpec> = {
+export const LINES: Record<LineId, LineSpec> = {
   mains: {
     id: 'mains',
     name: 'MAINS',
@@ -273,6 +281,25 @@ export const LINES: Record<'mains' | 'coolant' | 'volt', LineSpec> = {
     pulseHz: 2.2,
     chop: 0.85,
   },
+  /** PEARL — the fourth manifold. It sleeps behind a shut iris for the
+   *  whole book, wearing nothing but a name, and the first thing anybody
+   *  ever sees of it is the moment it opens: not amber, not cyan, not
+   *  violet, but GREEN — and what pours out of it is alive. The slowest
+   *  pour in the game on purpose: you watch this one arrive. */
+  pearl: {
+    id: 'pearl',
+    name: 'PEARL',
+    hex: '#4dff9b',
+    glow: 0x4dff9b,
+    deep: 0x02361d,
+    foam: 0xdaffe9,
+    shell: 0x2f3a33,
+    roughness: 0.34,
+    metalness: 0.6,
+    flowSpeed: 1.5,
+    pulseHz: 0.32,
+    chop: 0,
+  },
 };
 
 /* ────────────────────────────── THE JOBS ─────────────────────────────────
@@ -291,7 +318,7 @@ export interface JobSpec {
   id: string;
   name: string;
   brief: string;
-  runs: Array<'mains' | 'coolant' | 'volt'>;
+  runs: CoreLineId[];
   longHaul?: boolean;
 }
 
@@ -444,6 +471,24 @@ export const UNITS = {
   },
   /** Where a unit's tube gland sits (m up its back face). */
   glandHeight: 0.7,
+  /** THE VAT — the last machine in the book, and the only one that isn't
+   *  shop plant: a squat green-glass tank the fourth manifold pours into.
+   *  Taller and wider than anything else on the floor, because what comes
+   *  out of it has to have been IN there. */
+  vat: {
+    size: 0.34,
+    height: 0.62,
+    /** The tank's inside floor (m up) — where the level starts and where
+     *  the goop first forms. GoopSystem needs it as badly as the builder
+     *  does, so it lives here rather than as a local in either. */
+    tankFloor: 0.39,
+    /** Seconds of PEARL pouring in before the goop is done. */
+    brewS: 14,
+  },
+  /** THE BOLT — the head diameter of the hex bolts studded round every
+   *  chassis. Small, and there are dozens: bolts are what make a box read
+   *  as fabricated rather than modelled. */
+  boltR: 0.011,
 };
 
 /* ────────────────────────────── THE FACTORY ──────────────────────────────
@@ -464,19 +509,20 @@ export const FACTORY = {
     far: 'mains',
     left: 'coolant',
     right: 'volt',
-    near: null,
-  } as Record<'far' | 'left' | 'right' | 'near', 'mains' | 'coolant' | 'volt' | null>,
-  /** The spout: where the stub waits on the pillar (m up), and the
-   *  supply rate a seated run pours at (units/s — one maker's appetite
-   *  with a little headroom, which is the whole throttle design). */
+    near: 'pearl',
+  } as Record<'far' | 'left' | 'right' | 'near', LineId>,
+  /** The spout: where the stub waits on the pillar (m up). */
   spoutHeight: 1.05,
-  fluidRate: 0.8,
   /** Craft times. Makers drink and stamp; combiners fit two parts. */
   makerS: 4,
   combinerS: 6,
   /** Rails: part speed along a chain, and a chute's queue depth. */
   railSpeed: 0.35,
   chuteSlots: 2,
+  /** How many cells a hauled rail run may detour around standing plant
+   *  before it gives up and stops short. Generous — a lane that refuses
+   *  to go round a box is the bug this number exists to kill. */
+  routeBudget: 900,
   chestCap: 12,
   /** An unbolted supply run telescopes home over this long. */
   retractS: 0.5,
@@ -504,7 +550,7 @@ export interface ItemSpec {
   name: string;
   tier: 1 | 2;
   /** The lines whose look this part carries (first = the body). */
-  lineage: Array<'mains' | 'coolant' | 'volt'>;
+  lineage: CoreLineId[];
   /** THE DOCKET — what the works DOES with it. One line, on the sheet:
    *  every part is FOR something behind your walls, and the fiction
    *  says so out loud. */
@@ -556,8 +602,10 @@ export const ITEMS: Record<ItemId, ItemSpec> = {
   },
 };
 
-/** The maker's law: feed it a colour, get the colour's base part. */
-export const MAKES: Record<'mains' | 'coolant' | 'volt', ItemId> = {
+/** The maker's law: feed it a colour, get the colour's base part. PEARL
+ *  is absent on purpose — a maker handed the fourth manifold just stands
+ *  there dripping. Only the VAT knows what to do with that. */
+export const MAKES: Partial<Record<LineId, ItemId>> = {
   mains: 'gear',
   coolant: 'cell',
   volt: 'chip',
@@ -637,62 +685,84 @@ export const UPGRADES: UpgradeSpec[] = [
   },
 ];
 
-/* ────────────────────────────── THE ORDERS ───────────────────────────────
- * The work book: deliver 10 × the target, each sheet one verb deeper
- * (the whole research section of FACTORY.md, made config). Completing a
- * sheet posts the next one INTO the same shift — the plant persists,
- * the factory grows; DOWN TOOLS clears the floor. Sheets 6–10 (tees,
- * the bank's bills, the second spout) are the next phase of the book.
+/* ────────────────────────────── THE BOOK ─────────────────────────────────
+ * ONE SHIFT, ONE BOOK. There used to be five sheets on the board and you
+ * could START any of them — which meant starting sheet four on an empty
+ * floor with no feeds awake, no rails, no gears and nothing to do about
+ * any of it. Every entry but the first was a trap. So the board offers
+ * exactly one door now (OPEN THE FACTORY) and the book advances INSIDE
+ * the shift: fill a sheet and the next is posted onto the same floor,
+ * with the plant you already built still standing.
+ *
+ * The ladder teaches one verb at a time, in the order a shop actually
+ * grows:
+ *
+ *   1  a MAKER and a tube            — the works makes a thing
+ *   2  a BANK and a rail             — the thing goes somewhere
+ *   3  a second line                 — two chains at once
+ *   4  the COMBINER                  — two chains become one
+ *   5  VOLT and the CHEST            — depth, and somewhere to put it
+ *   6  SERVOS for the fourth gate    — the machine that opens the last door
+ *   7  the VAT, and THE GOOP         — the fourth manifold, and what lives in it
  */
-export type UnitType = 'dock' | 'maker' | 'belt' | 'combiner' | 'chest' | 'post';
+export type UnitType = 'dock' | 'maker' | 'belt' | 'combiner' | 'chest' | 'post' | 'vat';
+
+/** What a sheet counts.
+ *   craft — parts STAMPED anywhere on the floor (no bank needed: this is
+ *           how sheet 1 can be about the maker and nothing else)
+ *   item  — parts DELIVERED into the bank
+ *   brew  — the vat's one and only output, and the end of the book */
+export type OrderTarget =
+  | { kind: 'craft'; item: ItemId }
+  | { kind: 'item'; item: ItemId }
+  | { kind: 'brew' };
 
 export interface OrderSpec {
   id: string;
   name: string;
   brief: string;
-  /** Deliver `goal` of this to the BANK. Fluid targets drink through
-   *  the bank's own gland; item targets ride belts or hands. */
-  target: { kind: 'fluid'; line: 'mains' | 'coolant' | 'volt' } | { kind: 'item'; item: ItemId };
+  target: OrderTarget;
   goal: number;
   /** The GOALS page's deeper read: what this actually asks of you. */
   steps: string[];
   /** What this sheet switches on the morning it's posted. */
-  wakes: { feeds?: Array<'mains' | 'coolant' | 'volt'>; units?: UnitType[] };
+  wakes: { feeds?: LineId[]; units?: UnitType[] };
 }
 
 export const ORDERS: OrderSpec[] = [
   {
-    id: 'first-draught',
-    name: 'FIRST DRAUGHT',
-    brief: 'Stand the BANK, then run a tube from the amber feed into its collar — the collar turns to meet you, so just bring it near. The works pours; the bank drinks ten draughts.',
+    id: 'first-gear',
+    name: 'FIRST GEAR',
+    brief:
+      'Stand a MAKER on the floor and run the amber feed straight into its collar. The collar turns to meet you — just bring it near. Then watch: the works stamps a GEAR every few seconds. Its chute holds two, so lift one off with your fist to keep it stamping.',
     steps: [
-      'Ⓐ → BUILD → BANK, then trigger on the floor to stand it',
-      'Grab the amber feed\u2019s tube with both grips',
-      'Carry the head to the bank\u2019s collar until it snaps home',
+      'Ⓐ → BUILD → MAKER, then trigger on the floor to stand it',
+      'Take the amber feed\u2019s collar in BOTH grips and haul it to the maker',
+      'Squeeze near a finished gear to lift it off the chute',
     ],
-    target: { kind: 'fluid', line: 'mains' },
-    goal: 10,
-    // Everything the first real chain needs, from the first minute —
-    // the shop is never a locked room.
-    wakes: { feeds: ['mains'], units: ['dock', 'maker', 'belt'] },
+    target: { kind: 'craft', item: 'gear' },
+    goal: 3,
+    wakes: { feeds: ['mains'], units: ['maker'] },
   },
   {
-    id: 'piece-work',
-    name: 'PIECE WORK',
-    brief: 'Now make something. A MAKER fed with amber stamps a GEAR every few seconds onto its chute; RAILS carry them to the bank.',
+    id: 'the-bank',
+    name: 'THE BANK',
+    brief:
+      'Gears piling up on a chute are gears going nowhere. Stand the BANK, then stand ONE rail at the maker\u2019s chute and HOLD the trigger — the run hauls out of it like a tube out of a wall, bending round anything in its way, all the way to the bank.',
     steps: [
-      'Stand a MAKER \u2014 then take the amber collar off the bank in BOTH hands and HAUL until it lets go',
+      'Stand the BANK anywhere on the floor',
       'Stand a RAIL at the maker\u2019s chute, then HOLD the trigger and pull the run to the bank',
       'Rails point themselves — they turn to feed whatever they touch',
     ],
     target: { kind: 'item', item: 'gear' },
     goal: 10,
-    wakes: {},
+    wakes: { units: ['dock', 'belt'] },
   },
   {
     id: 'the-line',
     name: 'THE LINE',
-    brief: 'The cyan feed wakes. A second maker, a second lane — CELLS this time, and two chains sharing one dock.',
+    brief:
+      'The cyan feed wakes. A second maker, a second lane — CELLS this time, and two chains sharing one bank.',
     steps: [
       'Stand a second MAKER near the cyan feed',
       'Run its tube, and rail its chute into the line you already have',
@@ -704,7 +774,8 @@ export const ORDERS: OrderSpec[] = [
   {
     id: 'first-fitting',
     name: 'FIRST FITTING',
-    brief: 'The COMBINER: gears into one side, cells into the other, PUMPS out the front. Two lines becoming one is the whole trade.',
+    brief:
+      'The COMBINER: gears into one side, cells into the other, PUMPS out the front. Two lines becoming one is the whole trade.',
     steps: [
       'Stand a COMBINER where both lines can reach its two sides',
       'Rail the gear line into one side, the cell line into the other',
@@ -717,15 +788,43 @@ export const ORDERS: OrderSpec[] = [
   {
     id: 'night-shift',
     name: 'NIGHT SHIFT',
-    brief: 'Violet wakes. CHIPS meet cells and make LAMPS — and the CHEST arrives to hold what runs ahead of the line.',
+    brief:
+      'Violet wakes. CHIPS meet cells and make LAMPS — and the CHEST arrives to hold what runs ahead of the line. Click any box to see what is inside it.',
     steps: [
-      'Haul a maker\u2019s collar off in both hands and re-seat it on the violet line — the same box now stamps CHIPS',
+      'Haul a maker\u2019s collar off in both hands and re-seat it on the violet line \u2014 the same box now stamps CHIPS',
       'Feed chips and cells to the combiner',
       'Stand a CHEST anywhere a line runs ahead of itself',
     ],
     target: { kind: 'item', item: 'lamp' },
     goal: 10,
     wakes: { feeds: ['volt'], units: ['chest'] },
+  },
+  {
+    id: 'the-fourth-gate',
+    name: 'THE FOURTH GATE',
+    brief:
+      'There is a fourth manifold on the near side of your floor and it has never opened. It is bolted, not locked — and the bolts are SERVOS. Bank six of them and the works cranks the gate itself.',
+    steps: [
+      'SERVO is a GEAR and a CHIP fitted together \u2014 amber and violet into one combiner',
+      'Six into the bank, and the near pillar starts to move',
+    ],
+    target: { kind: 'item', item: 'servo' },
+    goal: 6,
+    wakes: {},
+  },
+  {
+    id: 'the-goop',
+    name: 'THE GOOP',
+    brief:
+      'The fourth manifold is open, and it is GREEN. Nothing in the catalogue drinks that — so stand the VAT, the last thing in the book, and run the green line into it. Then stand back.',
+    steps: [
+      'Ⓐ → BUILD → VAT, and stand it with room around it',
+      'Haul the GREEN collar off the near pillar with both hands',
+      'Seat it in the vat, and watch the level come up',
+    ],
+    target: { kind: 'brew' },
+    goal: 1,
+    wakes: { feeds: ['pearl'], units: ['vat'] },
   },
 ];
 
@@ -749,10 +848,18 @@ export const BOARD = {
    *  found text sitting on other text, and the honest fix was a bigger
    *  card, not smaller type — you read this at a metre, in passthrough.
    *  Kept at 1000 px/m so every font size below is still true. */
-  cardW: 0.68,
-  cardH: 0.64,
-  cardPx: [680, 640] as [number, number],
+  cardW: 0.78,
+  cardH: 0.72,
+  cardPx: [780, 720] as [number, number],
   cardPosition: [0, 1.24, -1.0] as [number, number, number],
+  /** THE BOX PANEL — click any standing plant and this opens beside your
+   *  face: what is in it, what is plumbed into it, and the two verbs
+   *  (UNPLUG, TAKE IT OUT) that used to have no home at all. Smaller
+   *  than the shift card: it answers one question about one box. */
+  boxW: 0.56,
+  boxH: 0.5,
+  boxPx: [560, 500] as [number, number],
+  boxPosition: [0, 1.26, -0.86] as [number, number, number],
 };
 
 /** The celebration when a job's last run lands: how long the room gets to

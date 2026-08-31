@@ -61,6 +61,22 @@ export interface PanelButton {
   display?: boolean;
   /** Explicit label px when the two standard sizes don't fit. */
   px?: number;
+  /**
+   * A PICTURE ON THE BUTTON. Draw whatever you like into a square of
+   * `size` at (x, y); the kit reserves the top of the plate for it and
+   * drops the label underneath. `dead` is true when the button is
+   * disabled, so a glyph can grey itself out with the rest of the plate.
+   *
+   * A callback rather than an id, so the kit never has to know what a
+   * MAKER is — ui/icons.ts draws those, and this only makes room.
+   */
+  glyph?: (
+    g: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    size: number,
+    dead: boolean,
+  ) => void;
 }
 
 export const UI = {
@@ -383,8 +399,18 @@ export class Panel {
     g.textBaseline = 'middle';
 
     const labelPx = b.px ?? (b.primary ? 40 : b.small ? 27 : 36);
-    const labelY = b.y + b.h / 2 - (b.sub ? 16 : 0);
-    const subY = b.y + b.h / 2 + 26;
+    // A GLYPH TAKES THE TOP OF THE PLATE. The label then sits under it
+    // rather than through the middle of it — which is the whole reason
+    // an icon on a button is legible instead of merely present.
+    const glyphSize = b.glyph ? Math.min(b.h * 0.5, b.w * 0.52) : 0;
+    const labelY = b.glyph
+      ? b.y + glyphSize + (b.h - glyphSize) / 2 - (b.sub ? 12 : 0)
+      : b.y + b.h / 2 - (b.sub ? 16 : 0);
+    const subY = b.glyph ? labelY + 22 : b.y + b.h / 2 + 26;
+    const drawGlyph = (dead: boolean): void => {
+      if (!b.glyph) return;
+      b.glyph(g, b.x + (b.w - glyphSize) / 2, b.y + (b.h - glyphSize) * 0.14, glyphSize, dead);
+    };
 
     if (b.display) {
       // A value chip: quiet plate, live text, no chrome.
@@ -392,6 +418,7 @@ export class Panel {
       g.beginPath();
       g.roundRect(b.x, b.y, b.w, b.h, r);
       g.fill();
+      drawGlyph(false);
       g.fillStyle = b.tone ?? UI.text;
       g.font = font(600, labelPx);
       g.letterSpacing = '1.5px';
@@ -427,6 +454,7 @@ export class Panel {
         g.fillStyle = `rgba(255,255,255,${(0.14 * hov + 0.18 * flash).toFixed(3)})`;
         g.fill();
       }
+      drawGlyph(false);
       g.fillStyle = UI.onAccent;
       g.font = font(700, labelPx);
       g.letterSpacing = '2px';
@@ -469,6 +497,7 @@ export class Panel {
       g.globalAlpha = 1;
     }
 
+    drawGlyph(Boolean(b.disabled));
     g.fillStyle = b.disabled ? UI.disabled : (b.tone ?? UI.text);
     g.font = font(600, labelPx);
     g.letterSpacing = '1.5px';
