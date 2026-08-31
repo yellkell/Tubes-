@@ -868,3 +868,31 @@ metres, which is the distance the silhouette rule exists to serve.
 mouths, keeping only the functional deltas the book needs (no gland on
 the bank, the VAT, PEARL's bolted plate). The VAT had no earlier design
 to return to and is built in the original idiom: a banded tank.
+
+### The records, and the face
+
+**"Let's have new songs and 4 leaf play in menus and gameplay
+separately, and Novus starts playing when we start filling up the VAT
+and as the goop dances."** `audio/music.ts` — three decks (board /
+floor / vat), crossfaded, shuffled within a set, streamed rather than
+decoded. 4 LEAF CLOVERS holds the board; the three NEW SONGs work the
+floor; NOVUS takes the room from the first drop of green and does not
+let go. Novus was transcoded from AAC to MP3 on the way in, because
+Chromium's open-source builds have no AAC and the finale is the last
+track in the game that can afford to be silent.
+
+**"The purple liquid noise is way too annoying."** It was: a 110 Hz
+SQUARE through a 900 Hz lowpass, amplitude-modulated at 2.2 Hz, playing
+continuously for as long as a violet line was plugged in. Every one of
+those choices is wrong for a drone — odd harmonics in the ear's most
+sensitive band, flutter-rate modulation that reads as a fault. VOLT's
+hum is now a steady body of two darkened triangles with the electric
+character moved onto a very quiet bandpassed corona, which is the only
+part that pulses, at half the old rate. All the hums came down a few dB
+besides: they were levelled for a silent game and there is a record
+playing over them now.
+
+**"We should iterate on his eyes to look better."** See DESIGN.md — a
+pale sclera for contrast, an iris that visibly swings, a dilating pupil,
+two catchlights, a lateral placement that survives the body yawing, and
+a gaze that wanders instead of staring.

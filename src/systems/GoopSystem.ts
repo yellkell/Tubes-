@@ -60,7 +60,10 @@ export const goopView: {
   state?: () => {
     phase: string;
     birth: number;
+    /** Where it is standing, so a shot tool can point a camera at it. */
+    x: number;
     y: number;
+    z: number;
     form: number;
     dancing: boolean;
   } | null;
@@ -89,6 +92,8 @@ export class GoopSystem extends createSystem({}) {
         ? {
             phase: plant.goop,
             birth: Math.min(1, this.t / (FORM_S + CLIMB_S + STAND_S)),
+            x: this.goop.group.position.x,
+            z: this.goop.group.position.z,
             y: this.goop.group.position.y,
             form: this.goop.formValue,
             dancing: plant.goop === 'dancing' || plant.goop === 'done',

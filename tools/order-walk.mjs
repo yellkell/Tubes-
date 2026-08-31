@@ -175,6 +175,17 @@ async function tugOff(side, fromUnit) {
 
 /* ── ONE DOOR ────────────────────────────────────────────────────────── */
 
+const music = () => page.evaluate(() => window.__tubes.music.state());
+
+console.log('THE RECORDS');
+// Three decks, and which one is up is a pure function of where the game
+// is — so these are checked in passing, wherever the walk happens to be.
+await page.waitForTimeout(1200);
+let mus = await music();
+check(mus.deck === 'board', `the board has its own record (${mus.deck})`);
+check(mus.track === '4 LEAF CLOVERS', `and it is the menu set (${mus.track})`);
+check(mus.playing && !mus.error, 'playing, and the browser took the file');
+
 console.log('ONE DOOR');
 await page.evaluate(() => window.__tubes.menu.act('tab:factory'));
 await page.waitForTimeout(250);
@@ -193,6 +204,14 @@ check(
   s.orderId === 'first-gear',
   `a headset with no history opens at the top of the book (${s.orderId})`,
 );
+await page.waitForTimeout(1400);
+mus = await music();
+check(mus.deck === 'floor', `stepping onto the floor changes the record (${mus.deck})`);
+check(
+  ['NEW SONG 129', 'NEW SONG 98', 'NEW SONG 104'].includes(mus.track ?? ''),
+  `and it is one of the working set (${mus.track})`,
+);
+check(mus.playing && !mus.error, 'playing, and the browser took that one too');
 
 /* ── SHEET 1: A MAKER AND A TUBE ─────────────────────────────────────── */
 
@@ -481,6 +500,12 @@ await page.waitForFunction(() => window.__tubes.plant.state().goop === 'brewing'
   timeout: 40000,
 });
 check(true, 'the vat starts to fill');
+await page.waitForTimeout(1400);
+mus = await music();
+check(mus.deck === 'vat', `and NOVUS takes the room (${mus.deck})`);
+check(mus.track === 'NOVUS', `by name (${mus.track})`);
+check(mus.loop, 'looping \u2014 the goop dances until you down tools');
+check(mus.playing && !mus.error, 'and the browser took it: no proprietary codec in the way');
 await page.waitForFunction(() => window.__tubes.plant.state().goop === 'born', undefined, {
   timeout: 90000,
 });
@@ -493,6 +518,8 @@ const goop = await page.evaluate(() => window.__tubes.goop.state());
 check(Boolean(goop?.dancing), `and it climbs out and dances (form ${goop?.form?.toFixed(2)})`);
 check(goop.y < 0.2, `on your actual floor, not inside the tank (y ${goop.y.toFixed(2)})`);
 check(await page.evaluate(() => window.__tubes.menu.finaleUp()), 'THANKS FOR PLAYING comes up');
+mus = await music();
+check(mus.deck === 'vat' && mus.track === 'NOVUS', 'and NOVUS is still under the dance');
 await page.evaluate(() => window.__tubes.rig(-0.6, 0.8, 0, -0.35, -0.25));
 await page.waitForTimeout(600);
 await page.screenshot({ path: 'shots/order-walk-goop.png' });
@@ -597,6 +624,9 @@ check(
 await page.evaluate(() => window.__tubes.menu.act('quit'));
 await page.waitForFunction(() => window.__tubes.site.screen === 'board', undefined, { timeout: 5000 });
 check((await state()).mode === 'idle', 'and the second press closes the shop');
+await page.waitForTimeout(1400);
+mus = await music();
+check(mus.deck === 'board', `and the board takes its record back (${mus.deck})`);
 check(
   (await page.evaluate(() => window.__tubes.goop.state())) === null,
   'and the goop goes with it',

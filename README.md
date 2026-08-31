@@ -151,7 +151,13 @@ src/
   main.ts                IWSDK world boot (immersive-ar) + systems
   audio/sfx.ts           synthesised industrial sound kit (RAVE RAID
                          lineage: tone / whooshNoise / clank / servo /
-                         subSwell) + the three lines' continuous hums
+                         subSwell) + the four lines' continuous hums, and
+                         the two output buses: SFX (through a glue
+                         compressor) and MUSIC (its own fader, untouched)
+  audio/music.ts         THE RECORDS — the one thing here that is not
+                         synthesised. Three decks (board / floor / vat),
+                         crossfaded, shuffled within a set, streamed
+                         through MediaElementSource rather than decoded
   materials/glow.ts      additive glow toolkit (vendored)
   materials/flow.ts      THE POUR: the clipped-liquid trick re-derived
                          for an advancing front inside a pipe
@@ -213,6 +219,9 @@ src/
   systems/GoopSystem.ts       the finale's choreography: the birth in the
                               tank, the climb out, standing up, and the
                               dance — the creature itself knows none of it
+  systems/MusicSystem.ts      which record is on: a pure function of
+                              site.screen and plant.goop, asked every
+                              frame, remembering nothing
   systems/PlacementSystem.ts  the reticle, the mount, the wake
   systems/TubeSystem.ts       the pull: grab, ratchet, park, magnet, seat
   systems/FlowSystem.ts       the payoff: charge, pour, bloom, shaft,
@@ -281,7 +290,15 @@ you disagree), bought sticks to bend a lane exactly where you want it, a
 BOX PANEL on every machine — click one to see what is inside it and to
 UNPLUG its line without unbolting the machine — **Ⓧ** on the left
 controller to put a tool back down (mid-haul included), and a BANK
-counting every delivery. When the book runs out the shop just stays open: every feed,
+counting every delivery.
+
+**THE RECORDS.** 4 LEAF CLOVERS holds the board while you read the book;
+the three NEW SONGs work the floor, shuffled; and **NOVUS** takes the
+whole room the instant green starts filling the vat — through the birth,
+under the dance, and it does not stop until you down tools. They
+crossfade rather than cut, because a shift starting is a door opening and
+not a track change. Two faders on the SYSTEM tab: the shop and the
+records move independently. When the book runs out the shop just stays open: every feed,
 the whole catalogue, and nobody asking you for ten of anything.
 
 ## Checks
@@ -293,6 +310,7 @@ node tools/job-walk.mjs  # the whole ladder, asserted (exits non-zero on fail)
 node tools/floor-walk.mjs     # the factory floor: tape, clamps, lattice
 node tools/order-walk.mjs     # the shop, built through the hands' own path
 node tools/card-look.mjs      # shots/card-*.png — every page of the Ⓐ card
+node tools/goop-look.mjs      # shots/goop-*.png — the creature's face, close
 node tools/preview-shot.mjs   # shots/ of the landing, board, pull, pour
 node tools/socket-look.mjs    # shots/socket/ — one socket, 14 angles
 ```

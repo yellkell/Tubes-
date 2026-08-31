@@ -16,12 +16,14 @@
 import { launchXR, SessionMode, World } from '@iwsdk/core';
 import { DirectionalLight, HemisphereLight } from 'three';
 import { ensureAudio } from './audio/sfx.js';
+import { musicView, primeMusic } from './audio/music.js';
 import { BuildSystem, buildView } from './systems/BuildSystem.js';
 import { FactorySystem, factoryView } from './systems/FactorySystem.js';
 import { FloorSystem, floorView } from './systems/FloorSystem.js';
 import { FlowSystem, flowView } from './systems/FlowSystem.js';
 import { GoopSystem, goopView } from './systems/GoopSystem.js';
 import { MenuSystem, menuView } from './systems/MenuSystem.js';
+import { MusicSystem } from './systems/MusicSystem.js';
 import { PlacementSystem, placeView } from './systems/PlacementSystem.js';
 import { TubeSystem, tubeView } from './systems/TubeSystem.js';
 import { WallSystem, wallsView } from './systems/WallSystem.js';
@@ -97,6 +99,7 @@ World.create(container, {
   world.registerSystem(FlowSystem);
   world.registerSystem(GoopSystem); // the finale — reads the plant, owns the goop
   world.registerSystem(MenuSystem);
+  world.registerSystem(MusicSystem); // last: it only reads where everything else got to
 
   const arSupported = navigator.xr
     ?.isSessionSupported(SessionMode.ImmersiveAR)
@@ -112,6 +115,7 @@ World.create(container, {
     enterButton.addEventListener('click', () => {
       enterButton.setAttribute('disabled', '');
       ensureAudio(); // unlock the AudioContext inside the tap gesture
+      primeMusic(); // …and let the records start, for the same reason
       launchXR(world, { sessionMode: SessionMode.ImmersiveAR });
 
       const watchForSession = (): void => {
@@ -169,6 +173,8 @@ declare global {
       flow: typeof flowView;
       /** THE GOOP: the finale's own state (null until the vat is full). */
       goop: typeof goopView;
+      /** THE RECORDS: which deck is up, and what is on it. */
+      music: typeof musicView;
       /** Draw calls / triangles this frame — the budget check. */
       info: () => { calls: number; triangles: number } | null;
       /** Park the player rig at (x, z) facing `yaw` — headless walks.
@@ -197,6 +203,7 @@ window.__tubes = {
   tube: tubeView,
   flow: flowView,
   goop: goopView,
+  music: musicView,
   info: () => {
     const r = worldRef?.renderer;
     return r ? { calls: r.info.render.calls, triangles: r.info.render.triangles } : null;

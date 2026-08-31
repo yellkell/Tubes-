@@ -316,6 +316,47 @@ requirement and deserved its own answer. Every route — the tug, UNPLUG,
 Ⓑ on a plumbed box, the wrecking bar — goes through one sim door now, so
 the hum stops and the iris shuts exactly once however it happened.
 
+## The records
+
+TUBES' audio was 100% synthesised for a reason — struck metal and steam
+want to be parameterised, and there was nothing to ship. Music is the
+opposite: finished work, where the only job is putting the right one on.
+So `audio/music.ts` sits beside `audio/sfx.ts` rather than inside it,
+with its own bus straight to the speakers: the records are already
+mastered and pushing them through the SFX glue compressor would only pump
+them against the ratchet clicks. Two faders, because a player who turns
+the shop down to hear the music is asking for two knobs.
+
+**Three decks, and no state.** MusicSystem reads `site.screen` and
+`plant.goop` every frame, works out which deck that means, and asks for
+it; `setDeck` ignores a request for the deck already up. Nothing tracks
+transitions, so nothing can get stuck in the wrong place.
+
+- **THE BOARD** — 4 LEAF CLOVERS, on its own, looping. The longest of
+  the four and the one you hear from the top every time you come back.
+- **THE FLOOR** — the three NEW SONGs, shuffled through a bag so a set
+  plays out before anything repeats, and never restarting on the track
+  that just ended.
+- **THE VAT** — NOVUS, from the instant green starts filling the tank,
+  through the birth and under the whole dance. One-way within a shift:
+  unplug the line half way and the record keeps going, because the thing
+  in the tank is still in the tank and cutting back would undo it.
+
+They crossfade (2.2 s, 3.4 s into or out of the finale). A shift
+beginning is a door opening, not a track change.
+
+**Streamed, not decoded.** Each track is an `<audio>` element piped in
+through a MediaElementSource. Decoding 18 MB of masters into AudioBuffers
+would cost a Quest tens of megabytes resident and a stall on first play,
+to buy sample-accurate scheduling a jukebox has no use for. RAVE RAID
+decodes because a rhythm game must pin beat zero to the audio clock;
+nothing here counts bars.
+
+**All five are MP3.** Novus arrived as an `.m4a` and was transcoded,
+because AAC only ships in browsers whose vendors license it — Chromium's
+open-source builds refuse the file outright. Silence is survivable on a
+background track and not on the one the whole book walks toward.
+
 ## THE GOOP
 
 The book ends with a machine you cannot use. Six SERVOS crank the fourth
@@ -339,6 +380,30 @@ sim's own glob→boxer morph, the trick this creature was built around);
 and then it dances, hitting a stance on every beat and keeping you in
 its eyes. THANKS FOR PLAYING comes up over its shoulder, and dismissing
 the card leaves it dancing.
+
+**The eyes carry all of it, and the first pair did not.** They were one
+near-black bead each with a single white speck, on a dark green body:
+against that gel the bead vanished, so the creature read as two floating
+sparks, and because the whole eye was one colour, TRACKING was invisible
+— it could swing right round to face you and nothing on screen changed.
+
+An eye needs contrast inside itself. Each is now a pale unlit SCLERA (the
+value the dark parts read against), a deep green IRIS bulging off the
+front — the part that visibly swings — a PUPIL that dilates with the
+sim's agitation and on the beat, and TWO catchlights, because one is
+paint and two is glass. They ride a centimetre inside the surface so the
+gel washes over them and tints them green for free, which is why the
+sclera is warm rather than white.
+
+They are placed by a lateral OFFSET, not a splay angle. The first cut
+rotated the gaze vector ±0.36 rad and marched out from the head's centre;
+that works head-on and collapses the moment the body yaws, because a
+fixed angle subtends less and less width as the exit points converge
+round the silhouette — it could put both eyes almost on top of each
+other. And they wander: a saccade re-aimed every half-second or two,
+with an occasional proper look-away, plus a blink that sometimes goes
+twice. Eyes locked dead on you read as a turret; the wander is the
+cheapest thing on that list and does the most.
 
 ## The board
 

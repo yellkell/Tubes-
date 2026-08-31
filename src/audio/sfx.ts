@@ -16,22 +16,35 @@
 // Two gain stages: the synth SFX sit under `_master` (0.3, the quiet mix
 // bus); `_sfxOut` sits ABOVE it as the user's master SFX-volume fader. One
 // knob scales EVERY sound while keeping the relative balance.
-type Ctx = AudioContext & { _master?: GainNode; _sfxOut?: GainNode };
+//
+// MUSIC RUNS BESIDE THEM, not through them: `_musicOut` is its own fader
+// straight to the destination. Two reasons, both practical. The records
+// are already mastered, so pushing them through the SFX glue compressor
+// would only pump them against the ratchet clicks; and a player who turns
+// the shop down to hear the music (or the other way round) is asking for
+// two knobs, not one.
+type Ctx = AudioContext & { _master?: GainNode; _sfxOut?: GainNode; _musicOut?: GainNode };
 
 const SFX_VOL_KEY = 'tubes-sfx-vol';
+const MUSIC_VOL_KEY = 'tubes-music-vol';
 
 function clamp01(n: number): number {
   return Math.min(1, Math.max(0, n));
 }
 
-let sfxVol = ((): number => {
+function storedVol(key: string, fallback: number): number {
   try {
-    const n = parseFloat(localStorage.getItem(SFX_VOL_KEY) ?? '');
-    return Number.isFinite(n) ? clamp01(n) : 1;
+    const n = parseFloat(localStorage.getItem(key) ?? '');
+    return Number.isFinite(n) ? clamp01(n) : fallback;
   } catch {
-    return 1;
+    return fallback;
   }
-})();
+}
+
+let sfxVol = storedVol(SFX_VOL_KEY, 1);
+// Music sits under the shop by default: this is a game about listening to
+// machinery, and the records are the room it happens in.
+let musicVol = storedVol(MUSIC_VOL_KEY, 0.55);
 
 let ctx: Ctx | null = null;
 
@@ -72,6 +85,40 @@ function getCtx(): Ctx | null {
 /** The user master SFX bus. */
 export function sfxOut(): GainNode | null {
   return getCtx()?._sfxOut ?? null;
+}
+
+/** The AudioContext itself — the jukebox needs it to make a
+ *  MediaElementSource out of each streaming <audio> element. */
+export function audioContext(): AudioContext | null {
+  return getCtx();
+}
+
+/** THE MUSIC BUS: the records' own fader, straight to the speakers. */
+export function musicOut(): GainNode | null {
+  const c = getCtx();
+  if (!c) return null;
+  if (!c._musicOut) {
+    const out = c.createGain();
+    out.gain.value = musicVol;
+    out.connect(c.destination);
+    c._musicOut = out;
+  }
+  return c._musicOut;
+}
+
+export function musicVolume(): number {
+  return musicVol;
+}
+
+/** Set + persist the music volume; live-updates the running bus. */
+export function setMusicVolume(v: number): void {
+  musicVol = clamp01(v);
+  try {
+    localStorage.setItem(MUSIC_VOL_KEY, musicVol.toFixed(3));
+  } catch {
+    /* private mode — the choice just won't persist */
+  }
+  if (ctx?._musicOut) ctx._musicOut.gain.value = musicVol;
 }
 
 /** Current master SFX volume, 0..1 (1 = full). */
@@ -449,7 +496,9 @@ export function startHum(
   const t0 = c.currentTime;
   const gain = c.createGain();
   gain.gain.setValueAtTime(0.0001, t0);
-  gain.gain.exponentialRampToValueAtTime(0.05, t0 + 1.2);
+  // A running floor can hold three or four of these at once, and there is
+  // a record playing over them now — they were levelled for silence.
+  gain.gain.exponentialRampToValueAtTime(line === 'volt' ? 0.028 : 0.042, t0 + 1.2);
   gain.connect(c._master!);
   const detune = 1 + (Math.random() - 0.5) * 0.02;
   const nodes: OscillatorNode[] = [];
@@ -534,27 +583,65 @@ export function startHum(
     osc.start(t0);
     nodes.push(osc);
   } else {
-    // A transformer with opinions: a buzzy pulse trembling at the line's
-    // own strobe rate.
-    const trem = c.createGain();
-    trem.gain.value = 0.7;
-    trem.connect(gain);
-    lfo = c.createOscillator();
-    lfo.frequency.value = pulseHz;
-    const depth = c.createGain();
-    depth.gain.value = 0.3;
-    lfo.connect(depth).connect(trem.gain);
-    lfo.start(t0);
+    /* A transformer at readiness — and the one hum in the kit that had to
+     * be rebuilt.
+     *
+     * The first VOLT hum was a 110 Hz SQUARE through a 900 Hz lowpass,
+     * amplitude-modulated at the line's own 2.2 Hz strobe. Every one of
+     * those choices is wrong for something that plays CONTINUOUSLY for as
+     * long as a violet line is plugged in: a square at that pitch is all
+     * odd harmonics right in the ear's most sensitive band, and 2.2 Hz is
+     * squarely in the flutter range that reads as a fault rather than as
+     * a pulse. Playtest, correctly: "way too annoying."
+     *
+     * What it is now: a steady BODY of two triangles an octave apart,
+     * heavily darkened — a transformer sitting there being a transformer
+     * — with the electric character moved entirely onto a very quiet
+     * bandpassed CORONA up top. Only the corona pulses, at half the old
+     * rate, so VOLT still ticks the way violet should and the drone
+     * underneath it never wavers. Quieter than the other two lines on
+     * purpose: it is the highest-pitched of the three, and equal-loudness
+     * makes that the one you notice after ten minutes.
+     */
+    const body = c.createGain();
+    body.gain.value = 0.55;
+    body.connect(gain);
     const lp = c.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = 900;
-    lp.connect(trem);
-    const osc = c.createOscillator();
-    osc.type = 'square';
-    osc.frequency.value = 110 * detune;
-    osc.connect(lp);
-    osc.start(t0);
-    nodes.push(osc);
+    lp.frequency.value = 320;
+    lp.Q.value = 0.7;
+    lp.connect(body);
+    for (const f of [55, 110.4]) {
+      const osc = c.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = f * detune;
+      osc.connect(lp);
+      osc.start(t0);
+      nodes.push(osc);
+    }
+    // The corona: filtered noise, barely there, breathing at half the
+    // line's strobe. This is the only part that moves.
+    const frames = c.sampleRate * 2;
+    const buf = c.createBuffer(1, frames, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+    noise = c.createBufferSource();
+    noise.buffer = buf;
+    noise.loop = true;
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 2100;
+    bp.Q.value = 2.2;
+    const corona = c.createGain();
+    corona.gain.value = 0.05;
+    lfo = c.createOscillator();
+    lfo.frequency.value = Math.max(0.4, pulseHz * 0.5);
+    const depth = c.createGain();
+    depth.gain.value = 0.03;
+    lfo.connect(depth).connect(corona.gain);
+    lfo.start(t0);
+    noise.connect(bp).connect(corona).connect(gain);
+    noise.start(t0);
   }
 
   hums.set(id, { nodes, noise, lfo, gain });

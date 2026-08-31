@@ -60,7 +60,8 @@ import {
   type UpgradeId,
 } from '../config.js';
 import * as sfx from '../audio/sfx.js';
-import { setSfxVolume, sfxVolume } from '../audio/sfx.js';
+import { setMusicVolume, musicVolume, setSfxVolume, sfxVolume } from '../audio/sfx.js';
+import { nowPlaying } from '../audio/music.js';
 import {
   abandonFactory,
   abandonShift,
@@ -160,8 +161,10 @@ const ROW_PITCH = 134;
 const SHEET_X = 822;
 const SHEET_W = W - SHEET_X - 34;
 /** SYSTEM rows. */
-const SYS_Y0 = 196;
-const SYS_PITCH = 140;
+const SYS_Y0 = 188;
+/** Five rows now that MUSIC has its own fader — 140 put RESET PROGRESS
+ *  straight through the room-status footer. */
+const SYS_PITCH = 124;
 
 type Tab = 'jobs' | 'factory' | 'sys';
 
@@ -522,6 +525,10 @@ export class MenuSystem extends createSystem({}) {
       setSfxVolume(Math.max(0, Math.round((sfxVolume() - 0.1) * 10) / 10));
     } else if (id === 'sfx:up') {
       setSfxVolume(Math.min(1, Math.round((sfxVolume() + 0.1) * 10) / 10));
+    } else if (id === 'mus:down') {
+      setMusicVolume(Math.max(0, Math.round((musicVolume() - 0.1) * 10) / 10));
+    } else if (id === 'mus:up') {
+      setMusicVolume(Math.min(1, Math.round((musicVolume() + 0.1) * 10) / 10));
     } else if (id === 'walls:toggle') {
       site.showWalls = !site.showWalls;
     } else if (id === 'floor:set') {
@@ -609,6 +616,8 @@ export class MenuSystem extends createSystem({}) {
       unlockedJobs(),
       JOBS.map((j) => bestMs(j.id) ?? 0).join(','),
       sfxVolume().toFixed(1),
+      musicVolume().toFixed(1),
+      nowPlaying() ?? '',
       site.showWalls,
       this.resetArm > 0,
       this.quitArm > 0,
@@ -1144,12 +1153,31 @@ export class MenuSystem extends createSystem({}) {
         h: 96,
         px: 48,
       },
+      { id: 'mus:down', label: '−', x: CONTENT_X + 330, y: y0 + SYS_PITCH, w: rowW, h: 96, px: 48 },
+      {
+        id: 'mus:vol',
+        label: `${Math.round(musicVolume() * 100)}%`,
+        display: true,
+        x: CONTENT_X + 330 + rowW + 16,
+        y: y0 + SYS_PITCH,
+        w: valueW,
+        h: 96,
+      },
+      {
+        id: 'mus:up',
+        label: '+',
+        x: CONTENT_X + 330 + rowW + valueW + 32,
+        y: y0 + SYS_PITCH,
+        w: rowW,
+        h: 96,
+        px: 48,
+      },
       {
         id: 'walls:toggle',
         label: site.showWalls ? 'SHOWN' : 'HIDDEN',
         selected: site.showWalls,
         x: CONTENT_X + 330,
-        y: y0 + SYS_PITCH,
+        y: y0 + SYS_PITCH * 2,
         w: rowW + valueW + 16,
         h: 96,
       },
@@ -1157,7 +1185,7 @@ export class MenuSystem extends createSystem({}) {
         id: 'floor:set',
         label: 'SET THE FLOOR',
         x: CONTENT_X + 330,
-        y: y0 + SYS_PITCH * 2,
+        y: y0 + SYS_PITCH * 3,
         w: rowW + valueW + 16,
         h: 96,
       },
@@ -1166,7 +1194,7 @@ export class MenuSystem extends createSystem({}) {
         label: this.resetArm > 0 ? 'SURE? PRESS AGAIN' : 'RESET PROGRESS',
         tone: UI.danger,
         x: CONTENT_X + 330,
-        y: y0 + SYS_PITCH * 3,
+        y: y0 + SYS_PITCH * 4,
         w: rowW + valueW + 16 + rowW + 16,
         h: 96,
         small: true,
@@ -1190,9 +1218,13 @@ export class MenuSystem extends createSystem({}) {
         g.fillText(sub, CONTENT_X + 10, y + 68, labelW);
       };
       label('SOUND', 'the shop, the ratchet, the pour', SYS_Y0);
-      label('WALL FRAMES', 'hairlines on what the scan found', SYS_Y0 + SYS_PITCH);
-      label('THE FLOOR', 'hazard tape — drag its sides to your walls', SYS_Y0 + SYS_PITCH * 2);
-      label('THE SHEET', 'tear it up, start the trade again', SYS_Y0 + SYS_PITCH * 3);
+      // The now-playing line rides the MUSIC row's sub, because a record
+      // you cannot name is a record you cannot ask for again.
+      const on = nowPlaying();
+      label('MUSIC', on ? `now playing · ${on}` : 'the records', SYS_Y0 + SYS_PITCH);
+      label('WALL FRAMES', 'hairlines on what the scan found', SYS_Y0 + SYS_PITCH * 2);
+      label('THE FLOOR', 'hazard tape — drag its sides to your walls', SYS_Y0 + SYS_PITCH * 3);
+      label('THE SHEET', 'tear it up, start the trade again', SYS_Y0 + SYS_PITCH * 4);
 
       const real = walls.filter((w) => w.real && w.kind === 'wall').length;
       const flats = walls.filter((w) => w.kind !== 'wall').length;
@@ -1202,7 +1234,7 @@ export class MenuSystem extends createSystem({}) {
       g.fillText(
         `room: ${real} scanned wall${real === 1 ? '' : 's'}${fake ? ` · ${fake} stand-in` : ''}${flats ? ` · floor/ceiling ports live` : ''}  ·  passthrough AR  ·  built on the Immersive Web SDK`,
         CONTENT_X + 10,
-        H - 96,
+        H - 44,
       );
     };
   }
