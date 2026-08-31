@@ -834,3 +834,37 @@ PEARL is green; the VAT is the only thing that drinks it; and what climbs
 out of the tank is the club's own gel creature (`src/goop/`, the fight
 left behind) dancing on your real floor with THANKS FOR PLAYING over its
 shoulder.
+
+
+### The second playtest pass
+
+**"Our progression system is totally broken \u2014 if we've completed goals,
+turn off the headset and come back, we can't play factory because we
+can't build a bank after phase 1."** Exactly true, and self-inflicted.
+Killing the startable-sheet menu left one door that always opened at
+sheet one, and `clearPlant` wipes the catalogue — so a headset that had
+reached sheet five came back to a single MAKER, `stored.orders` written
+faithfully by `recordOrderDone` and read by nobody. Standing a bank
+returned literally `false`. Two halves to the fix: `postOrder`'s wakes
+are **cumulative** (posting sheet N switches on everything sheets 0..N
+ever granted, so arriving mid-book is survivable), and `startShop` with
+no argument opens on `bookAt()` — or on the shop wide open once
+`bookDone`. The one caller in the game was passing `0` and walking
+straight past the resume logic.
+
+Underneath it was a second wall: **sheet one could dead-end.** It asked
+for three stamped gears, a maker's chute holds two, and the catalogue is
+one machine — so a player who did not find the squeeze-to-carry was
+stuck on the first sheet of the book forever. It asks for two now. A
+tutorial sheet must not have a failure mode, and the backed-up chute is
+the setup for sheet two rather than a lock on it.
+
+**"Let's revert the design of the boxes and tube containers."** The
+flat-stock re-cut — square chassis, folded hoppers, bolt rows, gussets,
+flat shading — was unarguably more factory-like on a monitor and worse
+in a headset: the facets and the bolt detail ate the silhouettes at four
+metres, which is the distance the silhouette rule exists to serve.
+`factory/units.ts` is reverted whole to the drums, bands and torus
+mouths, keeping only the functional deltas the book needs (no gland on
+the bank, the VAT, PEARL's bolted plate). The VAT had no earlier design
+to return to and is built in the original idiom: a banded tank.

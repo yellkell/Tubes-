@@ -201,24 +201,34 @@ function drawGlyph(p: Pen, id: GlyphId): void {
   }
 
   if (id === 'vat') {
-    // THE VAT: a caged tank with something in the bottom of it.
-    box(p, 0.16, 0.12, 0.68, 0.1); // the lid
-    box(p, 0.2, 0.22, 0.6, 0.6); // the glass
-    box(p, 0.2, 0.22, 0.06, 0.6, ink.dim);
-    box(p, 0.74, 0.22, 0.06, 0.6, ink.dim);
-    line(p, 0.2, 0.4, 0.8, 0.4);
-    line(p, 0.2, 0.62, 0.8, 0.62);
+    // THE VAT: a banded tank with something in the bottom of it. Drawn
+    // round-shouldered rather than caged, to match the machine — a vat
+    // is the one thing on the floor that is honestly a vessel.
+    box(p, 0.14, 0.1, 0.72, 0.09); // the lid
+    poly(p, [
+      [0.2, 0.19],
+      [0.8, 0.19],
+      [0.82, 0.3],
+      [0.82, 0.78],
+      [0.76, 0.86],
+      [0.24, 0.86],
+      [0.18, 0.78],
+      [0.18, 0.3],
+    ]);
     // THE LEVEL — the one place in the kit the accent is not amber,
     // because the whole point of the vat is that it is green.
+    p.g.save();
+    p.g.clip();
     p.g.fillStyle = '#4dff9b';
-    p.g.globalAlpha = 0.75;
-    p.g.fillRect(p.X(0.27), p.Y(0.55), p.S(0.46), p.S(0.27));
-    p.g.globalAlpha = 1;
+    p.g.globalAlpha = 0.8;
+    p.g.fillRect(p.X(0.16), p.Y(0.56), p.S(0.7), p.S(0.34));
+    p.g.restore();
     g.strokeStyle = '#4dff9b';
-    line(p, 0.27, 0.55, 0.73, 0.55);
+    line(p, 0.2, 0.56, 0.8, 0.56);
     g.strokeStyle = ink.ink;
-    box(p, 0.12, 0.82, 0.76, 0.1); // the pan
-    studs(p, 0.28, 0.72, 0.17, 4);
+    // The hoops.
+    for (const y of [0.3, 0.72]) line(p, 0.18, y, 0.82, y);
+    box(p, 0.1, 0.86, 0.8, 0.08, ink.dim); // the pan
     return;
   }
 

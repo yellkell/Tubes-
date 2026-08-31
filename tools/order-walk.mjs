@@ -45,13 +45,23 @@ page.on('pageerror', (e) => fails.push(`[pageerror] ${e.message}`));
 await page.goto(base, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => page.goto(base));
 await page.waitForTimeout(1000);
 
+/** Into the session and into a room. Reused by the reboot check at the
+ *  bottom, which is the whole point of it being a function. */
+async function clockIn() {
+  await page.click('#enter-ar');
+  await page.waitForFunction(() => document.body.classList.contains('app-entered'), { timeout: 15000 });
+  await page.waitForFunction(() => Boolean(window.__tubes?.site), { timeout: 10000 });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => window.__tubes.wallsInfo.forceFallback());
+  await page.waitForFunction(() => window.__tubes.site.wallsReady, { timeout: 5000 });
+}
+
 console.log('CLOCK IN');
-await page.click('#enter-ar');
-await page.waitForFunction(() => document.body.classList.contains('app-entered'), { timeout: 15000 });
-await page.waitForFunction(() => Boolean(window.__tubes?.site), { timeout: 10000 });
-await page.waitForTimeout(400);
-await page.evaluate(() => window.__tubes.wallsInfo.forceFallback());
-await page.waitForFunction(() => window.__tubes.site.wallsReady, { timeout: 5000 });
+// A walk starts on a headset that has never seen the game.
+await page.evaluate(() => localStorage.removeItem('tubes-progress'));
+await page.reload({ waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+await page.waitForTimeout(700);
+await clockIn();
 
 const state = () => page.evaluate(() => window.__tubes.plant.state());
 const glands = (side) => page.evaluate((s) => window.__tubes.plant.glands(s), side);
@@ -179,11 +189,14 @@ await page.evaluate(() => window.__tubes.menu.act('start-order'));
 await page.waitForFunction(() => window.__tubes.site.screen === 'factory', undefined, { timeout: 5000 });
 let s = await state();
 check(s.mode === 'shop', 'one continuous shop, not a mode');
-check(s.orderId === 'first-gear', `and it always opens at the top of the book (${s.orderId})`);
+check(
+  s.orderId === 'first-gear',
+  `a headset with no history opens at the top of the book (${s.orderId})`,
+);
 
 /* ── SHEET 1: A MAKER AND A TUBE ─────────────────────────────────────── */
 
-console.log('FIRST GEAR — a maker, a tube, three stamps');
+console.log('FIRST GEAR — a maker, a tube, and nothing else needed');
 const cat = await page.evaluate(() => window.__tubes.build.catalogue());
 check(
   cat.available.length === 1 && cat.available[0] === 'maker',
@@ -198,24 +211,32 @@ const gl = await glands('far');
 check(gl.length === 1 && gl[0].type === 'maker', `one gland on the floor, on the maker (${gl.length})`);
 await seatRun('far', gl[0].unit, 'the collar swivels to meet the maker');
 await setScale(6);
-await page.waitForFunction(() => window.__tubes.plant.state().parts >= 2, undefined, { timeout: 60000 });
+await page.waitForFunction(() => window.__tubes.plant.state().parts >= 1, undefined, { timeout: 60000 });
 check(true, 'the works stamps gears onto the chute');
-s = await state();
-check(s.count === 2 && s.parts === 2, `two stamped, two on the chute (${s.count}/${s.goal})`);
 
-// The chute holds two: the third only comes if you lift one off, which
-// is the whole point of the sheet — it teaches the carry.
-const chute = cellXZ(0, -2);
-const took = await page.evaluate(
-  ({ x, z }) => window.__tubes.plant.take(x, 0.9, z + 0.11),
-  chute,
-);
-check(took !== null, 'a gear lifts off the chute into your fist');
-await waitOrder(1, 60000);
-check(true, 'and the third stamp fills the sheet');
+// THE FIRST SHEET MUST NOT BE ABLE TO DEAD-END, and this is the check
+// that says so. It asked for THREE gears once, and a maker's chute holds
+// two — so the only way past the first sheet in the book was to lift one
+// off by hand, and the catalogue is a single MAKER, so a player who did
+// not find the squeeze-to-carry was walled with nothing else to try. It
+// fills itself off the works alone now; the carry is taught, not
+// required. (No plant.take call anywhere in this block: that is the
+// assertion.)
+await waitOrder(1, 90000);
+check(true, 'the sheet fills off the works alone \u2014 no hand-pick needed');
 s = await state();
 check(s.orderId === 'the-bank', `sheet 2 posts onto the same floor (${s.orderId})`);
 check(s.units === 1, 'with the maker you built still standing');
+
+// And the carry still works — it is now the answer to a chute that has
+// backed up, which is exactly what sheet 2 opens on.
+await page.waitForFunction(() => window.__tubes.plant.state().parts >= 2, undefined, { timeout: 60000 });
+const took = await page.evaluate(
+  ({ x, z }) => window.__tubes.plant.take(x, 0.9, z + 0.11),
+  cellXZ(0, -2),
+);
+check(took !== null, 'and a gear still lifts off the chute into your fist');
+await page.evaluate(({ x, z }) => window.__tubes.plant.drop(x, 0.9, z), cellXZ(-4, -4));
 
 /* ── SHEET 2: THE BANK, AND A LANE THAT BENDS ────────────────────────── */
 
@@ -579,6 +600,77 @@ check((await state()).mode === 'idle', 'and the second press closes the shop');
 check(
   (await page.evaluate(() => window.__tubes.goop.state())) === null,
   'and the goop goes with it',
+);
+
+/* ── THE HEADSET GOES OFF AND COMES BACK ─────────────────────────────
+ * The bug this section exists for, reported verbatim: "if we've completed
+ * goals turn off headset and come back we can't play factory because we
+ * can't build a bank after phase 1."
+ *
+ * It was exactly true. A shift always opened at sheet one and clearPlant
+ * wiped the catalogue with it, so a player who had reached sheet five
+ * came back to a single MAKER and no way to stand anything else.
+ * `stored.orders` was written faithfully by recordOrderDone and read by
+ * nobody. These checks reload the page with a seeded save — which is
+ * precisely what a power cycle leaves behind — and stand a bank.
+ */
+
+console.log('THE HEADSET GOES OFF AND COMES BACK');
+async function reboot(stored) {
+  await page.evaluate((raw) => localStorage.setItem('tubes-progress', JSON.stringify(raw)), stored);
+  await page.reload({ waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(700);
+  await clockIn();
+  await page.evaluate(() => {
+    window.__tubes.menu.act('tab:factory');
+    window.__tubes.menu.act('start-order');
+  });
+  await page.waitForFunction(() => window.__tubes.site.screen === 'factory', undefined, {
+    timeout: 5000,
+  });
+  return state();
+}
+
+// A headset that had got as far as NIGHT SHIFT.
+s = await reboot({
+  unlocked: 1,
+  best: {},
+  orders: 5,
+  bookDone: false,
+  orderBest: {},
+  bank: { gear: 9 },
+  upgrades: [],
+});
+check(s.orderId === 'night-shift', `it resumes on the sheet it reached (${s.orderId})`);
+check(
+  s.feeds.far === true && s.feeds.left === true && s.feeds.right === true,
+  `with every feed it had ever woken (${Object.keys(s.feeds).join(', ')})`,
+);
+const backCat = await page.evaluate(() => window.__tubes.build.catalogue());
+check(
+  ['dock', 'maker', 'belt', 'combiner', 'chest'].every((t) => backCat.available.includes(t)),
+  `and the whole catalogue it had earned (${backCat.available.join(', ')})`,
+);
+check((await handPlace('dock', 0, 0)).ok, 'AND THE BANK STANDS \u2014 the bug that started this');
+check(JSON.stringify(s.bank) === '{"gear":9}', 'the bank came back off the shelf too');
+
+// And a headset that filled the whole book: nothing left to ask for.
+s = await reboot({
+  unlocked: 1,
+  best: {},
+  orders: 7,
+  bookDone: true,
+  orderBest: {},
+  bank: {},
+  upgrades: [],
+});
+check(s.order === -1, 'a filled book opens with no sheet live at all');
+check(s.mode === 'shop', 'and the shop still open');
+check(s.feeds.near === true, 'the fourth manifold stays open once it has been opened');
+const doneCat = await page.evaluate(() => window.__tubes.build.catalogue());
+check(
+  doneCat.available.includes('vat') && doneCat.available.includes('combiner'),
+  `with the whole catalogue, vat and all (${doneCat.available.join(', ')})`,
 );
 
 await browser.close();

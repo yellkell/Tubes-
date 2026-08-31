@@ -225,13 +225,29 @@ The factory half of the game, and the half playtest reshaped hardest.
 Four things carry it now, and each one replaced something that was
 actively working against the player:
 
-- **ONE DOOR.** The board's FACTORY tab offers a single button. It used
-  to list every sheet you had ever reached and let you START any of
-  them — which dealt you sheet four's demands on a bare floor with none
-  of sheets one to three's feeds, plant or parts, and no way to get any.
-  Every entry but the first was a trap dressed as a choice. THE BOOK
-  advances inside the shift instead, posting the next sheet onto the
-  same floor with everything you built still standing.
+- **ONE DOOR, AND IT REMEMBERS.** The board's FACTORY tab offers a
+  single button. It used to list every sheet you had ever reached and
+  let you START any of them — which dealt you sheet four's demands on a
+  bare floor with none of sheets one to three's feeds, plant or parts.
+  Every entry but the first was a trap dressed as a choice.
+
+  The first fix — one door that always opened at sheet one — traded that
+  trap for a worse one: it threw every session's progress on the floor.
+  Come back after a week and the catalogue was a single MAKER again,
+  with `stored.orders` written faithfully and read by nobody. So the door
+  opens on **the sheet the book had got to**, and `postOrder`'s wakes are
+  **cumulative** — posting sheet N switches on everything sheets 0..N
+  ever granted, which is what makes arriving mid-book survivable at all.
+  Fill the book and the door opens onto the shop wide open instead. The
+  floor is still bare (a shift is a shift); the bank rides in from the
+  shelf and the plant is yours to stand again.
+- **NO SHEET MAY DEAD-END.** Sheet one asked for three stamped gears and
+  a maker's chute holds two, so the only way past the first sheet in the
+  book was to lift one off by hand — with a catalogue of one machine and
+  nothing else to try if you didn't find the squeeze-to-carry. It asks
+  for two now: it completes itself the moment the works works, and the
+  backed-up chute becomes the SETUP for sheet two rather than a lock on
+  it. A tutorial sheet must not have a failure mode.
 - **THE LADDER STARTS WITH THE MACHINE.** Sheet one used to ask for ten
   draughts of fluid into a bank — a sheet about a hole in a box. It
   asks for three stamped GEARS now: stand a MAKER, run the amber feed
@@ -241,16 +257,18 @@ actively working against the player:
   draughts went: the magnet takes the NEAREST free one, and a bank that
   caught every tube walked past it was the most-cursed object in the
   game.
-- **CUT PLATE, NOT SPUN PIPE.** The first floor was built out of
-  cylinders — a drum for the maker, a drum for the bank, a round pillar
-  for every feed — and it read as a steam museum. Round is the shape of
-  things that HOLD; a shop floor is the trade of things that WORK. Every
-  chassis is a box now, every hopper a four-panel folded funnel, every
-  heavy joint a row of hex bolt heads and every span a welded gusset —
-  and every material shades FLAT, which is the one flag that turns a
-  low-poly prism from a smooth pipe into cut steel. Silhouettes differ in
-  height and mass, not only in plan: a tall press, a low strongbox, a
-  squat wide H, a pallet crate, a slatted deck, and one tank of glass.
+- **THE SHAPES STAYED ROUND** — and this one is worth recording as a
+  reversal rather than quietly deleting. The floor read as a steam
+  museum, so a pass re-cut every chassis from flat stock: square boxes,
+  four-panel folded hoppers, hex bolt rows, welded gussets, and
+  `flatShading` on every material. It was, on a monitor, unarguably more
+  like a factory. In a headset it was worse. The hard facets and the
+  bolt detail ate the silhouettes at four metres — the exact distance
+  the whole silhouette-first rule exists to serve — and the drums,
+  bands and torus mouths turned out to be doing more work than they
+  looked like they were doing. Reverted whole, and staying reverted. The
+  VAT is the only machine with no earlier design to go back to, so it is
+  built in the original idiom: a banded tank, which is what a vat is.
 - **THE LANE BENDS.** A hauled rail run used to walk a plain Manhattan L
   and stop dead at the first thing in its way, which on any floor worth
   laying a lane across meant half your hauls died against the side of a

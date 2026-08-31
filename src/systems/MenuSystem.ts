@@ -71,6 +71,8 @@ import {
 } from '../game/flow.js';
 import {
   bestMs,
+  bookAt,
+  bookFinished,
   chestBonus,
   orderBestMs,
   ordersUnlocked,
@@ -485,9 +487,11 @@ export class MenuSystem extends createSystem({}) {
     } else if (id === 'start') {
       startJob(site.jobIndex);
     } else if (id === 'start-order') {
-      // ONE DOOR. The shift always opens at the top of the book and the
-      // book advances inside it — there is nothing to select any more.
-      startShop(0);
+      // ONE DOOR, and no argument: startShop with nothing passed means
+      // "where the book got to". Passing 0 here is what threw a returning
+      // player's whole progress away — the resume logic was in place and
+      // the only caller in the game was walking straight past it.
+      startShop();
     } else if (id.startsWith('box:')) {
       this.boxAction(id.slice(4));
     } else if (id === 'finale:close') {
@@ -612,6 +616,7 @@ export class MenuSystem extends createSystem({}) {
       site.fallbackRoom,
       runsKey,
       ordersUnlocked(),
+      bookFinished(),
       ORDERS.map((o) => orderBestMs(o.id) ?? 0).join(','),
       plant.mode,
       plant.orderIndex,
@@ -927,11 +932,11 @@ export class MenuSystem extends createSystem({}) {
     };
   }
 
-  /** How far down the book this headset has ever got — the FACTORY tab
-   *  paints ticks off it, and nothing else uses it any more (there is
-   *  nothing to unlock a START button for). */
+  /** How far down the book this headset has got — the sheet the next
+   *  shift will open on, and the sheet the FACTORY tab paints its ticks
+   *  up to. ORDERS.length once the book is filled, so every row ticks. */
   private bookProgress(): number {
-    return Math.min(ORDERS.length, Math.max(0, ordersUnlocked() - 1));
+    return bookFinished() ? ORDERS.length : bookAt();
   }
 
   /**
@@ -950,10 +955,16 @@ export class MenuSystem extends createSystem({}) {
       {
         id: 'start-order',
         label: 'OPEN THE FACTORY',
-        // A shift always starts with a bare floor, so it always starts
-        // at the top of the book. What you keep between shifts is the
-        // BANK — say so, rather than implying a resume that isn't one.
-        sub: done > 0 ? 'from the top — the bank keeps what it holds' : ORDERS[0].name,
+        // WHERE YOU LEFT OFF. The floor is bare either way — a shift is
+        // a shift — but every feed and every machine the book has ever
+        // opened comes back with you, so this says which sheet is live
+        // rather than pretending the whole ladder starts again.
+        sub:
+          done >= ORDERS.length
+            ? 'the book is filled \u2014 the shop is yours'
+            : done > 0
+              ? `back to ${ORDERS[done].name}`
+              : ORDERS[0].name,
         primary: true,
         disabled: !site.wallsReady,
         x: SHEET_X + 10,

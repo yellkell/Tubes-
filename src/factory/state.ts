@@ -317,25 +317,39 @@ export function clearPlant(): void {
   plant.generation++;
 }
 
-/** Post a sheet into the live shift: wake its feeds, open its catalogue.
- *  `elapsedMs` is NOT reset — the shift is one continuous session and the
- *  card's clock is the shift's clock, not the sheet's. */
+/**
+ * Post a sheet into the live shift: wake its feeds, open its catalogue.
+ *
+ * THE WAKES ARE CUMULATIVE, and that is load-bearing. Each sheet only
+ * lists what it ADDS, which is correct while a shift walks the book in
+ * order — but a returning player's shift opens straight onto the sheet
+ * they had reached, on a bare floor, and applying that one sheet's wakes
+ * alone handed them sheet four's demands with none of sheets one to
+ * three's feeds or catalogue. The bank was not buildable. Posting sheet
+ * N now switches on everything sheets 0..N would ever have granted, so
+ * posting a sheet is self-sufficient however you arrived at it.
+ *
+ * `elapsedMs` is NOT reset — the shift is one continuous session and the
+ * card's clock is the shift's clock, not the sheet's.
+ */
 export function postOrder(index: number): void {
-  const spec = ORDERS[index];
   plant.mode = 'shop';
   plant.orderIndex = index;
   plant.goalsDone = false;
   plant.count = 0;
-  for (const feedLine of spec.wakes.feeds ?? []) {
-    for (const [side, line] of Object.entries(FACTORY.sides) as Array<[FloorSide, LineId]>) {
-      if (line === feedLine && !plant.feedsAwake[side]) {
-        plant.feedsAwake[side] = true;
-        plant.events.push({ kind: 'feed-wake', side });
+  for (let n = 0; n <= index && n < ORDERS.length; n++) {
+    const spec = ORDERS[n];
+    for (const feedLine of spec.wakes.feeds ?? []) {
+      for (const [side, line] of Object.entries(FACTORY.sides) as Array<[FloorSide, LineId]>) {
+        if (line === feedLine && !plant.feedsAwake[side]) {
+          plant.feedsAwake[side] = true;
+          plant.events.push({ kind: 'feed-wake', side });
+        }
       }
     }
-  }
-  for (const u of spec.wakes.units ?? []) {
-    if (!plant.unitsAvailable.includes(u)) plant.unitsAvailable.push(u);
+    for (const u of spec.wakes.units ?? []) {
+      if (!plant.unitsAvailable.includes(u)) plant.unitsAvailable.push(u);
+    }
   }
   plant.events.push({ kind: 'post', order: index });
   plant.generation++;
@@ -348,6 +362,7 @@ export function postOrder(index: number): void {
  * you had to back out to the board to choose. One session, always.)
  */
 export function openShopFully(): void {
+  plant.mode = 'shop';
   plant.orderIndex = -1;
   plant.goalsDone = true;
   plant.count = 0;

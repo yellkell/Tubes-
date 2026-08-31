@@ -170,15 +170,15 @@ src/
                          combiners fit, the bank counts, the vat brews —
                          and THE ROUTE, a real search over the lattice so
                          a hauled rail run BENDS round standing plant
-  factory/units.ts       bench hardware cut from FLAT STOCK: the press,
-                         the strongbox, the H-frame, the pallet crate,
-                         the slatted rail, the glass vat — boxes, folded
-                         hoppers, bolt rows and gussets, everything flat-
-                         shaded so a low-poly prism reads as cut plate
-                         and not as spun pipe. Plus the gland (a socket
-                         on legs), the four feed columns, and the part
-                         KITS — every item a little assembly in its
-                         lineage's plate language, instanced
+  factory/units.ts       bench hardware: maker/combiner/rail/chest/bank
+                         and the glass VAT — drums, bands and torus
+                         mouths, silhouette and surface carrying the
+                         identity (a flat-stock re-cut was tried here and
+                         reverted; the header says why). Plus the gland
+                         (a socket on legs), the four feed pillars with
+                         PEARL's bolted plate, and the part KITS — every
+                         item a little assembly in its lineage's plate
+                         language, instanced
   goop/                  THE GOOP, vendored whole from RAVE RAID: the
                          blob sim, the raymarched gel surface, the body
                          plan and the club's dance stances — with the
@@ -253,11 +253,14 @@ design, and the phased build.
 **THE FACTORY** is in. Mark the floor out in hazard tape — it comes down
 once you're set up — and the board's **FACTORY** tab opens with exactly
 one button, because a menu of sheets you could start cold was a menu of
-traps. Inside, THE BOOK runs seven sheets deep and advances **in place**,
-onto the same floor, with everything you have built still standing:
+traps. Inside, THE BOOK runs seven sheets deep and advances **in place**, onto
+the same floor, with everything you have built still standing — and the
+door reopens on whichever sheet you had reached, with every feed and
+every machine the book ever granted you already switched on:
 
 1. **FIRST GEAR** — stand a MAKER, run the amber feed into it, and watch
-   it stamp. Lift one off the chute with your fist to keep it stamping.
+   it stamp. It fills itself; lifting one off the chute with your fist is
+   taught here and needed later.
 2. **THE BANK** — stand the bank, stand ONE rail at the chute and HOLD
    the trigger: the run hauls out of it like a tube out of a wall, and
    **bends round anything in its way**.

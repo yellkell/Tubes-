@@ -13,15 +13,29 @@ interface Stored {
   unlocked: number;
   /** Best completion, ms, by job id. */
   best: Record<string, number>;
-  /** The factory's book: sheets open, best per sheet, the banked parts,
-   *  and the fittings bought with them. */
+  /** The factory's book: how far down it this headset has got (1 = only
+   *  the first sheet has ever been posted), best per sheet, the banked
+   *  parts, and the fittings bought with them. */
   orders: number;
+  /** THE BOOK IS FILLED. `orders` saturates at ORDERS.length the moment
+   *  the LAST sheet is posted, so it cannot tell "reached the last one"
+   *  from "finished it" — and those two want different shifts (the last
+   *  sheet, or the shop wide open). This says which. */
+  bookDone: boolean;
   orderBest: Record<string, number>;
   bank: Record<string, number>;
   upgrades: string[];
 }
 
-let stored: Stored = { unlocked: 1, best: {}, orders: 1, orderBest: {}, bank: {}, upgrades: [] };
+let stored: Stored = {
+  unlocked: 1,
+  best: {},
+  orders: 1,
+  bookDone: false,
+  orderBest: {},
+  bank: {},
+  upgrades: [],
+};
 
 function readTimes(into: Record<string, number>, from: unknown): void {
   if (!from || typeof from !== 'object') return;
@@ -42,6 +56,7 @@ function readTimes(into: Record<string, number>, from: unknown): void {
     if (typeof parsed.orders === 'number' && parsed.orders >= 1) {
       stored.orders = Math.min(ORDERS.length, Math.floor(parsed.orders));
     }
+    stored.bookDone = parsed.bookDone === true;
     readTimes(stored.orderBest, parsed.orderBest);
     if (parsed.bank && typeof parsed.bank === 'object') {
       for (const [item, n] of Object.entries(parsed.bank)) {
@@ -94,6 +109,22 @@ export function ordersUnlocked(): number {
   return stored.orders;
 }
 
+/**
+ * How far down the book this headset has got — the sheet a returning
+ * shift picks up on, and the sheet the FACTORY tab points its ticks at.
+ * −1 once the book is filled, which is a different thing again: the shop
+ * opens the whole way.
+ */
+export function bookAt(): number {
+  if (stored.bookDone) return -1;
+  return Math.max(0, Math.min(ORDERS.length - 1, stored.orders - 1));
+}
+
+/** The book is filled — every sheet, on this headset, for good. */
+export function bookFinished(): boolean {
+  return stored.bookDone;
+}
+
 export function orderBestMs(orderId: string): number | null {
   return stored.orderBest[orderId] ?? null;
 }
@@ -103,6 +134,7 @@ export function recordOrderDone(orderId: string, ms: number): boolean {
   const idx = ORDERS.findIndex((o) => o.id === orderId);
   if (idx >= 0) {
     stored.orders = Math.max(stored.orders, Math.min(ORDERS.length, idx + 2));
+    if (idx === ORDERS.length - 1) stored.bookDone = true;
   }
   const prev = stored.orderBest[orderId];
   const better = prev === undefined || ms < prev;
@@ -162,6 +194,14 @@ export function reachBonus(): number {
 
 /** SYSTEM tab: tear the sheet up and start the trade again. */
 export function resetProgress(): void {
-  stored = { unlocked: 1, best: {}, orders: 1, orderBest: {}, bank: {}, upgrades: [] };
+  stored = {
+    unlocked: 1,
+    best: {},
+    orders: 1,
+    bookDone: false,
+    orderBest: {},
+    bank: {},
+    upgrades: [],
+  };
   save();
 }

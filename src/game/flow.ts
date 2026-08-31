@@ -9,6 +9,8 @@
 import { CEREMONY_S, JOBS, ORDERS, UPGRADES, type ItemId, type UpgradeId } from '../config.js';
 import { freshSeed } from './rng.js';
 import {
+  bookAt,
+  bookFinished,
   loadBank,
   recordJobDone,
   recordOrderDone,
@@ -74,32 +76,50 @@ export function runLanded(runIndex: number): void {
 /* ── the factory (FACTORY.md phases 1–2) ─────────────────────────────────── */
 
 /**
- * OPEN THE FACTORY. ONE ENTRANCE, and it always opens at the top of the
- * book.
+ * OPEN THE FACTORY. ONE ENTRANCE — and it picks up where you left off.
  *
- * The board used to let you pick any sheet you had ever reached, which
+ * Two mistakes have been made on this function and it is worth naming
+ * both, because the second was made fixing the first.
+ *
+ * The board used to let you PICK any sheet you had ever reached, which
  * sounds generous and was a trap: a shift starts with a bare floor, so
  * choosing sheet four dealt you sheet four's demands with none of sheets
- * one to three's feeds, plant or parts, and no way to get them. There
- * was no way to succeed and no way to find that out except by trying.
+ * one to three's feeds, plant or parts. Unwinnable, silently.
  *
- * So `index` is a tools-only door now (a walk that wants to jump the
- * ladder can still ask). A player gets sheet one, and the book advances
- * INSIDE the shift, onto the same floor, with everything they built
- * still standing. The bank rides in from the shelf, and what it holds is
- * the only thing a returning player actually keeps — which is right: the
- * parts persist, the plant is yours to stand again.
+ * The fix was one door that always opened at sheet one — and that threw
+ * every session's progress on the floor. Come back after a week and the
+ * catalogue was a single MAKER again; `stored.orders` was written
+ * faithfully by recordOrderDone and then read by nobody. "We can't build
+ * a bank" was the literal truth.
+ *
+ * So: one door, and it opens on the sheet the book had got to, with
+ * everything sheets before it ever switched on already switched on
+ * (postOrder's wakes are cumulative — that is the half of this fix that
+ * makes arriving mid-book survivable). Fill the book and the door opens
+ * onto the shop wide open instead. The floor is still bare, because a
+ * shift is a shift; the BANK rides in from the shelf, and the plant is
+ * yours to stand again.
+ *
+ * `index` stays as a tools-only override, so a walk can jump the ladder.
  */
-export function startShop(index = 0): void {
+export function startShop(index?: number): void {
   if (site.screen !== 'board') return;
-  const at = Math.max(0, Math.min(index, ORDERS.length - 1));
   clearPlant();
   plant.bank = loadBank();
   site.paused = false;
   site.inspect = -1;
   site.finale = false;
   site.screen = 'factory';
-  postOrder(at);
+  if (index === undefined && bookFinished()) {
+    // Nothing left to ask for: every feed, the whole catalogue.
+    openShopFully();
+  } else {
+    const at =
+      index !== undefined
+        ? Math.max(0, Math.min(index, ORDERS.length - 1))
+        : Math.max(0, Math.min(bookAt(), ORDERS.length - 1));
+    postOrder(at);
+  }
   site.generation++;
 }
 

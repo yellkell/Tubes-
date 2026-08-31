@@ -734,21 +734,29 @@ export const ORDERS: OrderSpec[] = [
     id: 'first-gear',
     name: 'FIRST GEAR',
     brief:
-      'Stand a MAKER on the floor and run the amber feed straight into its collar. The collar turns to meet you — just bring it near. Then watch: the works stamps a GEAR every few seconds. Its chute holds two, so lift one off with your fist to keep it stamping.',
+      'Stand a MAKER on the floor and run the amber feed straight into its collar. The collar turns to meet you — just bring it near. Then watch: the works stamps a GEAR every few seconds onto its chute.',
     steps: [
       'Ⓐ → BUILD → MAKER, then trigger on the floor to stand it',
       'Take the amber feed\u2019s collar in BOTH grips and haul it to the maker',
-      'Squeeze near a finished gear to lift it off the chute',
+      'Squeeze near a finished gear to lift it off the chute — handy, never needed',
     ],
     target: { kind: 'craft', item: 'gear' },
-    goal: 3,
+    // TWO, AND THE CHUTE HOLDS TWO. This sheet asked for three, and the
+    // only way to get a third out of a maker with a full chute is to lift
+    // one off by hand — so a player who did not find the squeeze-to-carry
+    // was walled on the FIRST sheet of the book with a catalogue of one
+    // machine and nothing else to try. A tutorial sheet must not have a
+    // failure mode; this one now completes itself the moment the works
+    // works, and the backed-up chute is the SETUP for sheet two rather
+    // than a lock on it.
+    goal: 2,
     wakes: { feeds: ['mains'], units: ['maker'] },
   },
   {
     id: 'the-bank',
     name: 'THE BANK',
     brief:
-      'Gears piling up on a chute are gears going nowhere. Stand the BANK, then stand ONE rail at the maker\u2019s chute and HOLD the trigger — the run hauls out of it like a tube out of a wall, bending round anything in its way, all the way to the bank.',
+      'The chute is full and the maker has stopped — gears piling up are gears going nowhere. Stand the BANK, then stand ONE rail at the maker\u2019s chute and HOLD the trigger: the run hauls out of it like a tube out of a wall, bending round anything in its way, all the way to the bank.',
     steps: [
       'Stand the BANK anywhere on the floor',
       'Stand a RAIL at the maker\u2019s chute, then HOLD the trigger and pull the run to the bank',
