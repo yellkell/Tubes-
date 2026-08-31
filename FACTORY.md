@@ -815,6 +815,13 @@ sheet turns its chute onto the first rail that lands beside it, because
 otherwise its facing was frozen at whatever angle your hand happened to
 be at when there was nothing to face.
 
+**"Pressing X while ghost build is active should exit ghost build."**
+It was a one-way door: arming a tool from the card left you holding it
+until you raised the card and pressed the same tool again, or built
+something you did not want. Ⓧ on the left controller now drops the
+ghost, the link chevrons and any haul in progress — never destructively,
+and it hands you back the empty hand that opens boxes.
+
 **"When we select and build it should show a picture and the word."**
 `ui/icons.ts`: a line-art elevation of every machine and every part, on
 the catalogue, the goal ladder, the sheets and the box panel.

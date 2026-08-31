@@ -260,6 +260,26 @@ actively working against the player:
   lane that goes AROUND. Posts still bend it deliberately where you
   want the corner.
 
+## The hands, in the shop
+
+Four buttons, and every one of them is the same verb in two moods:
+
+| | with a tool in hand | empty-handed |
+| --- | --- | --- |
+| **Trigger** | stamp it (hold, on a rail, to haul the run) | open the box under the reticle |
+| **Ⓑ** | turn the piece a quarter, and mean it | unplug a seated line, or unbolt a bare box |
+| **Ⓧ** | put it back down — ghost, links and a haul in progress | — |
+| **Ⓐ** | the shift card | the shift card (or close an open box) |
+
+**Ⓧ** was the late one. Arming a tool from the card was a one-way door:
+the only ways back out were to raise the card and press the same tool a
+second time, or to build something you did not want. It lives on the LEFT
+controller because the right hand is holding the piece and doing the
+aiming, and a bail-out you have to aim with is not a bail-out. It is
+never destructive — nothing already on the floor comes off, and a haul it
+interrupts simply is not laid (the anchor rail stays, because that landed
+on the press before the drag ever started).
+
 ## The box panel
 
 Point at any standing plant with an empty hand and pull the trigger.

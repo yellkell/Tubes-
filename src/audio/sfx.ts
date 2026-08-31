@@ -632,3 +632,13 @@ export function finaleChord(): void {
   });
   whooshNoise(1.4, 0.06, 400, 3600, 0.25);
 }
+
+/** THE TOOL GOES BACK ON THE BELT. Ⓧ with a piece in hand: a short
+ *  downward double-click with no ring to it — deliberately the opposite
+ *  shape to mountThunk's arrival, so "put down" and "put up" are never
+ *  confused in the dark. */
+export function toolStow(): void {
+  tone({ freq: 520, to: 300, type: 'triangle', dur: 0.06, gain: 0.1 });
+  tone({ freq: 300, to: 190, type: 'triangle', dur: 0.07, gain: 0.08, delay: 0.05 });
+  whooshNoise(0.05, 0.04, 1200, 500, 0.01);
+}

@@ -1469,8 +1469,17 @@ export class MenuSystem extends createSystem({}) {
                       ? 'aim at the floor \u2014 it turns itself to connect, \u24d1 turns it yourself'
                       : 'empty-handed, the trigger OPENS a box: what is in it, and UNPLUG',
             cw / 2,
-            ch - CARD_FOOT - 26,
+            ch - CARD_FOOT - 34,
           );
+          // THE WAY BACK OUT. Arming a tool used to be a one-way door
+          // and nothing on this card said otherwise, so it says so now —
+          // on the page where you pick the tool up, which is the only
+          // place anybody is going to read it.
+          if (armed) {
+            g.font = font(600, 19);
+            g.fillStyle = UI.dim;
+            g.fillText('\u24cd on the left controller puts it back down', cw / 2, ch - CARD_FOOT - 8);
+          }
         }
       },
       buttons,

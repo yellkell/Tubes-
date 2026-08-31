@@ -283,6 +283,41 @@ check(
 
 /* ── THE BOX PANEL ───────────────────────────────────────────────────── */
 
+console.log('\u24cd PUTS IT DOWN');
+// Arming a tool used to be a one-way door: the only ways out were to
+// raise the card and press the same tool again, or to build something
+// you did not want. Ⓧ on the left controller empties the hand — and
+// `stow()` IS the button's own code path, not a shortcut past it.
+const stow = () => page.evaluate(() => window.__tubes.build.stow());
+await arm(null);
+check((await stow()) === false, 'an empty hand has nothing to put down');
+await arm('chest');
+check((await page.evaluate(() => window.__tubes.build.armed())) === 'chest', 'a tool goes in hand');
+check(await stow(), '\u24cd takes it');
+check(
+  (await page.evaluate(() => window.__tubes.build.armed())) === null,
+  'and the hand is empty again',
+);
+// And mid-haul: the run you are dragging is dropped where it stands.
+// The ANCHOR rail stays — it landed on the press, before the drag ever
+// started — and nothing else does.
+await arm('belt');
+await aim(-4, 3, 0);
+await pull();
+const unitsBeforeStow = (await state()).units;
+const dragged = await haulTo(-1, 3);
+check(dragged.length >= 2, `a run is out in your hand (${dragged.length} cells)`);
+check(await stow(), '\u24cd mid-haul takes that too');
+check(
+  (await page.evaluate(() => window.__tubes.build.hauling())) === null,
+  'the run is dropped, not laid',
+);
+check(
+  (await state()).units === unitsBeforeStow,
+  `and nothing but the anchor ever landed (${unitsBeforeStow} units, unchanged)`,
+);
+await page.evaluate(() => window.__tubes.build.removeAt(-4, 3));
+
 console.log('THE BOX PANEL');
 // Playtest went looking for a chest's contents and for a way to pull a
 // tube off a box, and found neither. Both live on this panel, and it

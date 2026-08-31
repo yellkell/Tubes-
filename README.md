@@ -203,7 +203,9 @@ src/
                               HAUL: stand one rail, hold the trigger, and
                               drag the run out of it (armed from the shift
                               card; pieces face themselves, Ⓑ turns one,
-                              Ⓑ empty-handed unbolts)
+                              Ⓑ empty-handed unplugs or unbolts, Ⓧ puts
+                              the tool back down, and an empty hand on the
+                              trigger opens a box)
   systems/FactorySystem.ts    the shift: feeds, the factory pull (the
                               two-hand verb, re-aimed at glands), pours,
                               the sim's beat, parts, the bank's halo, the
@@ -274,8 +276,9 @@ re-aimed at bench machines whose intakes SWIVEL to meet the tube, rails
 and boxes that TURN THEMSELVES to connect (and Ⓑ turns one yourself when
 you disagree), bought sticks to bend a lane exactly where you want it, a
 BOX PANEL on every machine — click one to see what is inside it and to
-UNPLUG its line without unbolting the machine — and a BANK counting every
-delivery. When the book runs out the shop just stays open: every feed,
+UNPLUG its line without unbolting the machine — **Ⓧ** on the left
+controller to put a tool back down (mid-haul included), and a BANK
+counting every delivery. When the book runs out the shop just stays open: every feed,
 the whole catalogue, and nobody asking you for ten of anything.
 
 ## Checks

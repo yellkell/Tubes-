@@ -30,6 +30,13 @@
  *     is plumbed into it, UNPLUG, TURN, TAKE IT OUT. Playtest went
  *     looking for a chest's contents and for a way to pull a tube off a
  *     maker, and found neither; both live there now.
+ *  6. AND Ⓧ PUTS IT DOWN. Arming a tool from the card was a one-way
+ *     door: the only ways back out were to raise the card again and
+ *     press the same tool a second time, or to build something you did
+ *     not want. Ⓧ on the LEFT controller drops whatever is in your
+ *     hand — the ghost, the links, and a rail run you are mid-haul on —
+ *     and gives you the empty hand back, which is also the hand that
+ *     opens boxes. One button, always available, never destructive.
  *
  * This system MUTATES the plant only (factory/sim.ts's doors) — meshes
  * belong to FactorySystem.
@@ -131,6 +138,12 @@ export const buildView: {
    *  be one anonymous crate for everything; this is how a walk proves it
    *  wears the machine now, and keeps wearing it. */
   ghostParts?: () => Record<string, number>;
+  /**
+   * Ⓧ'S OWN DOOR — put the armed tool away and drop any haul in
+   * progress. The button calls exactly this, so a walk pressing `stow()`
+   * is pressing Ⓧ. Returns true if there was anything to put down.
+   */
+  stow?: () => boolean;
 } = {};
 
 const _origin = new Vector3();
@@ -374,6 +387,35 @@ export class BuildSystem extends createSystem({}) {
     };
     buildView.hauling = () =>
       this.haul ? { anchor: { ...this.haul.anchor }, steps: this.haul.steps.map((s) => ({ ...s })) } : null;
+    buildView.stow = () => this.stow();
+  }
+
+  /**
+   * PUT IT DOWN. The ghost goes, the link chevrons go, a run you were
+   * mid-haul on is dropped where it stands (the ANCHOR rail stays — it
+   * landed on the press, before the drag ever started, and pretending
+   * otherwise would be a different verb), and the hand is empty again.
+   *
+   * Deliberately never destructive: nothing already on the floor comes
+   * off, and the Ⓑ override is cleared so the next piece you pick up
+   * starts by facing itself, the way a freshly-armed tool always does.
+   */
+  private stow(): boolean {
+    if (!this.armed && !this.haul) return false;
+    if (this.haul) {
+      this.showHaul([]);
+      this.haul = null;
+      this.haulHeld = false;
+      this.haulDriven = false;
+    }
+    this.armed = null;
+    this.forced = null;
+    this.view = null;
+    this.ghost.visible = false;
+    for (const m of this.links) m.visible = false;
+    sfx.toolStow();
+    buzz(this.world, 'left', 0.25, 30);
+    return true;
   }
 
   /** What the tool would do at this cell — the ONE place the rules live,
@@ -457,6 +499,13 @@ export class BuildSystem extends createSystem({}) {
       this.hideAim();
       return;
     }
+
+    // Ⓧ PUTS THE TOOL DOWN — checked before anything else this frame, so
+    // the rest of it runs with an empty hand and the ghost simply is not
+    // drawn. It lives on the LEFT controller on purpose: the right hand
+    // is holding the piece and doing the aiming, and a bail-out you have
+    // to aim with is not a bail-out.
+    if (this.input.xr.gamepads.left?.getButtonDown(InputComponent.X_Button)) this.stow();
 
     const rayObj = this.world.playerSpaceEntities?.raySpaces?.right?.object3D;
     const pad = this.input.xr.gamepads.right;
