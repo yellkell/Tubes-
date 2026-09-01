@@ -588,9 +588,25 @@ export class FactorySystem extends createSystem({}) {
 
   /* ── feeds ────────────────────────────────────────────────────────────── */
 
+  /** Where a side's pillar stands: the middle of its tape run, SNAPPED
+   *  to the nearest lattice centreline. The tape lands wherever the
+   *  player dragged it, so a raw midpoint put every spout a random
+   *  fraction of a cell off the grid — a tube pulled straight out of it
+   *  met a machine slightly askew, forever. Snapped, the spout looks
+   *  straight down a row of cells; and because opposite sides share one
+   *  midline, facing pillars line up with EACH OTHER down the same lane
+   *  by construction. */
   private sideMid(side: FloorSide, out: Vector3): Vector3 {
-    const cx = (floorLayout.left + floorLayout.right) / 2;
-    const cz = (floorLayout.near + floorLayout.far) / 2;
+    const lane = (v: number, lo: number, hi: number): number => {
+      const c = (Math.round(v / CELL - 0.5) + 0.5) * CELL;
+      return Math.min(hi - 0.3, Math.max(lo + 0.3, c));
+    };
+    const cx = lane(
+      (floorLayout.left + floorLayout.right) / 2,
+      floorLayout.left,
+      floorLayout.right,
+    );
+    const cz = lane((floorLayout.near + floorLayout.far) / 2, floorLayout.far, floorLayout.near);
     if (side === 'far') out.set(cx, 0, floorLayout.far);
     else if (side === 'near') out.set(cx, 0, floorLayout.near);
     else if (side === 'left') out.set(floorLayout.left, 0, cz);

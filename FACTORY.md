@@ -963,3 +963,27 @@ down and dance on the boards; now the climb ends ON the lid and the
 tank it was brewed in is its podium — head at your eye line, hopping
 on the machine that made it, the contact shadow grounding it on the
 lid instead of the floor.
+
+### The fourth pass — the pillars slim down and line up
+
+**"Let's iterate on the design for the tube pillars, more slender and
+aligned."** The manifold pillar was a 22 cm drum wearing a 32 cm spout
+plate — a gatepost. It is a STANDPIPE now: the column thinned by nearly
+half and drawn a touch taller, standing on a bolted foot flange, with
+the working weight moved into the one part that cannot shrink — the
+spout boss, which still has to visibly swallow the tube's 88 mm root
+section. A slim riser carrying one heavy boss is the fitter's
+silhouette. Two hub collars ring the column at the tape band (0.72 m)
+and the bench datum (0.85 m), the same two heights the site's rig is
+built to, so the pillar reads as part of the room's grid rather than
+furniture beside it; a ring of hex heads on the plate face keeps the
+fabrication tell at eye level, and the boss stack (neck, plate, gland,
+halo) sits on one tight axis instead of the old z-scatter.
+
+Aligned in plan, too: the tape lands wherever the player dragged it, so
+a pillar at the raw midpoint of its side stood a random fraction of a
+cell off the build lattice — every straight pull met its machine
+slightly askew, forever. Each pillar now snaps to the nearest lattice
+centreline (`FactorySystem.sideMid`), so the spout looks straight down
+a row of cells — and because opposite sides share one midline, facing
+pillars line up with each other down the same lane by construction.

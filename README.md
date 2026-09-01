@@ -181,8 +181,11 @@ src/
                          mouths, silhouette and surface carrying the
                          identity (a flat-stock re-cut was tried here and
                          reverted; the header says why). Plus the gland
-                         (a socket on legs), the four feed pillars with
-                         PEARL's bolted plate, and the part KITS — every
+                         (a socket on legs), the four feed pillars —
+                         slender standpipes on bolted feet, each snapped
+                         to a lattice centreline so the spout looks
+                         straight down a row of cells, PEARL's wearing
+                         its bolted plate — and the part KITS — every
                          item a little assembly in its lineage's plate
                          language, instanced
   goop/                  THE GOOP, vendored whole from RAVE RAID: the

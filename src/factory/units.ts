@@ -756,6 +756,20 @@ export interface FeedRefs {
  * A manifold pillar wearing its line's plate language. Local +Z faces
  * INTO the floor; the spout sits at FACTORY.spoutHeight.
  *
+ * SLENDER, AND ALIGNED. The old pillar was a 22 cm drum wearing a
+ * 32 cm dinner plate — a gatepost. It is a STANDPIPE now: the column
+ * thinned by nearly half and drawn a touch taller, standing on a bolted
+ * foot flange, with all of the working weight moved into the spout
+ * BOSS — which is the one part that cannot shrink, because the tube's
+ * 88 mm root section has to come out of something that visibly swallows
+ * it. A slim riser carrying one heavy boss is the fitter's silhouette.
+ * Two hub collars ring the column at the tape band (0.72) and the bench
+ * datum (0.85) — the same two heights the site's own rig is built to —
+ * so the pillar reads as part of the room's grid, not furniture beside
+ * it. (Where it STANDS is aligned too: FactorySystem snaps each pillar
+ * to the nearest lattice centreline, so the spout looks straight down a
+ * row of cells.)
+ *
  * PEARL — the fourth manifold, on the near side — is built SHUT: a blank
  * plate with two crossed straps bolted over where the spout should be, a
  * door that has visibly never been opened. FactorySystem takes it off
@@ -778,26 +792,63 @@ export function buildFeed(line: LineSpec | null): FeedRefs {
     metalness: line ? line.metalness : 0.7,
   });
 
+  // THE RISER.
   const pillar = new Mesh(new CylinderGeometry(1, 1, 1, sides), shell);
-  pillar.scale.set(0.11, 1.35, 0.11);
-  pillar.position.y = 0.675;
+  pillar.scale.set(0.062, 1.42, 0.062);
+  pillar.position.y = 0.71;
   group.add(pillar);
 
+  // The foot flange: planted on the line, not stuck into it.
+  const foot = new Mesh(new CylinderGeometry(1, 1, 1, sides), shell);
+  foot.scale.set(0.095, 0.022, 0.095);
+  foot.position.y = 0.011;
+  group.add(foot);
+
+  // The datum collars — tape band and bench top, the site's own heights.
+  for (const y of [FLOOR.tapeHeight, FLOOR.postHeight]) {
+    const collar = new Mesh(torusGeo(), hubMat);
+    collar.rotation.x = Math.PI / 2;
+    collar.scale.setScalar(0.068);
+    collar.position.y = y;
+    group.add(collar);
+  }
+
   const cap = new Mesh(new CylinderGeometry(1, 1, 1, sides), shell);
-  cap.scale.set(0.135, 0.05, 0.135);
-  cap.position.y = 1.375;
+  cap.scale.set(0.075, 0.035, 0.075);
+  cap.position.y = 1.437;
   group.add(cap);
 
-  // The spout plate on the room-facing face.
+  // THE BOSS — neck, plate, gland collar and halo on one tight axis.
+  const neck = new Mesh(new CylinderGeometry(1, 1, 1, sides), shell);
+  neck.rotation.x = Math.PI / 2;
+  neck.scale.set(0.048, 0.09, 0.048);
+  neck.position.set(0, FACTORY.spoutHeight, 0.045);
+  group.add(neck);
+
   const plate = new Mesh(new CylinderGeometry(1, 1, 1, sides), shell);
   plate.rotation.x = Math.PI / 2;
-  plate.scale.set(0.16, 0.04, 0.16);
-  plate.position.set(0, FACTORY.spoutHeight, 0.12);
+  plate.scale.set(0.118, 0.032, 0.118);
+  plate.position.set(0, FACTORY.spoutHeight, 0.09);
   group.add(plate);
 
+  // A ring of hex heads on the plate face — the fabrication tell, at the
+  // one height the player actually looks at.
+  for (let b = 0; b < 6; b++) {
+    const a = (b / 6) * Math.PI * 2 + Math.PI / 6;
+    const bolt = new Mesh(new CylinderGeometry(1, 1, 1, 6), hubMat);
+    bolt.rotation.x = Math.PI / 2;
+    bolt.scale.set(UNITS.boltR, 0.01, UNITS.boltR);
+    bolt.position.set(
+      Math.cos(a) * 0.09,
+      FACTORY.spoutHeight + Math.sin(a) * 0.09,
+      0.108,
+    );
+    group.add(bolt);
+  }
+
   const gland = new Mesh(torusGeo(), shell);
-  gland.scale.setScalar(0.105);
-  gland.position.set(0, FACTORY.spoutHeight, 0.155);
+  gland.scale.setScalar(0.102);
+  gland.position.set(0, FACTORY.spoutHeight, 0.122);
   group.add(gland);
 
   const glowMat = new MeshBasicMaterial({
@@ -809,8 +860,8 @@ export function buildFeed(line: LineSpec | null): FeedRefs {
     side: DoubleSide,
   });
   const halo = new Mesh(ringGeo(), glowMat);
-  halo.scale.setScalar(0.15);
-  halo.position.set(0, FACTORY.spoutHeight, 0.145);
+  halo.scale.setScalar(0.128);
+  halo.position.set(0, FACTORY.spoutHeight, 0.112);
   halo.renderOrder = 12;
   group.add(halo);
 
@@ -821,13 +872,13 @@ export function buildFeed(line: LineSpec | null): FeedRefs {
     hatch = new Group();
     const shut = new Mesh(cylGeo(), hubMat);
     shut.rotation.x = Math.PI / 2;
-    shut.scale.set(0.1, 0.016, 0.1);
-    shut.position.set(0, FACTORY.spoutHeight, 0.163);
+    shut.scale.set(0.096, 0.016, 0.096);
+    shut.position.set(0, FACTORY.spoutHeight, 0.13);
     hatch.add(shut);
     for (const rot of [0.7, -0.7]) {
       const strap = new Mesh(boxGeo(), shell);
-      strap.scale.set(0.26, 0.028, 0.012);
-      strap.position.set(0, FACTORY.spoutHeight, 0.172);
+      strap.scale.set(0.24, 0.026, 0.011);
+      strap.position.set(0, FACTORY.spoutHeight, 0.14);
       strap.rotation.z = rot;
       hatch.add(strap);
     }
@@ -835,11 +886,11 @@ export function buildFeed(line: LineSpec | null): FeedRefs {
       const a = (b / 6) * Math.PI * 2;
       const bolt = new Mesh(new CylinderGeometry(1, 1, 1, 6), hubMat);
       bolt.rotation.x = Math.PI / 2;
-      bolt.scale.set(0.011, 0.01, 0.011);
+      bolt.scale.set(UNITS.boltR, 0.01, UNITS.boltR);
       bolt.position.set(
-        Math.cos(a) * 0.078,
-        FACTORY.spoutHeight + Math.sin(a) * 0.078,
-        0.176,
+        Math.cos(a) * 0.074,
+        FACTORY.spoutHeight + Math.sin(a) * 0.074,
+        0.145,
       );
       hatch.add(bolt);
     }
@@ -847,12 +898,12 @@ export function buildFeed(line: LineSpec | null): FeedRefs {
   } else if (!line) {
     // No line at all: a shut iris where a spout would be.
     const shut = new Mesh(discGeo(), irisMat);
-    shut.scale.setScalar(0.07);
-    shut.position.set(0, FACTORY.spoutHeight, 0.141);
+    shut.scale.setScalar(0.065);
+    shut.position.set(0, FACTORY.spoutHeight, 0.108);
     group.add(shut);
   }
 
-  return { group, glowMat, hatch, mouthOffset: 0.17, awakeVisual: false };
+  return { group, glowMat, hatch, mouthOffset: 0.135, awakeVisual: false };
 }
 
 /* ── the parts ──────────────────────────────────────────────────────────
