@@ -604,22 +604,21 @@ export class TubeSystem extends createSystem({}) {
       // kink so the tail can't burst out of the fatter shell either: at
       // a sharp carried bend the overlap shortens and the rib covers the
       // seam, which is the right failure.
-      // The tuck shrinks ALL THE WAY TO ZERO at a sharp elbow — the old
-      // 2 cm floor was a lit nub poking sideways out of the fatter shell
-      // at every steep joint, which is exactly where the clearance arcs
-      // now put steep joints. The seam a vanished tuck can no longer
-      // bridge is the RIB's job below: the joint collar widens with the
-      // kink, covering the elbow in metal the way a real fitting does.
-      // (The root's tuck into the mouth gets the same clamp, against the
-      // mouth's own normal — it was never checked at all.)
-      let tuck = span.index === 0 ? 0.03 : Math.min(TUBE.pourOverlap, span.s0);
+      // The tuck shrinks ALL THE WAY TO ZERO at a sharp elbow — a floor
+      // here was a lit nub poking sideways out of the fatter shell at
+      // every steep joint, which is exactly where the clearance arcs
+      // put steep joints. The seam a vanished tuck can no longer bridge
+      // is the RIB's job below: the joint collar widens with the kink,
+      // covering the elbow in metal the way a real fitting does. And
+      // the ROOT has no tail at all: a tail along a steep root chord
+      // swings OUT of the mouth's boss and shows its raw lit cap to the
+      // room (the headset photographed exactly that) — the shell's own
+      // overhang plus the boss ring cover the mouth seam without it.
+      let tuck = span.index === 0 ? 0 : Math.min(TUBE.pourOverlap, span.s0);
       if (span.index === 0) _prevDir.copy(run.normalA);
       const kink = _prevDir.distanceTo(_tangent); // ≈ the turn, as a chord
-      if (kink > 1e-4) {
-        const room =
-          span.index === 0
-            ? 0.03 // the mouth's gland bore over the root pour
-            : spans[span.index - 1].radius - span.radius * 0.87;
+      if (tuck > 0 && kink > 1e-4) {
+        const room = spans[span.index - 1].radius - span.radius * 0.87;
         tuck = Math.min(tuck, Math.max(0, room) / kink);
       }
       seg.pour.position

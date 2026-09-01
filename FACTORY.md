@@ -1105,3 +1105,36 @@ sweep re-run afterwards since a sidestep changes what stands beneath.
 Audited on the adversarial rig (two runs crossing above a lane laid
 under both): tube-tube 0.223 m at the crossing, 0.999 m over the lane,
 against bores that need 0.15.
+
+### The ninth pass — the mouth of the spout
+
+**"As the liquid enters the tubes we get this gross sharp angle of the
+liquid and the liquid poking through to the outside world."** The
+headset was pointed straight at a pillar mouth, and both counts were
+real. The POKING was the root section's pour tail: every section tucks
+backward along its own axis to hide the joint seam, and at the root
+that tail runs INTO the mouth — but on a dodge-lifted run the root
+chord leaves steeply, the tail swings out of the gland boss, and the
+pour's raw lit end cap hangs in the room. The root has NO tail now, in
+both pull forks: the shell's own overhang plus the boss ring cover the
+mouth seam without one.
+
+The SHARP ANGLE was the clearance dodge itself. The lift lands on the
+curve's two control points, and a control sitting only ~0.85 m off a
+mouth that gets shoved a full metre upward means the tube WRENCHES off
+the spout axis the moment it leaves the boss. Two fixes, one honest,
+one structural. Honest: a dodged run's controls now also STRETCH out
+along their own end normals as the lift grows (capped — scaling it
+freely threw the controls metres out and looped the curve past its own
+head), so the first stretch of tube holds the boss line and banks the
+dodge into the middle of the arc. Structural: the plant sweep's demand
+had a ratchet in it — a lane hauled right up to a fed maker put lane
+cells under the tube's final descent, no lift can raise an end pinned
+in its gland, and the solver pumped every such run to its height cap
+for nothing. The SEAT CORRIDOR is exempt now (samples within half a
+cell of either endpoint, by distance, not index), which is the old
+documented caveat — "a line must come down to seat" — carved into the
+solver instead of written under it. On the same adversarial rig the
+lifts fell from the 1.4 cap to 0.98/0.68, departures fell from ~50° to
+~30°, and the clearances HELD: tube-tube 0.227 m, 0.976 m over the
+lane, and the mouth close-ups show the seam buried in the boss.

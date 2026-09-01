@@ -416,8 +416,9 @@ export class FactorySystem extends createSystem({}) {
       bendControl(_mouth, run.normalA, run.extension, _p1);
       endControl(run.headVisual, run.normalB, run.extension, _p2, 1);
       if (lift) {
-        _p1.add(lift);
-        _p2.add(lift);
+        const stretch = Math.min(0.6, lift.length() * 0.75);
+        _p1.add(lift).addScaledVector(run.normalA, stretch);
+        _p2.add(lift).addScaledVector(run.normalB, stretch);
       }
       for (let k = 0; k < n; k++) {
         pathPoint(_mouth, _p1, _p2, run.headVisual, k / (n - 1), _g);
@@ -1281,8 +1282,11 @@ export class FactorySystem extends createSystem({}) {
     bendControl(_mouth, run.normalA, run.extension, _p1);
     endControl(run.headVisual, run.normalB, run.extension, _p2, 1);
     if (offset) {
-      _p1.add(offset);
-      _p2.add(offset);
+      // Mirror of layTube's dodge application — offset plus the capped
+      // normal-stretch — so the relaxation solves the curve it draws.
+      const stretch = Math.min(0.6, offset.length() * 0.75);
+      _p1.add(offset).addScaledVector(run.normalA, stretch);
+      _p2.add(offset).addScaledVector(run.normalB, stretch);
     }
     for (let k = 0; k < out.length; k++) {
       pathPoint(_mouth, _p1, _p2, run.headVisual, k / (out.length - 1), out[k]);
@@ -1366,11 +1370,23 @@ export class FactorySystem extends createSystem({}) {
         this.sampleRun(run, v, this.dodgeA);
         let need = 0;
         let at = 0.5;
-        // The last stretch into the gland HAS to come down; only the
-        // outermost samples are exempt, and partial clearance near the
-        // ends still beats none.
+        // THE SEAT CORRIDOR IS EXEMPT: within reach of either endpoint
+        // the line is committed to its boss height — no lift can raise
+        // a pinned end, and demanding it just ratcheted the offset to
+        // its cap for nothing (a lane hauled right up to a fed maker
+        // used to buy every run a max-height arc AND a wrenched
+        // departure). Distance to the ends, not sample index — the
+        // dodge stretch shifts how the samples pace along the curve.
         for (let k = 2; k < this.dodgeA.length - 2; k++) {
           const p = this.dodgeA[k];
+          const mouth = run.pointA;
+          const head = run.headVisual;
+          if (
+            Math.hypot(p.x - mouth.x, p.z - mouth.z) < 0.45 ||
+            Math.hypot(p.x - head.x, p.z - head.z) < 0.45
+          ) {
+            continue;
+          }
           const floor = this.clearanceAt(p.x, p.z, run.targetUnit);
           if (floor - p.y > need) {
             need = floor - p.y;
@@ -1492,12 +1508,21 @@ export class FactorySystem extends createSystem({}) {
 
     // The clearance pass lands here: an offset run's controls move (up,
     // and sometimes a sidestep), its ends stay put, and every piece
-    // below follows the shifted curve.
+    // below follows the shifted curve. Each control ALSO stretches out
+    // along its own end normal as the lift grows — a raw offset alone
+    // tilted the departure hard off the spout axis (the headset caught
+    // liquid leaving a mouth at a wrenched angle), while a longer reach
+    // keeps the first stretch of tube on the boss line and banks the
+    // dodge into the middle of the arc instead. The stretch is CAPPED:
+    // scaling it freely with the lift threw the controls metres out,
+    // looped the curve past its own head, and fed the clearance solver
+    // a flatter arc than it thought it had.
     if (run.phase === 'seated' || run.phase === 'flowing') {
       const lift = this.dodgeLift.get(run.side);
       if (lift) {
-        _p1.add(lift);
-        _p2.add(lift);
+        const stretch = Math.min(0.6, lift.length() * 0.75);
+        _p1.add(lift).addScaledVector(run.normalA, stretch);
+        _p2.add(lift).addScaledVector(_entry, stretch);
       }
     }
 
@@ -1529,16 +1554,15 @@ export class FactorySystem extends createSystem({}) {
       seg.shell.scale.set(span.radius, chord + SHELL_PAD, span.radius);
       // THE POUR STAYS IN ITS OWN GLASS: coaxial with the shell, tucked
       // backward along the shared axis into the fatter section behind,
-      // the tuck clamped by the local kink — see TubeSystem.layTube,
-      // whose pour block this forks verbatim, for the whole story.
-      let tuck = span.index === 0 ? 0.03 : Math.min(TUBE.pourOverlap, span.s0);
+      // the tuck clamped by the local kink — and the ROOT has no tail at
+      // all, because a tail along a steep root chord swings out of the
+      // gland boss and shows its raw lit cap to the room. See
+      // TubeSystem.layTube, whose pour block this forks verbatim.
+      let tuck = span.index === 0 ? 0 : Math.min(TUBE.pourOverlap, span.s0);
       if (span.index === 0) _prevDir.copy(run.normalA);
       const kink = _prevDir.distanceTo(_tangent);
-      if (kink > 1e-4) {
-        const room =
-          span.index === 0
-            ? 0.03
-            : spans[span.index - 1].radius - span.radius * 0.87;
+      if (tuck > 0 && kink > 1e-4) {
+        const room = spans[span.index - 1].radius - span.radius * 0.87;
         tuck = Math.min(tuck, Math.max(0, room) / kink);
       }
       seg.pour.position
