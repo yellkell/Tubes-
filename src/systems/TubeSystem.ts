@@ -604,13 +604,23 @@ export class TubeSystem extends createSystem({}) {
       // kink so the tail can't burst out of the fatter shell either: at
       // a sharp carried bend the overlap shortens and the rib covers the
       // seam, which is the right failure.
+      // The tuck shrinks ALL THE WAY TO ZERO at a sharp elbow — the old
+      // 2 cm floor was a lit nub poking sideways out of the fatter shell
+      // at every steep joint, which is exactly where the clearance arcs
+      // now put steep joints. The seam a vanished tuck can no longer
+      // bridge is the RIB's job below: the joint collar widens with the
+      // kink, covering the elbow in metal the way a real fitting does.
+      // (The root's tuck into the mouth gets the same clamp, against the
+      // mouth's own normal — it was never checked at all.)
       let tuck = span.index === 0 ? 0.03 : Math.min(TUBE.pourOverlap, span.s0);
-      if (span.index > 0) {
-        const kink = _prevDir.distanceTo(_tangent); // ≈ the turn, as a chord
-        if (kink > 1e-4) {
-          const room = spans[span.index - 1].radius - span.radius * 0.87;
-          tuck = Math.max(0.02, Math.min(tuck, room / kink));
-        }
+      if (span.index === 0) _prevDir.copy(run.normalA);
+      const kink = _prevDir.distanceTo(_tangent); // ≈ the turn, as a chord
+      if (kink > 1e-4) {
+        const room =
+          span.index === 0
+            ? 0.03 // the mouth's gland bore over the root pour
+            : spans[span.index - 1].radius - span.radius * 0.87;
+        tuck = Math.min(tuck, Math.max(0, room) / kink);
       }
       seg.pour.position
         .copy(_pA)
@@ -625,10 +635,18 @@ export class TubeSystem extends createSystem({}) {
       seg.pourMat.uniforms.uS1.value = span.s1;
       _prevDir.copy(_tangent);
       // The joint collar sits ON the shared joint point, wearing the
-      // curve's own tangent there — halfway between its two elbows.
+      // curve's own tangent there — halfway between its two elbows. And
+      // it CARRIES the elbow: the band widens with the joint's kink (set
+      // on the PREVIOUS segment's rib, which is the collar at this
+      // joint), so a sharp bend reads as a fatter fitting, never a gap.
       pathTangent(_mouth, _p1, _p2, hw.headVisual, Math.min(1, span.s1 / extSafe), _tangent);
       seg.rib.position.copy(_pB);
       seg.rib.quaternion.copy(_quat.setFromUnitVectors(FWD_Z, _tangent));
+      seg.rib.scale.z = span.radius * 1.1;
+      if (span.index > 0) {
+        hw.segments[span.index - 1].rib.scale.z =
+          spans[span.index - 1].radius * 1.1 * (1 + Math.min(1.4, kink * 2.5));
+      }
     }
 
     // The collar caps the head, facing out along the final tangent.

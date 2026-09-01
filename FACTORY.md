@@ -1074,3 +1074,34 @@ lane hauled underneath a standing line pushes that line up on the spot.
 Clashes hard against a run's endpoints are left alone in both sweeps —
 a mid-curve bump has no leverage there, and pumping it just buys a
 huge crest that separates nothing.
+
+### The eighth pass — the leak at the elbows, and the clearance pass grows teeth
+
+**"We're still seeing liquid poking outside the tubes in certain
+places."** The certain places were sharp elbows — exactly where the new
+clearance arcs put sharp elbows. The pour's joint tuck had a 2 cm
+MINIMUM, and at a steep kink even 2 cm of tail pokes sideways out of
+the fatter shell; the root's tuck into the mouth was never clamped at
+all. The tuck now shrinks all the way to ZERO against the local kink
+(both ends, both pull forks), and the seam a vanished tuck can no
+longer bridge belongs to the RIB: the joint collar widens with the
+kink, so a sharp bend reads as a fatter fitting, never as a gap and
+never as escaped liquid.
+
+**"And I'm seeing tubes clipping over each other in the most recent
+test images."** Two real defects, both now measured instead of
+eyeballed (factoryView.runCurve samples the exact drawn curve; the
+look tool audits distances). First, the pair check compared POINT
+samples ~15 cm apart, so a perpendicular crossing's true closest
+approach fell between samples — "cleared" on paper, clipped on screen.
+It uses exact segment-to-segment distances now. Second, always lifting
+the LATER run was a pecking order, not a solution: in a cramped corner
+it pinned at its cap with the tubes still touching. The pass is a
+RELAXATION now — each round finds the worst remaining clash and moves
+whichever run clears it cheapest, and the dodge is a full VECTOR: up
+first, and a bounded SIDESTEP when vertical leverage runs out (pushed
+along the line between closest points, never downward), with the plant
+sweep re-run afterwards since a sidestep changes what stands beneath.
+Audited on the adversarial rig (two runs crossing above a lane laid
+under both): tube-tube 0.223 m at the crossing, 0.999 m over the lane,
+against bores that need 0.15.
