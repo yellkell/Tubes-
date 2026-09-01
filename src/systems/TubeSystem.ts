@@ -137,7 +137,7 @@ const _pB = new Vector3();
 
 /** How far a shell runs past each joint, hiding the elbow. */
 const SHELL_PAD = 0.03;
-const _point = new Vector3();
+const _prevDir = new Vector3();
 const _tangent = new Vector3();
 const _quat = new Quaternion();
 const _seat = new Vector3();
@@ -592,26 +592,38 @@ export class TubeSystem extends createSystem({}) {
       seg.shell.position.copy(_pA).add(_pB).multiplyScalar(0.5);
       seg.shell.quaternion.copy(_quat);
       seg.shell.scale.set(span.radius, chord + SHELL_PAD, span.radius);
-      // THE POUR IS ONE COLUMN. Each section's volume tucks back through
-      // its own joint into the fatter section behind it (the root tucks
-      // into the flange's gland), so the seam, the elbow wedge and the
-      // joint ring all sit over lit glow instead of a gap. The pour's
-      // own endpoints live on the curve too (t < 0 extrapolates the
-      // root's tuck into the wall), and the uniforms carry the STRETCHED
-      // span, so the front's arc-length clip stays world-true straight
-      // through the overlap: both volumes cut on the same s.
-      const pour0 = span.s0 - (span.index === 0 ? 0.03 : Math.min(TUBE.pourOverlap, span.s0));
-      pathPoint(_mouth, _p1, _p2, hw.headVisual, pour0 / extSafe, _point);
-      _tangent.copy(_pB).sub(_point);
-      const pourChord = Math.max(0.01, _tangent.length());
-      _tangent.normalize();
-      seg.pour.position.copy(_point).add(_pB).multiplyScalar(0.5);
-      seg.pour.quaternion.copy(_quat.setFromUnitVectors(UP_Y, _tangent));
+      // THE POUR IS ONE COLUMN — AND IT STAYS IN ITS OWN GLASS. Each
+      // section's volume is COAXIAL with its shell (same chord, same
+      // quaternion) and simply extends backward along that axis through
+      // the joint into the fatter section behind it, so the seam and the
+      // joint ring sit over lit glow. It used to be aimed at the curve
+      // point behind the joint instead — a straight prism on a DIFFERENT
+      // line than its own casing, which cut the corner at any bend and
+      // stuck out of the glass as a hard orange wedge (the headset
+      // photographed exactly that). The tuck is clamped by the local
+      // kink so the tail can't burst out of the fatter shell either: at
+      // a sharp carried bend the overlap shortens and the rib covers the
+      // seam, which is the right failure.
+      let tuck = span.index === 0 ? 0.03 : Math.min(TUBE.pourOverlap, span.s0);
+      if (span.index > 0) {
+        const kink = _prevDir.distanceTo(_tangent); // ≈ the turn, as a chord
+        if (kink > 1e-4) {
+          const room = spans[span.index - 1].radius - span.radius * 0.87;
+          tuck = Math.max(0.02, Math.min(tuck, room / kink));
+        }
+      }
+      seg.pour.position
+        .copy(_pA)
+        .add(_pB)
+        .multiplyScalar(0.5)
+        .addScaledVector(_tangent, -tuck / 2);
+      seg.pour.quaternion.copy(_quat);
       // 0.87 of the shell's bore: a hair off the glass, so the frost
       // reads as a film over liquid rather than a pipe with a light in.
-      seg.pour.scale.set(span.radius * 0.87, pourChord, span.radius * 0.87);
-      seg.pourMat.uniforms.uS0.value = pour0;
+      seg.pour.scale.set(span.radius * 0.87, chord + tuck, span.radius * 0.87);
+      seg.pourMat.uniforms.uS0.value = span.s0 - tuck;
       seg.pourMat.uniforms.uS1.value = span.s1;
+      _prevDir.copy(_tangent);
       // The joint collar sits ON the shared joint point, wearing the
       // curve's own tangent there — halfway between its two elbows.
       pathTangent(_mouth, _p1, _p2, hw.headVisual, Math.min(1, span.s1 / extSafe), _tangent);

@@ -1016,3 +1016,40 @@ trays grew lips — a TRAY, not a shelf — on makers and both combiner
 ports; the chest's olive lid is pinned by four hex heads; and the
 combiner's brass spine, drawn proud of its lobes, wears two more down
 its face. Draw budget after all of it: 104 of 420.
+
+### The sixth pass — nothing clips: the pour, the corridor, the crossing
+
+**"The liquid in the tubes appears too angular — a piece of liquid
+sticking out of the glass casing."** Photographed on the headset, and
+the mechanism was exactly what the photo shows: each section's pour
+volume was aimed at the curve point BEHIND its joint (the old overlap
+trick), which put the prism on a different line than its own casing —
+at any bend it cut the corner and stuck out of the glass as a hard
+wedge. The pour is COAXIAL with its shell now (same chord, same
+quaternion, so it geometrically cannot leave its own glass) and tucks
+backward along that shared axis into the fatter section behind, with
+the tuck clamped by the local kink so it cannot burst out of that shell
+either — at a sharp carried bend the overlap shortens and the rib
+covers the seam, which is the right failure. Same fix in both pull
+forks (wall + factory), and the pour prism gains the shell's own 18
+sides so the liquid stops reading as faceted. job-walk still holds
+every joint at 0.00 mm.
+
+**"Tubes clip through each other — they should find paths around each
+other… maybe connect to the top of the boxes to be more out of the
+way?"** Both, and they reinforce: the MAKER's gland now mounts HIGH on
+the drum and TILTED UP (~60°), so supply lines ride an overhead
+corridor from the spouts (1.05 m) down to ~0.91 m and pour in from
+above — clear of the rails, the parts riding them, and the other boxes
+that a level 0.7 m mount used to plough straight through. The VAT is
+the deliberate exception, kept side-fed at working height per the
+follow-up ask: the green pour arriving inside the glass is the finale's
+whole show, and the lid stays the goop's podium. And where two SEATED
+tubes still cross in the overhead corridor, THE CLEARANCE PASS lifts
+the later one's belly over the other — its bezier controls rise, its
+ends stay seated in their glands, the polyline law keeps every joint
+sealed through the new bend — a pipe bridging a pipe, the same language
+as a rail decking a rail. Held runs are never fought, and the pass
+recomputes only when the seated set changes. (Rails already refuse to
+clip by construction: they route around plant and deck over crossings —
+that half was the third pass.)

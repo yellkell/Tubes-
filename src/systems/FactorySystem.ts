@@ -62,8 +62,8 @@ import {
   beltBranches,
   beltEntry,
   deliverPart,
+  glandMount,
   glandPose,
-  glandReach,
   haulRoute,
   linkAhead,
   partPose,
@@ -110,6 +110,9 @@ export const factoryView: {
   };
   /** How close a seated line is to coming off its gland (0..1). */
   strain?: (side: FloorSide) => number;
+  /** THE CLEARANCE PASS, visible: which seated runs are lifted over
+   *  another run, and by how much (m). Empty = nothing crosses. */
+  dodges?: () => Partial<Record<FloorSide, number>>;
   /** The route a haul between two floor points would lay. */
   route?: (
     from: { x: number; z: number },
@@ -173,7 +176,7 @@ const _entry = new Vector3();
 const _chord = new Vector3();
 const _pA = new Vector3();
 const _pB = new Vector3();
-const _point = new Vector3();
+const _prevDir = new Vector3();
 const _tangent = new Vector3();
 const _quat = new Quaternion();
 const _seat = new Vector3();
@@ -239,6 +242,13 @@ export class FactorySystem extends createSystem({}) {
   private vatDrain = 0;
   /** Seconds until the next bubble breaks the brew's surface. */
   private bubbleT = 0;
+  /** THE CLEARANCE PASS — which seated runs are lifted and by how much,
+   *  so no two seated tubes pass through each other. Keyed by side;
+   *  recomputed only when the seated set changes (dodgeSig). */
+  private dodgeSig = '';
+  private dodgeLift = new Map<FloorSide, number>();
+  private dodgeA: Vector3[] = Array.from({ length: 18 }, () => new Vector3());
+  private dodgeB: Vector3[] = Array.from({ length: 18 }, () => new Vector3());
 
   init(): void {
     factoryView.state = () => {
@@ -336,6 +346,7 @@ export class FactorySystem extends createSystem({}) {
       const run = runForSide(side);
       return run ? Math.min(1, run.strain / TUBE.unseatHoldS) : 0;
     };
+    factoryView.dodges = () => Object.fromEntries(this.dodgeLift) as Partial<Record<FloorSide, number>>;
     factoryView.unseat = (unitId) => {
       const run = runSeatedAt(unitId);
       if (!run) return false;
@@ -382,6 +393,17 @@ export class FactorySystem extends createSystem({}) {
     // Hands: the pull and the carry — only mid-shift, never under the card.
     if (active && !site.paused) this.tickHands(delta);
     else if (this.driven.active && !active) this.driven.active = false;
+
+    // Seated tubes give way to each other: the moment the seated set
+    // changes, work out who lifts over whom (applied inside layTube).
+    let sig = '';
+    for (const r of plant.runs) {
+      if (r.phase === 'seated' || r.phase === 'flowing') sig += `${r.side}:${r.targetUnit}|`;
+    }
+    if (sig !== this.dodgeSig) {
+      this.dodgeSig = sig;
+      this.recomputeDodges();
+    }
 
     // The runs: pull physics, seat magnet, pours, retraction.
     for (const run of plant.runs) this.tickRun(run, delta);
@@ -1171,6 +1193,64 @@ export class FactorySystem extends createSystem({}) {
     return { holding: holding === 2, rattling, rattleHand, mid: _mid, aim };
   }
 
+  /** A seated run's curve (with a candidate control lift), sampled into
+   *  a point pool — the same bezier layTube draws, no meshes touched. */
+  private sampleRun(run: FactoryRun, lift: number, out: Vector3[]): void {
+    _mouth.copy(run.pointA);
+    bendControl(_mouth, run.normalA, run.extension, _p1);
+    endControl(run.headVisual, run.normalB, run.extension, _p2, 1);
+    _p1.y += lift;
+    _p2.y += lift;
+    for (let k = 0; k < out.length; k++) {
+      pathPoint(_mouth, _p1, _p2, run.headVisual, k / (out.length - 1), out[k]);
+    }
+  }
+
+  /**
+   * THE CLEARANCE PASS — tubes find paths around each other.
+   *
+   * Two seated runs are two frozen curves, and nothing used to stop them
+   * passing straight through one another where they crossed. Now, where
+   * two seated centrelines come inside two bores of each other, the
+   * LATER one lifts its belly OVER: both bezier controls rise, the
+   * endpoints stay seated in their glands, and the polyline law keeps
+   * every joint sealed through the new bend — a pipe bridging over a
+   * pipe, the same language as a rail decking over a rail. Held runs are
+   * never fought (a hand mid-haul gets the curve it steers; the lift
+   * lands only once both ends are spoken for), and clashes hard against
+   * an endpoint are left alone — a lift can't separate what two
+   * neighbouring glands put next to each other, and shouldn't try.
+   */
+  private recomputeDodges(): void {
+    this.dodgeLift.clear();
+    const seated = plant.runs.filter((r) => r.phase === 'seated' || r.phase === 'flowing');
+    const clear = TUBE.rootRadius * 2 + 0.05;
+    for (let j = 1; j < seated.length; j++) {
+      let lift = 0;
+      for (let pass = 0; pass < 3; pass++) {
+        let need = 0;
+        let at = 0.5;
+        this.sampleRun(seated[j], lift, this.dodgeB);
+        for (let i = 0; i < j; i++) {
+          this.sampleRun(seated[i], this.dodgeLift.get(seated[i].side) ?? 0, this.dodgeA);
+          for (let a = 2; a < this.dodgeA.length - 2; a++) {
+            for (let b = 2; b < this.dodgeB.length - 2; b++) {
+              const d = this.dodgeA[a].distanceTo(this.dodgeB[b]);
+              if (clear - d > need) {
+                need = clear - d;
+                at = b / (this.dodgeB.length - 1);
+              }
+            }
+          }
+        }
+        if (need < 0.005) break;
+        // A control lift of L moves the curve at t by 3t(1−t)·L.
+        lift = Math.min(0.5, lift + need / Math.max(0.3, 3 * at * (1 - at)));
+      }
+      if (lift > 0.005) this.dodgeLift.set(seated[j].side, lift);
+    }
+  }
+
   /** TubeSystem.layTube, forked verbatim onto the FactoryRun record. */
   private layTube(run: FactoryRun, hw: RunHw, ext: number, entering: boolean): void {
     _mouth.copy(run.pointA);
@@ -1192,6 +1272,16 @@ export class FactorySystem extends createSystem({}) {
       }
     }
     endControl(run.headVisual, _entry, ext, _p2, run.held && run.aimOk && !entering ? TUBE.steerReach : 1);
+
+    // The clearance pass lands here: a lifted run's controls rise, its
+    // ends stay put, and every piece below follows the raised curve.
+    if (run.phase === 'seated' || run.phase === 'flowing') {
+      const lift = this.dodgeLift.get(run.side);
+      if (lift) {
+        _p1.y += lift;
+        _p2.y += lift;
+      }
+    }
 
     const spans = segmentSpans(ext, maxExt);
     const extSafe = Math.max(0.001, ext);
@@ -1219,16 +1309,28 @@ export class FactorySystem extends createSystem({}) {
       seg.shell.position.copy(_pA).add(_pB).multiplyScalar(0.5);
       seg.shell.quaternion.copy(_quat);
       seg.shell.scale.set(span.radius, chord + SHELL_PAD, span.radius);
-      const pour0 = span.s0 - (span.index === 0 ? 0.03 : Math.min(TUBE.pourOverlap, span.s0));
-      pathPoint(_mouth, _p1, _p2, run.headVisual, pour0 / extSafe, _point);
-      _tangent.copy(_pB).sub(_point);
-      const pourChord = Math.max(0.01, _tangent.length());
-      _tangent.normalize();
-      seg.pour.position.copy(_point).add(_pB).multiplyScalar(0.5);
-      seg.pour.quaternion.copy(_quat.setFromUnitVectors(UP_Y, _tangent));
-      seg.pour.scale.set(span.radius * 0.87, pourChord, span.radius * 0.87);
-      seg.pourMat.uniforms.uS0.value = pour0;
+      // THE POUR STAYS IN ITS OWN GLASS: coaxial with the shell, tucked
+      // backward along the shared axis into the fatter section behind,
+      // the tuck clamped by the local kink — see TubeSystem.layTube,
+      // whose pour block this forks verbatim, for the whole story.
+      let tuck = span.index === 0 ? 0.03 : Math.min(TUBE.pourOverlap, span.s0);
+      if (span.index > 0) {
+        const kink = _prevDir.distanceTo(_tangent);
+        if (kink > 1e-4) {
+          const room = spans[span.index - 1].radius - span.radius * 0.87;
+          tuck = Math.max(0.02, Math.min(tuck, room / kink));
+        }
+      }
+      seg.pour.position
+        .copy(_pA)
+        .add(_pB)
+        .multiplyScalar(0.5)
+        .addScaledVector(_tangent, -tuck / 2);
+      seg.pour.quaternion.copy(_quat);
+      seg.pour.scale.set(span.radius * 0.87, chord + tuck, span.radius * 0.87);
+      seg.pourMat.uniforms.uS0.value = span.s0 - tuck;
       seg.pourMat.uniforms.uS1.value = span.s1;
+      _prevDir.copy(_tangent);
       pathTangent(_mouth, _p1, _p2, run.headVisual, Math.min(1, span.s1 / extSafe), _tangent);
       seg.rib.position.copy(_pB);
       seg.rib.quaternion.copy(_quat.setFromUnitVectors(FWD_Z, _tangent));
@@ -1289,20 +1391,27 @@ export class FactorySystem extends createSystem({}) {
 
   /** Swing a gland's collar round its unit to face `toward` (world), or
    *  home to the back face. The mesh is a child of the unit's rotated
-   *  group, so the world direction is folded back through that yaw. */
+   *  group, so the world direction is folded back through that yaw —
+   *  and it rides HIGH with the mount's upward pitch, so the collar
+   *  points up at the tube that pours down into it. */
   private poseGland(unit: (typeof plant.units)[number], group: Group, toward?: Vector3): void {
     glandPose(unit, _g, _gn, toward);
     const d = DIRS[unit.rot];
     const yaw = Math.atan2(d.di, d.dj);
     const cos = Math.cos(yaw);
     const sin = Math.sin(yaw);
+    // Fold the swivel's HORIZONTAL heading through the unit's yaw; the
+    // pitch is the mount's own and survives untouched.
     const lx = _gn.x * cos - _gn.z * sin;
     const lz = _gn.x * sin + _gn.z * cos;
     // The mesh stands exactly where the seat maths thinks it does — one
-    // reach for both, so the collar can't press against thin air.
-    const reach = glandReach(unit.type) + 0.001;
-    group.position.set(lx * reach, UNITS.glandHeight, lz * reach);
-    group.rotation.y = Math.atan2(lx, lz);
+    // mount record for both, so the collar can't press against thin air.
+    const m = glandMount(unit.type);
+    const reach = m.reach + 0.001;
+    const h = Math.hypot(lx, lz) || 1;
+    group.position.set((lx / h) * reach, m.y, (lz / h) * reach);
+    group.rotation.order = 'YXZ';
+    group.rotation.set(-m.pitch, Math.atan2(lx, lz), 0);
   }
 
   /* ── events, parts, dressing, the plate ───────────────────────────────── */

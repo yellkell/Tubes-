@@ -50,7 +50,7 @@ import {
   Vector3,
 } from 'three';
 import { FACTORY, FLOOR, LINES, UNITS, type ItemId, type LineSpec, type UnitType } from '../config.js';
-import { glandReach } from './sim.js';
+import { glandMount } from './sim.js';
 
 /* ── shared geometry / materials ────────────────────────────────────────── */
 
@@ -730,11 +730,9 @@ export function buildUnit(type: UnitType): UnitRefs {
     lidBand.scale.setScalar(vs / 2 + 0.016);
     lidBand.position.y = tankFloor + vh + 0.02;
     group.add(lidBand);
-    // The inlet standing off the back of the lid, over the gland.
-    const inlet = new Mesh(cylGeo(), hubMat);
-    inlet.scale.set(0.035, 0.11, 0.035);
-    inlet.position.set(0, tankFloor + vh + 0.07, -0.05);
-    group.add(inlet);
+    // (The lid's old static inlet stub is gone: the side GLAND is the
+    // inlet — its sunk boss is the intake you can see inside the tank —
+    // and the lid stays bare for the thing that dances on it.)
 
     // THE LEVEL — a green cylinder scaled up from the tank floor as it
     // brews. FactorySystem owns the maths; this is the mesh and its
@@ -802,11 +800,14 @@ export function buildUnit(type: UnitType): UnitRefs {
   }
 
   if (gland) {
-    // On the BACK face (local −Z), facing backward — where the tube
-    // arrives from, sunk to the body's own surface with the same reach
-    // the live swivel uses, so the ghost seals like the real thing.
-    gland.group.position.set(0, UNITS.glandHeight, -(glandReach(type) + 0.001));
-    gland.group.rotation.y = Math.PI;
+    // On the BACK face (local −Z), facing backward and TILTED UP — where
+    // the tube pours down from — sunk to the body's own surface with the
+    // same mount the live swivel uses, so the ghost seals like the real
+    // thing.
+    const m = glandMount(type);
+    gland.group.position.set(0, m.y, -(m.reach + 0.001));
+    gland.group.rotation.order = 'YXZ';
+    gland.group.rotation.set(-m.pitch, Math.PI, 0);
     group.add(gland.group);
   }
   return { group, gland, lampMat, anim, halo, fill, vatGlow, belt, tint };

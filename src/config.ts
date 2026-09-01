@@ -473,8 +473,25 @@ export const UNITS = {
      *  come and hijack a lane you were laying somewhere else. */
     postReach: 2,
   },
-  /** Where a unit's tube gland sits (m up its back face). */
-  glandHeight: 0.7,
+  /** THE GLAND MOUNT — where a box's tube intake sits: HIGH on the body
+   *  and TILTED UP, so supply tubes arrive from above. The old mount sat
+   *  at 0.7 m facing level, which put every tube's belly exactly at rail
+   *  height — lines ploughed through lanes, parts and other boxes on
+   *  their way in. Mounted near the top ("connect to the top of the
+   *  boxes, out of the way" — the ask, verbatim), the tubes ride an
+   *  overhead corridor from the spouts (1.05 m) down to ~0.91 m and pour
+   *  IN, clear of everything that rolls below. `pitch` is radians above
+   *  horizontal; each machine's y hugs its own body — the maker's upper
+   *  drum, the vat's upper glass. */
+  gland: {
+    pitch: 1.05,
+    makerY: 0.815,
+    /** THE VAT IS THE EXCEPTION — fed from the SIDE, level, at working
+     *  height, as asked: the green line visibly pours into the tank's
+     *  flank (the sunk boss is the intake stub you see inside the
+     *  glass), and the lid stays clear — it is the goop's podium. */
+    vatY: 0.7,
+  },
   /** THE VAT — the last machine in the book, and the only one that isn't
    *  shop plant: a squat green-glass tank the fourth manifold pours into.
    *  Taller and wider than anything else on the floor, because what comes

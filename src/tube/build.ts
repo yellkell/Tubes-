@@ -43,9 +43,11 @@ function shellGeo(): CylinderGeometry {
 }
 
 let _pourGeo: CylinderGeometry | null = null;
-/** Unit pour volume: capped, so the cut face has geometry to show. */
+/** Unit pour volume: capped, so the cut face has geometry to show. Same
+ *  radial count as the shell — a chunkier prism inside a rounder casing
+ *  read as ANGULAR liquid whenever the light caught a facet. */
 function pourGeo(): CylinderGeometry {
-  return (_pourGeo ??= new CylinderGeometry(1, 1, 1, 14, 1));
+  return (_pourGeo ??= new CylinderGeometry(1, 1, 1, 18, 1));
 }
 
 const _plateGeos = new Map<number, CylinderGeometry>();
