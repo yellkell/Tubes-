@@ -122,28 +122,23 @@ export function glandPose(unit: Unit, point: Vector3, normal: Vector3, toward?: 
     nx = back.di;
     nz = back.dj;
   }
-  const m = glandMount(unit.type);
-  const cp = Math.cos(m.pitch);
-  const sp = Math.sin(m.pitch);
-  point.set(_c.x + nx * m.reach, m.y, _c.z + nz * m.reach);
-  normal.set(nx * cp, sp, nz * cp);
+  const reach = glandReach(unit.type);
+  point.set(_c.x + nx * reach, UNITS.glandHeight, _c.z + nz * reach);
+  normal.set(nx, 0, nz);
 }
 
-/** THE MOUNT: where a gland sits on its body and which way it faces.
- *  `reach` is the radius of the BODY it actually bolts to, sunk a few
- *  millimetres so the mounting boss presses in with no daylight at any
- *  swivel angle — the maker's drum, the vat's glass (where the sunk
- *  boss doubles as the intake stub you can see inside the tank).
- *  `y` and `pitch` put it HIGH and TILTED UP (UNITS.gland), so the tube
- *  arrives over the traffic and pours in from above. The seat maths,
- *  the live mesh and the build ghost all read this one record, so the
- *  collar can never seat where the metal isn't. */
-export function glandMount(type: UnitType): { reach: number; y: number; pitch: number } {
-  if (type === 'maker') return { reach: 0.131, y: UNITS.gland.makerY, pitch: UNITS.gland.pitch };
-  // The vat keeps its SIDE entry — level, into the glass flank — so the
-  // pour is seen arriving in the tank and the lid stays the goop's.
-  if (type === 'vat') return { reach: 0.156, y: UNITS.gland.vatY, pitch: 0 };
-  return { reach: UNITS.crate.size / 2, y: 0.7, pitch: 0 };
+/** How far a gland's face stands off its cell centre: the radius of the
+ *  BODY it actually bolts to, sunk a few millimetres so the mounting
+ *  boss presses in with no daylight at any swivel angle — the maker's
+ *  drum, the vat's glass (where the sunk boss doubles as the intake
+ *  stub you can see inside the tank). The seat maths, the live mesh and
+ *  the build ghost all read this one number, so the collar can never
+ *  seat where the metal isn't. (An angled-up variant of this record
+ *  lived for one build and is reverted — see UNITS.glandHeight.) */
+export function glandReach(type: UnitType): number {
+  if (type === 'maker') return 0.131;
+  if (type === 'vat') return 0.156;
+  return UNITS.crate.size / 2;
 }
 
 /* ── mutations (BuildSystem / FactorySystem / the walk drive these) ─────── */

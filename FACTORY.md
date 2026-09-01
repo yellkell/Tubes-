@@ -1053,3 +1053,24 @@ as a rail decking a rail. Held runs are never fought, and the pass
 recomputes only when the seated set changes. (Rails already refuse to
 clip by construction: they route around plant and deck over crossings —
 that half was the third pass.)
+
+### The seventh pass — the angle comes off, the arc stays
+
+**"This angled up idea looks like garbage unfortunately — it looked
+much better before, but we hate the overlapping."** Exactly the right
+verdict, and the two halves separate cleanly. The tilted mount is
+REVERTED — glands are level side collars at 0.7 m again, the union that
+photographed right — and the overlap job moves entirely onto THE
+CLEARANCE PASS, which grows a second duty: besides lifting a seated
+run over another seated run, it now lifts every seated run over the
+PLANT under its flight path. Each sampled point on the curve asks the
+cell below what stands there (a rail plus the part riding it, a bench
+box, a bridge deck, the vat and whatever dances on it — each with its
+own clearance height), and the run's bezier controls rise until the
+belly clears; the run's own target box is exempt, since the line must
+come down level to seat in it. Recomputed when the seated set changes
+AND when the floor does (plant.generation rides the signature), so a
+lane hauled underneath a standing line pushes that line up on the spot.
+Clashes hard against a run's endpoints are left alone in both sweeps —
+a mid-curve bump has no leverage there, and pumping it just buys a
+huge crest that separates nothing.

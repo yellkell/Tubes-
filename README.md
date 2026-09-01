@@ -321,14 +321,16 @@ across the room), the COMBINER wears fitter's brass on its clamp and
 spine, the CHEST wears storeman's olive straps and a painted lid, and
 the BANK wears minted gold round its mouth.
 
-**NOTHING CLIPS.** Supply tubes ride an overhead corridor: a box's
-intake sits high on its body, tilted up, so a line arrives over the
-rails and boxes and pours IN from above — the vat alone keeps its side
-entry, because green arriving in the glass is the whole show. Where two
-seated tubes cross, the later one lifts its belly over the other like a
-pipe bridge. And the liquid stays in its casing: each section's pour is
-coaxial with its own glass, its joint tuck clamped by the local bend,
-so nothing angular ever pokes out of the frost again.
+**NOTHING CLIPS.** A seated line arcs its belly OVER whatever stands
+under its flight path — lanes (and the parts riding them), boxes,
+decks, the vat — and over any other seated line it crosses, like a
+pipe bridging a pipe; then it comes down level into the box's side
+collar, which stays exactly the union it always was. (An angled-up
+intake high on the drum was tried for this instead and reverted on
+sight — the arc is the pipe-run look; the tilted collar wasn't.) And
+the liquid stays in its casing: each section's pour is coaxial with
+its own glass, its joint tuck clamped by the local bend, so nothing
+angular ever pokes out of the frost again.
 
 **THE RECORDS.** 4 LEAF CLOVERS holds the board while you read the book;
 the three NEW SONGs work the floor, shuffled; and **NOVUS** takes the

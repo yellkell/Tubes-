@@ -55,6 +55,7 @@ import {
   runForSide,
   runSeatedAt,
   takesTube,
+  unitAtCell,
   type FactoryRun,
   type Part,
 } from '../factory/state.js';
@@ -62,8 +63,8 @@ import {
   beltBranches,
   beltEntry,
   deliverPart,
-  glandMount,
   glandPose,
+  glandReach,
   haulRoute,
   linkAhead,
   partPose,
@@ -394,9 +395,11 @@ export class FactorySystem extends createSystem({}) {
     if (active && !site.paused) this.tickHands(delta);
     else if (this.driven.active && !active) this.driven.active = false;
 
-    // Seated tubes give way to each other: the moment the seated set
-    // changes, work out who lifts over whom (applied inside layTube).
-    let sig = '';
+    // Seated tubes give way — to the plant under them and to each other.
+    // Recomputed when the seated set changes AND when the floor does (a
+    // lane hauled under a standing line must push that line up), then
+    // applied inside layTube.
+    let sig = `g${plant.generation}|`;
     for (const r of plant.runs) {
       if (r.phase === 'seated' || r.phase === 'flowing') sig += `${r.side}:${r.targetUnit}|`;
     }
@@ -1206,35 +1209,103 @@ export class FactorySystem extends createSystem({}) {
     }
   }
 
+  /** The minimum centreline height for a tube passing over (x, z) — the
+   *  top of whatever stands there plus a bore and some air — or 0 over
+   *  open floor. The run's own target box is exempt: the line has to
+   *  come DOWN to seat in it. */
+  private clearanceAt(x: number, z: number, targetUnit: number): number {
+    const cell = worldToCell(x, z);
+    let floor = 0;
+    for (let di = -1; di <= 1; di++) {
+      for (let dj = -1; dj <= 1; dj++) {
+        const unit = unitAtCell(cell.i + di, cell.j + dj);
+        if (!unit || unit.id === targetUnit) continue;
+        cellCenter(unit.i, unit.j, _c);
+        // Only cells the bore actually overhangs.
+        if (Math.abs(x - _c.x) > CELL / 2 + 0.09 || Math.abs(z - _c.z) > CELL / 2 + 0.09) continue;
+        const top =
+          unit.type === 'vat'
+            ? 1.16 // the tank, its lid, and whatever dances on it
+            : unit.type === 'belt'
+              ? unit.over !== undefined
+                ? 1.08 // a bridge deck, with a part riding it
+                : 1.0 // a rail, with a part riding it
+              : unit.type === 'post'
+                ? 0.73
+                : 0.99; // bench plant: drum crowns, pistons, lids
+        if (top > floor) floor = top;
+      }
+    }
+    return floor;
+  }
+
   /**
-   * THE CLEARANCE PASS — tubes find paths around each other.
+   * THE CLEARANCE PASS — tubes find paths around, not through.
    *
-   * Two seated runs are two frozen curves, and nothing used to stop them
-   * passing straight through one another where they crossed. Now, where
-   * two seated centrelines come inside two bores of each other, the
-   * LATER one lifts its belly OVER: both bezier controls rise, the
-   * endpoints stay seated in their glands, and the polyline law keeps
-   * every joint sealed through the new bend — a pipe bridging over a
-   * pipe, the same language as a rail decking over a rail. Held runs are
-   * never fought (a hand mid-haul gets the curve it steers; the lift
-   * lands only once both ends are spoken for), and clashes hard against
-   * an endpoint are left alone — a lift can't separate what two
-   * neighbouring glands put next to each other, and shouldn't try.
+   * A seated run is a frozen curve, and nothing used to stop it passing
+   * straight through the lanes, boxes and other tubes in its way. Two
+   * sweeps fix that, both by the same move — the bezier's two controls
+   * RISE, the endpoints stay seated in their glands, and the polyline
+   * law keeps every joint sealed through the new bend:
+   *
+   *   1. OVER THE PLANT: each run lifts until its belly clears whatever
+   *      stands under its flight path — rails (and the parts riding
+   *      them), boxes, decks, the vat. The run's own target box is
+   *      exempt, since the line must come down level into its collar.
+   *      (An angled-up gland mount was tried for this instead and
+   *      looked wrong; the ARC over the shop is the pipe-run look.)
+   *   2. OVER EACH OTHER: where two seated centrelines still come
+   *      inside two bores, the LATER one lifts further — a pipe
+   *      bridging a pipe, same language as a rail decking a rail.
+   *
+   * Held runs are never fought (a hand mid-haul gets the curve it
+   * steers; the lift lands only once both ends are spoken for), and
+   * clashes hard against an endpoint are left alone — a lift can't
+   * separate what two neighbouring glands put next to each other, and
+   * shouldn't try.
    */
   private recomputeDodges(): void {
     this.dodgeLift.clear();
     const seated = plant.runs.filter((r) => r.phase === 'seated' || r.phase === 'flowing');
+    // Sweep 1 — over the plant, each run on its own.
+    for (const run of seated) {
+      let lift = 0;
+      for (let pass = 0; pass < 3; pass++) {
+        this.sampleRun(run, lift, this.dodgeA);
+        let need = 0;
+        let at = 0.5;
+        // Same interior window as the pair sweep: the last stretch into
+        // the gland HAS to come down, and asking the bump to fix what
+        // sits right beside the box only buys a huge crest elsewhere.
+        for (let k = 3; k < this.dodgeA.length - 3; k++) {
+          const p = this.dodgeA[k];
+          const floor = this.clearanceAt(p.x, p.z, run.targetUnit);
+          if (floor - p.y > need) {
+            need = floor - p.y;
+            at = k / (this.dodgeA.length - 1);
+          }
+        }
+        if (need < 0.01) break;
+        lift = Math.min(0.5, lift + need / Math.max(0.35, 3 * at * (1 - at)));
+      }
+      if (lift > 0.005) this.dodgeLift.set(run.side, lift);
+    }
+    // Sweep 2 — over each other, later over earlier, on top of sweep 1.
     const clear = TUBE.rootRadius * 2 + 0.05;
     for (let j = 1; j < seated.length; j++) {
-      let lift = 0;
+      let lift = this.dodgeLift.get(seated[j].side) ?? 0;
       for (let pass = 0; pass < 3; pass++) {
         let need = 0;
         let at = 0.5;
         this.sampleRun(seated[j], lift, this.dodgeB);
         for (let i = 0; i < j; i++) {
           this.sampleRun(seated[i], this.dodgeLift.get(seated[i].side) ?? 0, this.dodgeA);
-          for (let a = 2; a < this.dodgeA.length - 2; a++) {
-            for (let b = 2; b < this.dodgeB.length - 2; b++) {
+          // A tighter interior window than the plant sweep: near a
+          // run's ends the bump has almost no leverage, so an
+          // endpoint-adjacent clash just pumps the lift to its cap
+          // without ever separating anything.
+          for (let a = 3; a < this.dodgeA.length - 3; a++) {
+            for (let b = 3; b < this.dodgeB.length - 3; b++) {
               const d = this.dodgeA[a].distanceTo(this.dodgeB[b]);
               if (clear - d > need) {
                 need = clear - d;
@@ -1245,7 +1316,7 @@ export class FactorySystem extends createSystem({}) {
         }
         if (need < 0.005) break;
         // A control lift of L moves the curve at t by 3t(1−t)·L.
-        lift = Math.min(0.5, lift + need / Math.max(0.3, 3 * at * (1 - at)));
+        lift = Math.min(0.5, lift + need / Math.max(0.35, 3 * at * (1 - at)));
       }
       if (lift > 0.005) this.dodgeLift.set(seated[j].side, lift);
     }
@@ -1391,27 +1462,21 @@ export class FactorySystem extends createSystem({}) {
 
   /** Swing a gland's collar round its unit to face `toward` (world), or
    *  home to the back face. The mesh is a child of the unit's rotated
-   *  group, so the world direction is folded back through that yaw —
-   *  and it rides HIGH with the mount's upward pitch, so the collar
-   *  points up at the tube that pours down into it. */
+   *  group, so the world direction is folded back through that yaw. */
   private poseGland(unit: (typeof plant.units)[number], group: Group, toward?: Vector3): void {
     glandPose(unit, _g, _gn, toward);
     const d = DIRS[unit.rot];
     const yaw = Math.atan2(d.di, d.dj);
     const cos = Math.cos(yaw);
     const sin = Math.sin(yaw);
-    // Fold the swivel's HORIZONTAL heading through the unit's yaw; the
-    // pitch is the mount's own and survives untouched.
     const lx = _gn.x * cos - _gn.z * sin;
     const lz = _gn.x * sin + _gn.z * cos;
     // The mesh stands exactly where the seat maths thinks it does — one
-    // mount record for both, so the collar can't press against thin air.
-    const m = glandMount(unit.type);
-    const reach = m.reach + 0.001;
-    const h = Math.hypot(lx, lz) || 1;
-    group.position.set((lx / h) * reach, m.y, (lz / h) * reach);
+    // reach for both, so the collar can't press against thin air.
+    const reach = glandReach(unit.type) + 0.001;
+    group.position.set(lx * reach, UNITS.glandHeight, lz * reach);
     group.rotation.order = 'YXZ';
-    group.rotation.set(-m.pitch, Math.atan2(lx, lz), 0);
+    group.rotation.set(0, Math.atan2(lx, lz), 0);
   }
 
   /* ── events, parts, dressing, the plate ───────────────────────────────── */

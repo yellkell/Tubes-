@@ -50,7 +50,7 @@ import {
   Vector3,
 } from 'three';
 import { FACTORY, FLOOR, LINES, UNITS, type ItemId, type LineSpec, type UnitType } from '../config.js';
-import { glandMount } from './sim.js';
+import { glandReach } from './sim.js';
 
 /* ── shared geometry / materials ────────────────────────────────────────── */
 
@@ -800,14 +800,11 @@ export function buildUnit(type: UnitType): UnitRefs {
   }
 
   if (gland) {
-    // On the BACK face (local −Z), facing backward and TILTED UP — where
-    // the tube pours down from — sunk to the body's own surface with the
-    // same mount the live swivel uses, so the ghost seals like the real
-    // thing.
-    const m = glandMount(type);
-    gland.group.position.set(0, m.y, -(m.reach + 0.001));
-    gland.group.rotation.order = 'YXZ';
-    gland.group.rotation.set(-m.pitch, Math.PI, 0);
+    // On the BACK face (local −Z), facing backward — where the tube
+    // arrives from, sunk to the body's own surface with the same reach
+    // the live swivel uses, so the ghost seals like the real thing.
+    gland.group.position.set(0, UNITS.glandHeight, -(glandReach(type) + 0.001));
+    gland.group.rotation.y = Math.PI;
     group.add(gland.group);
   }
   return { group, gland, lampMat, anim, halo, fill, vatGlow, belt, tint };
