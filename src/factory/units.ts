@@ -157,16 +157,22 @@ export interface GlandRefs {
  *  like a union nut. */
 export function buildGland(): GlandRefs {
   const group = new Group();
-  const r = 0.058; // the head's radius — the bore it takes
+  // The bore this port takes. Sized to the pipe the FACTORY delivers,
+  // not to the wall game's slender head: a shop run spreads five or six
+  // of its sections over a metre and a half and arrives around 0.07, so
+  // a mouth cut for 0.058 was smaller than the pipe landing in it — the
+  // tube covered the port instead of entering it, and no amount of
+  // aiming could make that sit flush.
+  const r = 0.064;
 
   // The mounting boss and its clamp band — the part that touches the box.
   const boss = new Mesh(cylGeo(), ironMat);
   boss.rotation.x = Math.PI / 2;
-  boss.scale.set(0.068, 0.055, 0.068);
+  boss.scale.set(0.075, 0.055, 0.075);
   boss.position.z = -0.022;
   group.add(boss);
   const band = new Mesh(torusGeo(), hubMat);
-  band.scale.setScalar(0.072);
+  band.scale.setScalar(0.079);
   band.position.z = 0.008;
   group.add(band);
 

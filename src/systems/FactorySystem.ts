@@ -84,9 +84,12 @@ import {
 import { buildCollar, buildSegment, type CollarRefs, type SegmentRefs } from '../tube/build.js';
 import {
   bendControl,
+  dodgeBump,
+  dodgeBumpSlope,
   endControl,
+  maxExtensionFor,
   pathPoint,
-  pathTangent,
+  pathVelocity,
   runLength,
   segmentSpans,
 } from '../tube/geometry.js';
@@ -205,6 +208,42 @@ const _d2 = new Vector3();
 const _r12 = new Vector3();
 const _cA = new Vector3();
 const _cB = new Vector3();
+
+/** A SEATED RUN'S LINE, dodge and all: the bezier point at t plus the
+ *  clearance bump (geometry.dodgeBump — zero, with zero slope, at both
+ *  ends). Everything that draws, solves or audits a run comes through
+ *  this pair, so the three can never disagree about where the tube is. */
+function dodgedPoint(
+  p0: Vector3,
+  p1: Vector3,
+  p2: Vector3,
+  p3: Vector3,
+  lift: Vector3 | undefined,
+  t: number,
+  out: Vector3,
+): Vector3 {
+  pathPoint(p0, p1, p2, p3, t, out);
+  if (lift) out.addScaledVector(lift, dodgeBump(t));
+  return out;
+}
+
+/** …and its heading: the bezier's velocity plus the bump's own slope.
+ *  At t=0 and t=1 the bump contributes nothing, so the tube leaves its
+ *  boss and lands in its gland dead on axis however hard it dodges. */
+function dodgedTangent(
+  p0: Vector3,
+  p1: Vector3,
+  p2: Vector3,
+  p3: Vector3,
+  lift: Vector3 | undefined,
+  t: number,
+  out: Vector3,
+): Vector3 {
+  pathVelocity(p0, p1, p2, p3, t, out);
+  if (lift) out.addScaledVector(lift, dodgeBumpSlope(t));
+  if (out.lengthSq() < 1e-8) out.copy(p3).sub(p0);
+  return out.normalize();
+}
 
 /** Closest distance between segments [a1,a2] and [b1,b2] — the exact
  *  clamped closest-point-of-approach, because the clearance pass got
@@ -415,13 +454,8 @@ export class FactorySystem extends createSystem({}) {
       _mouth.copy(run.pointA);
       bendControl(_mouth, run.normalA, run.extension, _p1);
       endControl(run.headVisual, run.normalB, run.extension, _p2, 1);
-      if (lift) {
-        const stretch = Math.min(0.6, lift.length() * 0.75);
-        _p1.add(lift).addScaledVector(run.normalA, stretch);
-        _p2.add(lift).addScaledVector(run.normalB, stretch);
-      }
       for (let k = 0; k < n; k++) {
-        pathPoint(_mouth, _p1, _p2, run.headVisual, k / (n - 1), _g);
+        dodgedPoint(_mouth, _p1, _p2, run.headVisual, lift, k / (n - 1), _g);
         pts.push([_g.x, _g.y, _g.z]);
       }
       return pts;
@@ -994,7 +1028,9 @@ export class FactorySystem extends createSystem({}) {
         sfx.segmentClick(detent);
         buzz(this.world, 'both', 0.18, 14);
       }
-      const sections = segmentSpans(ext, maxExt).length;
+      // Counted against the SPAN law (layTube's), not the pull's stop,
+      // so a clank means a section the hands can actually see arrive.
+      const sections = segmentSpans(ext, maxExtensionFor(ext)).length;
       if (sections > run.lastSections) {
         sfx.sectionArrive(sections - 1);
         buzz(this.world, 'both', 0.4, 40);
@@ -1281,15 +1317,8 @@ export class FactorySystem extends createSystem({}) {
     _mouth.copy(run.pointA);
     bendControl(_mouth, run.normalA, run.extension, _p1);
     endControl(run.headVisual, run.normalB, run.extension, _p2, 1);
-    if (offset) {
-      // Mirror of layTube's dodge application — offset plus the capped
-      // normal-stretch — so the relaxation solves the curve it draws.
-      const stretch = Math.min(0.6, offset.length() * 0.75);
-      _p1.add(offset).addScaledVector(run.normalA, stretch);
-      _p2.add(offset).addScaledVector(run.normalB, stretch);
-    }
     for (let k = 0; k < out.length; k++) {
-      pathPoint(_mouth, _p1, _p2, run.headVisual, k / (out.length - 1), out[k]);
+      dodgedPoint(_mouth, _p1, _p2, run.headVisual, offset, k / (out.length - 1), out[k]);
     }
   }
 
@@ -1338,9 +1367,10 @@ export class FactorySystem extends createSystem({}) {
    *
    * A seated run is a frozen curve, and nothing used to stop it passing
    * straight through the lanes, boxes and other tubes in its way. Two
-   * sweeps fix that, both by the same move — the bezier's two controls
-   * RISE, the endpoints stay seated in their glands, and the polyline
-   * law keeps every joint sealed through the new bend:
+   * sweeps fix that, both by the same move — the line BOWS, carrying an
+   * offset that dodgeBump tapers to nothing at both fittings, so the
+   * ends keep their axes and the polyline law keeps every joint sealed
+   * through the new bend:
    *
    *   1. OVER THE PLANT: each run lifts until its belly clears whatever
    *      stands under its flight path — rails (and the parts riding
@@ -1376,7 +1406,7 @@ export class FactorySystem extends createSystem({}) {
         // its cap for nothing (a lane hauled right up to a fed maker
         // used to buy every run a max-height arc AND a wrenched
         // departure). Distance to the ends, not sample index — the
-        // dodge stretch shifts how the samples pace along the curve.
+        // bump shifts how the samples pace along the curve.
         for (let k = 2; k < this.dodgeA.length - 2; k++) {
           const p = this.dodgeA[k];
           const mouth = run.pointA;
@@ -1394,7 +1424,10 @@ export class FactorySystem extends createSystem({}) {
           }
         }
         if (need < 0.01) break;
-        v.y = Math.min(1.4, v.y + need / Math.max(0.35, 3 * at * (1 - at)));
+        // Leverage is now EXACT: an offset v raises the line at t by
+        // v·dodgeBump(t), so that is the divisor (floored, so a clash
+        // out near a pinned end can't ask for an infinite lift).
+        v.y = Math.min(1.4, v.y + need / Math.max(0.2, dodgeBump(at)));
       }
     }
   }
@@ -1420,7 +1453,7 @@ export class FactorySystem extends createSystem({}) {
     for (let round = 0; round < 8; round++) {
       let need = 0;
       let who: FloorSide | null = null;
-      let w = 0.35;
+      let w = 0.2;
       for (let j = 1; j < seated.length; j++) {
         this.sampleRun(seated[j], this.dodgeLift.get(seated[j].side), this.dodgeB);
         for (let i = 0; i < j; i++) {
@@ -1439,8 +1472,8 @@ export class FactorySystem extends createSystem({}) {
               need = clear - d;
               const tA = (a + 0.5) / (nA - 1);
               const tB = (b + 0.5) / (nB - 1);
-              const wA = Math.max(0.35, 3 * tA * (1 - tA));
-              const wB = Math.max(0.35, 3 * tB * (1 - tB));
+              const wA = Math.max(0.2, dodgeBump(tA));
+              const wB = Math.max(0.2, dodgeBump(tB));
               const yA = (this.dodgeA[a].y + this.dodgeA[a + 1].y) / 2;
               const yB = (this.dodgeB[b].y + this.dodgeB[b + 1].y) / 2;
               const offA = this.dodgeLift.get(seated[i].side)?.length() ?? 0;
@@ -1470,8 +1503,9 @@ export class FactorySystem extends createSystem({}) {
       const v = this.dodgeOf(who);
       v.addScaledVector(this.clashA, need / w);
       // Caps: the vertical part may stack a full storey; the lateral
-      // part stays a modest sidestep (a control shifted 0.8 m sideways
-      // walks the belly ~0.6 m off its line — plenty, and bounded).
+      // part stays a modest sidestep. The offset IS the belly's travel
+      // now (the bump peaks at 1), so 0.8 means 0.8 of daylight at the
+      // widest point of the arc — plenty, and bounded.
       v.y = Math.min(1.4, v.y);
       const hor = Math.hypot(v.x, v.z);
       if (hor > 0.8) {
@@ -1487,7 +1521,15 @@ export class FactorySystem extends createSystem({}) {
   /** TubeSystem.layTube, forked verbatim onto the FactoryRun record. */
   private layTube(run: FactoryRun, hw: RunHw, ext: number, entering: boolean): void {
     _mouth.copy(run.pointA);
-    const maxExt = TUBE.maxLength + reachBonus();
+    // THE TELESCOPE IS SIZED TO THE JOB, as the wall game's always was:
+    // the sections spread over THIS run's length, so the tube tapers
+    // root-fat at the spout to head-thin at the collar and arrives at
+    // the bore every fitting is built around. Sized to the 7 m ceiling
+    // instead (the fork's own drift), a short factory run unfurled one
+    // or two sections and delivered a pipe FATTER than the gland it was
+    // landing in — the port vanished behind it and nothing could sit
+    // flush. The pull's own stop stays the long one (below).
+    const maxExt = maxExtensionFor(ext);
     bendControl(_mouth, run.normalA, ext, _p1);
     if (entering) {
       _entry.copy(run.normalB);
@@ -1506,25 +1548,17 @@ export class FactorySystem extends createSystem({}) {
     }
     endControl(run.headVisual, _entry, ext, _p2, run.held && run.aimOk && !entering ? TUBE.steerReach : 1);
 
-    // The clearance pass lands here: an offset run's controls move (up,
-    // and sometimes a sidestep), its ends stay put, and every piece
-    // below follows the shifted curve. Each control ALSO stretches out
-    // along its own end normal as the lift grows — a raw offset alone
-    // tilted the departure hard off the spout axis (the headset caught
-    // liquid leaving a mouth at a wrenched angle), while a longer reach
-    // keeps the first stretch of tube on the boss line and banks the
-    // dodge into the middle of the arc instead. The stretch is CAPPED:
-    // scaling it freely with the lift threw the controls metres out,
-    // looped the curve past its own head, and fed the clearance solver
-    // a flatter arc than it thought it had.
-    if (run.phase === 'seated' || run.phase === 'flowing') {
-      const lift = this.dodgeLift.get(run.side);
-      if (lift) {
-        const stretch = Math.min(0.6, lift.length() * 0.75);
-        _p1.add(lift).addScaledVector(run.normalA, stretch);
-        _p2.add(lift).addScaledVector(_entry, stretch);
-      }
-    }
+    // The clearance pass lands here — as a BUMP ON THE CURVE, never a
+    // shove on the controls. The controls are the end tangents: moving
+    // them tipped the tube off the spout's boss line and, worse, off the
+    // gland's axis at the far end, so a dodged run stabbed past its own
+    // socket into the box (measured at 52 degrees). dodgeBump is zero,
+    // with zero slope, at both ends: the ends keep their axes exactly
+    // and the whole offset is spent over the shop floor in between.
+    const lift =
+      run.phase === 'seated' || run.phase === 'flowing'
+        ? this.dodgeLift.get(run.side)
+        : undefined;
 
     const spans = segmentSpans(ext, maxExt);
     const extSafe = Math.max(0.001, ext);
@@ -1538,12 +1572,12 @@ export class FactorySystem extends createSystem({}) {
         seg.pour.visible = false;
         continue;
       }
-      pathPoint(_mouth, _p1, _p2, run.headVisual, span.s0 / extSafe, _pA);
-      pathPoint(_mouth, _p1, _p2, run.headVisual, Math.min(1, span.s1 / extSafe), _pB);
+      dodgedPoint(_mouth, _p1, _p2, run.headVisual, lift, span.s0 / extSafe, _pA);
+      dodgedPoint(_mouth, _p1, _p2, run.headVisual, lift, Math.min(1, span.s1 / extSafe), _pB);
       _tangent.copy(_pB).sub(_pA);
       let chord = _tangent.length();
       if (chord < 1e-5) {
-        pathTangent(_mouth, _p1, _p2, run.headVisual, span.s0 / extSafe, _tangent);
+        dodgedTangent(_mouth, _p1, _p2, run.headVisual, lift, span.s0 / extSafe, _tangent);
         chord = span.s1 - span.s0;
       } else {
         _tangent.divideScalar(chord);
@@ -1565,17 +1599,22 @@ export class FactorySystem extends createSystem({}) {
         const room = spans[span.index - 1].radius - span.radius * 0.87;
         tuck = Math.min(tuck, Math.max(0, room) / kink);
       }
+      // AND AT THE SOCKET IT KEEPS GOING: the last section's volume runs
+      // on PAST the head into the gland's throat, so the column ends
+      // inside the box the way a feed should, instead of stopping dead
+      // at the collar plane and showing the flat face of the liquid.
+      const into = entering && i === spans.length - 1 ? TUBE.pourSeatReach : 0;
       seg.pour.position
         .copy(_pA)
         .add(_pB)
         .multiplyScalar(0.5)
-        .addScaledVector(_tangent, -tuck / 2);
+        .addScaledVector(_tangent, (into - tuck) / 2);
       seg.pour.quaternion.copy(_quat);
-      seg.pour.scale.set(span.radius * 0.87, chord + tuck, span.radius * 0.87);
+      seg.pour.scale.set(span.radius * 0.87, chord + tuck + into, span.radius * 0.87);
       seg.pourMat.uniforms.uS0.value = span.s0 - tuck;
-      seg.pourMat.uniforms.uS1.value = span.s1;
+      seg.pourMat.uniforms.uS1.value = span.s1 + into;
       _prevDir.copy(_tangent);
-      pathTangent(_mouth, _p1, _p2, run.headVisual, Math.min(1, span.s1 / extSafe), _tangent);
+      dodgedTangent(_mouth, _p1, _p2, run.headVisual, lift, Math.min(1, span.s1 / extSafe), _tangent);
       seg.rib.position.copy(_pB);
       seg.rib.quaternion.copy(_quat.setFromUnitVectors(FWD_Z, _tangent));
       seg.rib.scale.z = span.radius * 1.1;
@@ -1585,7 +1624,7 @@ export class FactorySystem extends createSystem({}) {
       }
     }
 
-    pathTangent(_mouth, _p1, _p2, run.headVisual, 1, _tangent);
+    dodgedTangent(_mouth, _p1, _p2, run.headVisual, lift, 1, _tangent);
     hw.collar.group.position.copy(run.headVisual);
     hw.collar.group.quaternion.copy(_quat.setFromUnitVectors(FWD_Z, _tangent));
   }

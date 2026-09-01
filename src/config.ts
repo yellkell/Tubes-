@@ -135,6 +135,14 @@ export const TUBE = {
    *  overlap swallows the seam, the bend wedge, and the collar's shadow
    *  in a single move. */
   pourOverlap: 0.1,
+  /** And how far the LAST section's volume runs on past the head, into
+   *  the socket it has landed in. A feed that stops dead at the collar
+   *  shows the flat face of its own liquid at the joint; a feed that
+   *  runs a few centimetres into the throat simply arrives, and the
+   *  bore hides the end. Short of every socket's iris (the factory's
+   *  gland sits 0.075 deep, the wall's 0.055) so it never pokes out the
+   *  far side of a box. */
+  pourSeatReach: 0.04,
 };
 
 /* ────────────────────────────── THE SEAT ─────────────────────────────────

@@ -327,10 +327,14 @@ decks, the vat — and over any other seated line it crosses, like a
 pipe bridging a pipe; then it comes down level into the box's side
 collar, which stays exactly the union it always was. (An angled-up
 intake high on the drum was tried for this instead and reverted on
-sight — the arc is the pipe-run look; the tilted collar wasn't.) And
+sight — the arc is the pipe-run look; the tilted collar wasn't.) The
+arc never costs the fittings their axes: the dodge is a bump that
+tapers to nothing at both ends, so a line leaves its spout and lands
+in its gland dead square however hard it has to climb in between. And
 the liquid stays in its casing: each section's pour is coaxial with
 its own glass, its joint tuck clamped by the local bend, so nothing
-angular ever pokes out of the frost again.
+angular ever pokes out of the frost again — and at the socket the
+column runs on INTO the throat rather than stopping at the collar.
 
 **THE RECORDS.** 4 LEAF CLOVERS holds the board while you read the book;
 the three NEW SONGs work the floor, shuffled; and **NOVUS** takes the

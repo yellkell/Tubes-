@@ -1138,3 +1138,48 @@ solver instead of written under it. On the same adversarial rig the
 lifts fell from the 1.4 cap to 0.98/0.68, departures fell from ~50° to
 ~30°, and the clearances HELD: tube-tube 0.227 m, 0.976 m over the
 lane, and the mouth close-ups show the seam buried in the boss.
+
+### The tenth pass — flush at the socket
+
+**"The tube and liquid still don't sit flush to the socket as we'd like."**
+Three defects under one complaint, and the first was measurable: a
+dodged run arrived up to **52 degrees off its gland's axis**. The
+clearance offset landed on the bezier's two control points, and those
+controls ARE the end tangents — every lift tipped the tube off the
+spout's boss line at one end and off the gland's axis at the other, so
+the pipe drove past its own port into the side of the drum while the
+socket sat empty beside it. Last pass's normal-stretch only bent that
+curve back a bit; nothing on a cubic can hold an end tangent while its
+control moves.
+
+So the offset moves the CURVE now, not the controls: `dodgeBump` is
+zero, and has zero SLOPE, at both ends, spending the whole lift in
+between (`tube/geometry.ts`). Both fittings keep their axes exactly —
+**52 degrees to 1.0**, and the spout departure fell to 1.5 with it —
+while the belly still climbs wherever the plant needs it to. The
+solver got sharper in the same move: a lift now displaces the line at
+t by exactly `lift · dodgeBump(t)`, so the leverage it divides by is
+the real number rather than a cubic's approximation, and the same
+clearance costs less lift (0.98 → 0.64 on the crossing rig).
+
+**The pipe was fatter than the port.** The factory's fork sized its
+telescope to the global 7 m ceiling instead of to the run, as the wall
+game always had — so a 0.6 m shop run unfurled ONE section and
+delivered the root bore, 0.088, into a mouth cut for the 0.058 head.
+No aiming fixes a pipe wider than the hole. Sized to the job it
+spreads five or six sections over a typical run, tapers root-fat to
+head-thin, and arrives at 0.067–0.079; the gland's own bore went to
+0.064 × 1.3 to take it with a ring of port still showing. A parked
+feed now reads as a telescope waiting to be pulled rather than one fat
+plug.
+
+**And the liquid stopped at the collar.** The pour ended flush with
+the head, showing the flat face of its own column at the joint. The
+last section's volume runs `TUBE.pourSeatReach` past the head into the
+throat now (both forks), so a feed simply arrives inside the box.
+
+Audited on the same adversarial rig: tube-tube 0.224 m, arrival 1.0
+and 0.6 degrees off axis, head standoff exactly on the seat. The one
+standing caveat is unchanged and inherent: the last 20 cm into a
+gland is a descent to a port at 0.7 m, so a lane hauled hard against
+a fed box still passes under a tube that is coming down to meet it.

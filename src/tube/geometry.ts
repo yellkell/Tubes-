@@ -124,8 +124,9 @@ export function pathPoint(
   return out;
 }
 
-/** Cubic bezier tangent (normalised out). */
-export function pathTangent(
+/** Cubic bezier VELOCITY at t — the raw derivative, unnormalised, so a
+ *  caller can add its own displacement's slope before taking a heading. */
+export function pathVelocity(
   p0: Vector3,
   p1: Vector3,
   p2: Vector3,
@@ -137,10 +138,50 @@ export function pathTangent(
   _a.copy(p1).sub(p0).multiplyScalar(3 * u * u);
   _b.copy(p2).sub(p1).multiplyScalar(6 * u * t);
   _c.copy(p3).sub(p2).multiplyScalar(3 * t * t);
-  out.copy(_a).add(_b).add(_c);
+  return out.copy(_a).add(_b).add(_c);
+}
+
+/** Cubic bezier tangent (normalised out). */
+export function pathTangent(
+  p0: Vector3,
+  p1: Vector3,
+  p2: Vector3,
+  p3: Vector3,
+  t: number,
+  out = new Vector3(),
+): Vector3 {
+  pathVelocity(p0, p1, p2, p3, t, out);
   // Degenerate (head on a control point): fall back to the chord.
   if (out.lengthSq() < 1e-8) out.copy(p3).sub(p0);
   return out.normalize();
+}
+
+/**
+ * THE DODGE BUMP — how a seated run gets out of the way without letting
+ * go of either END'S AXIS.
+ *
+ * The clearance pass used to shove the bezier's two control points, the
+ * only lever a cubic offers — but those controls ARE the end tangents,
+ * so every lift tipped the tube off the spout's boss line at the mouth
+ * and off the gland's axis at the seat. Measured at 52 degrees into a
+ * maker's collar: a pipe stabbing PAST its own socket into the drum,
+ * which is what the headset kept photographing.
+ *
+ * So the offset moves the CURVE, not the controls: a displacement that
+ * is zero, and has zero SLOPE, at t=0 and t=1, spending the whole lift
+ * in between. Both fittings keep their axes exactly — flush at the
+ * boss, flush at the gland — and the run bows over the shop between
+ * them, which is what pipework does anyway.
+ */
+export function dodgeBump(t: number): number {
+  const w = 4 * t * (1 - t);
+  return w * w;
+}
+
+/** d/dt of dodgeBump. Zero at both ends by construction, so a displaced
+ *  run's end tangents are exactly its bezier's own. */
+export function dodgeBumpSlope(t: number): number {
+  return 32 * t * (1 - t) * (1 - 2 * t);
 }
 
 /**

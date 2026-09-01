@@ -621,17 +621,22 @@ export class TubeSystem extends createSystem({}) {
         const room = spans[span.index - 1].radius - span.radius * 0.87;
         tuck = Math.min(tuck, Math.max(0, room) / kink);
       }
+      // AND AT THE SOCKET IT KEEPS GOING: the last section's volume runs
+      // on past the head into the socket's throat, so the column ends
+      // inside the wall instead of stopping dead at the collar plane and
+      // showing the flat face of the liquid at the joint.
+      const into = entering && i === spans.length - 1 ? TUBE.pourSeatReach : 0;
       seg.pour.position
         .copy(_pA)
         .add(_pB)
         .multiplyScalar(0.5)
-        .addScaledVector(_tangent, -tuck / 2);
+        .addScaledVector(_tangent, (into - tuck) / 2);
       seg.pour.quaternion.copy(_quat);
       // 0.87 of the shell's bore: a hair off the glass, so the frost
       // reads as a film over liquid rather than a pipe with a light in.
-      seg.pour.scale.set(span.radius * 0.87, chord + tuck, span.radius * 0.87);
+      seg.pour.scale.set(span.radius * 0.87, chord + tuck + into, span.radius * 0.87);
       seg.pourMat.uniforms.uS0.value = span.s0 - tuck;
-      seg.pourMat.uniforms.uS1.value = span.s1;
+      seg.pourMat.uniforms.uS1.value = span.s1 + into;
       _prevDir.copy(_tangent);
       // The joint collar sits ON the shared joint point, wearing the
       // curve's own tangent there — halfway between its two elbows. And
