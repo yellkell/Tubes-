@@ -276,8 +276,11 @@ check(clear.length === 3 && corners(clear) === 0, `a clear haul runs straight ($
 const ell = await route([-4, 3], [-1, 1]);
 check(corners(ell) === 1, `and turns exactly once across a corner (${corners(ell)})`);
 // …and a floor with something in the way BENDS ROUND IT instead of
-// stopping dead against it, which is what it used to do.
-check((await handPlace('belt', -3, 3)).ok, 'something stands in the lane\u2019s way');
+// stopping dead against it, which is what it used to do. The obstacle
+// stands PARALLEL to the run on purpose: a rail lying ACROSS a haul is
+// crossed on a bridge now (proven in THE RAIL GRAMMAR below), so only
+// a same-axis rail still forces the route round.
+check((await handPlace('belt', -3, 3, 1)).ok, 'something stands in the lane\u2019s way');
 const blocked = await route([-4, 3], [-1, 3]);
 check(
   blocked.length > 0 && !blocked.some((st) => st.i === -3 && st.j === 3),
@@ -472,12 +475,190 @@ await page.screenshot({ path: 'shots/order-walk.png' });
 await page.evaluate(() => window.__tubes.rig(0, 0, 0));
 console.log('  · shots/order-walk.png');
 
+/* ── THE RAIL GRAMMAR ────────────────────────────────────────────────
+ * The pass's asks, each proven by hand on the live floor:
+ *   OUT-RAILS   a rail pointing AWAY from the bank / a chest PULLS
+ *   DROP-BACK   a fist-carried part goes back down onto a rail
+ *   THE TAP     a rail placed moving away from a lane joins on, 50/50
+ *   THE BRIDGE  a haul crosses a standing rail on a deck
+ */
+
+console.log('THE RAIL GRAMMAR — the bank’s door swings both ways');
+await setScale(6);
+const bankSum = (b) => Object.values(b).reduce((s, n) => s + (n ?? 0), 0);
+/** A part from anywhere on the running floor, into the driven fist. */
+async function grabPart() {
+  for (let tries = 0; tries < 60; tries++) {
+    for (const [i, j] of [[2, 0], [0, -2], [2, 1], [3, -1], [4, -1]]) {
+      const id = await page.evaluate(
+        ({ x, z }) => window.__tubes.plant.take(x, 0.85, z),
+        cellXZ(i, j),
+      );
+      if (id !== null) return id;
+    }
+    await page.waitForTimeout(250);
+  }
+  return null;
+}
+// Guarantee the vault holds something: the gear parked at (−4,−4) since
+// sheet 1 goes in by hand (sheet 6 wants servos, so a gear BANKS).
+check(
+  (await page.evaluate(({ x, z }) => window.__tubes.plant.take(x, 0.1, z), cellXZ(-4, -4))) !==
+    null,
+  'the gear parked on the floor since sheet 1 comes back up',
+);
+await page.evaluate(({ x, z }) => window.__tubes.plant.drop(x, 0.9, z), cellXZ(4, 1));
+const bankBefore = bankSum((await state()).bank);
+check(bankBefore >= 1, `and the vault holds stock (${bankBefore} banked)`);
+
+// THE OUT-RAIL: stood beside the bank POINTING AWAY, it pulls one part
+// back out — and the aim itself says so before the press (fedBy). The
+// proof is a part appearing ON THAT RAIL: nothing points at it and no
+// hand feeds it, so the bank is the only place it can have come from.
+// (The vault's TOTAL is no proof — the floor's own lanes bank pumps
+// continuously under this test.)
+const outRail = await handPlace('belt', 3, 1, 3);
+check(outRail.ok && outRail.view?.rot === 3, `a rail beside the bank faces AWAY on its own (rot ${outRail.view?.rot})`);
+check(
+  (outRail.view?.fedBy ?? []).some((c) => c.i === 4 && c.j === 1),
+  'and the ghost already showed the bank feeding it',
+);
+const outRailId = (await page.evaluate(() => window.__tubes.plant.plan())).find(
+  (u) => u.i === 3 && u.j === 1,
+)?.id;
+try {
+  await page.waitForFunction(
+    (id) => window.__tubes.plant.parts().some((p) => p.kind === 'belt' && p.unit === id),
+    outRailId,
+    { timeout: 20000 },
+  );
+  check(true, 'the out-rail pulls a part back OUT of the bank and carries it');
+} catch {
+  check(false, 'the out-rail should pull a part back out of the bank');
+}
+await page.evaluate(() => window.__tubes.build.removeAt(3, 1));
+
+console.log('THE TAP — a rail moving away joins on and takes half');
+// The rig, on the empty left column: a chest with an out-rail, a short
+// lane, a BRANCH standing beside it pointing away, and two catcher
+// chests — one straight ahead, one down the branch.
+check((await handPlace('chest', -5, 0, 0)).ok, 'a source chest stands');
+const outLane = await haulRun([-5, 1], [-5, 2]);
+check(outLane.anchor && outLane.laid === 1, `its out-rail hauls into a two-rail lane (${outLane.laid} laid)`);
+const branch = await handPlace('belt', -4, 2, 1);
+check(
+  branch.ok && branch.view?.rot === 1,
+  `a rail beside the lane, hand pointing away, JOINS ON (rot ${branch.view?.rot})`,
+);
+check(
+  (branch.view?.fedBy ?? []).some((c) => c.i === -5 && c.j === 2),
+  'and the ghost drew the join before the press',
+);
+check((await handPlace('chest', -5, 3, 0)).ok, 'a catcher stands ahead of the lane');
+check((await handPlace('chest', -3, 2, 0)).ok, 'and one down the branch');
+const rigPlan = await page.evaluate(() => window.__tubes.plant.plan());
+const laneRail = rigPlan.find((u) => u.i === -5 && u.j === 2);
+const branchRail = rigPlan.find((u) => u.i === -4 && u.j === 2);
+const chestA = rigPlan.find((u) => u.i === -5 && u.j === 3);
+const chestB = rigPlan.find((u) => u.i === -3 && u.j === 2);
+check(
+  Boolean(laneRail && branchRail) && laneRail.branches.includes(branchRail.id),
+  'the plant knows the lane has a branch',
+);
+
+// DROP-BACK: a part from the running floor goes down onto the rig's
+// own rail by hand — the first of three travellers. Tracked by id, so
+// the floor's other belt traffic can't stand in for it.
+const rigRailId = rigPlan.find((u) => u.i === -5 && u.j === 1)?.id;
+const traveller1 = await grabPart();
+check(traveller1 !== null, 'a part comes off the running floor into the fist');
+await page.evaluate(({ x, z }) => window.__tubes.plant.drop(x, 0.85, z), cellXZ(-5, 1));
+const landedOn = (await page.evaluate(() => window.__tubes.plant.parts())).find(
+  (p) => p.id === traveller1,
+);
+check(
+  landedOn?.kind === 'belt' && [rigRailId, laneRail?.id].includes(landedOn?.unit),
+  `and goes back DOWN onto the lane it was dropped over (${landedOn?.kind} on unit ${landedOn?.unit})`,
+);
+
+// Two more into the source chest; the out-rail drains it through the
+// tap, and the tap deals: ahead, branch, ahead.
+for (let n = 0; n < 2; n++) {
+  check((await grabPart()) !== null, `part ${n + 2} comes to hand`);
+  await page.evaluate(({ x, z }) => window.__tubes.plant.drop(x, 0.85, z), cellXZ(-5, 0));
+}
+try {
+  await page.waitForFunction(
+    ({ a, b }) => {
+      const parts = window.__tubes.plant.parts();
+      const inA = parts.filter((p) => p.kind === 'chest' && p.unit === a).length;
+      const inB = parts.filter((p) => p.kind === 'chest' && p.unit === b).length;
+      return inA === 2 && inB === 1;
+    },
+    { a: chestA.id, b: chestB.id },
+    { timeout: 30000 },
+  );
+  check(true, 'the lane deals every other part down the branch — 2 ahead, 1 tapped: HALF the payload');
+} catch {
+  const parts = await page.evaluate(() => window.__tubes.plant.parts());
+  const inA = parts.filter((p) => p.kind === 'chest' && p.unit === chestA.id).length;
+  const inB = parts.filter((p) => p.kind === 'chest' && p.unit === chestB.id).length;
+  check(false, `the tap should deal 2 ahead / 1 branch (got ${inA} / ${inB})`);
+}
+
+console.log('THE BRIDGE — lanes intersect on a deck');
+// A haul straight across the branch rail: the route DECKS it instead of
+// walking round it, and the standing rail becomes a two-lane crossing.
+const crossPreview = await route([-4, 3], [-4, 0]);
+check(
+  crossPreview.length === 3 && crossPreview.some((st) => st.bridge && st.i === -4 && st.j === 2),
+  `the route crosses the standing rail on a deck (${crossPreview.length} cells, bridge marked)`,
+);
+const crossRun = await haulRun([-4, 3], [-4, 0]);
+check(crossRun.laid === 3, `and the haul lays it — two rails and one deck (${crossRun.laid} landed)`);
+const bridged = (await page.evaluate(() => window.__tubes.plant.plan())).find(
+  (u) => u.i === -4 && u.j === 2,
+);
+check(bridged?.over === 0, `the crossed rail carries the second lane over itself (over ${bridged?.over})`);
+// The proof of transit: a part dropped on the new lane can ONLY reach
+// its far end across the deck.
+check((await grabPart()) !== null, 'one more traveller comes to hand');
+await page.evaluate(({ x, z }) => window.__tubes.plant.drop(x, 0.85, z), cellXZ(-4, 3));
+const farRails = (await page.evaluate(() => window.__tubes.plant.plan()))
+  .filter((u) => u.i === -4 && (u.j === 0 || u.j === 1))
+  .map((u) => u.id);
+try {
+  await page.waitForFunction(
+    (ids) =>
+      window.__tubes.plant.parts().some((p) => p.kind === 'belt' && ids.includes(p.unit)),
+    farRails,
+    { timeout: 20000 },
+  );
+  check(true, 'a part rides OVER the crossing and lands on the far side');
+} catch {
+  check(false, 'a part should cross the deck to the far side');
+}
+// And the hand path offers the same deck: aim a rail at a standing one.
+await arm('belt');
+const bridgeAim = await aim(-4, 1, 1);
+check(
+  bridgeAim?.bridge === true && bridgeAim?.placeable === true,
+  'aiming a rail at a crossing rail offers the deck by hand too',
+);
+await arm(null);
+// The grammar, framed: the tap junction and the deck in one look.
+await page.evaluate(() => window.__tubes.rig(-0.5, 2.0, 0.61, 0.3, -0.61));
+await page.waitForTimeout(400);
+await page.screenshot({ path: 'shots/order-walk-rails.png' });
+await page.evaluate(() => window.__tubes.rig(0, 0, 0));
+console.log('  · shots/order-walk-rails.png');
+
 /* ── THE FOURTH GATE, AND THE GOOP ───────────────────────────────────── */
 
 console.log('THE FOURTH GATE');
-// Sheet 6 wants six servos through the same combiner; the walk proves
-// the GATE, which is the new mechanism, by posting it — a door only a
-// tool has.
+// Sheet 6 wants three servos — each a PUMP and a LAMP through a third
+// combiner; the walk proves the GATE, which is the new mechanism, by
+// posting it — a door only a tool has.
 await setScale(4);
 s = await state();
 check(s.orderId === 'the-fourth-gate', 'sheet 6 asks for servos');
@@ -516,11 +697,14 @@ await page.waitForFunction(() => window.__tubes.plant.state().goop === 'dancing'
 });
 const goop = await page.evaluate(() => window.__tubes.goop.state());
 check(Boolean(goop?.dancing), `and it climbs out and dances (form ${goop?.form?.toFixed(2)})`);
-check(goop.y < 0.2, `on your actual floor, not inside the tank (y ${goop.y.toFixed(2)})`);
+// ON TOP OF THE VAT: the tank it was brewed in is its podium — the
+// dance rides the lid (≈1.05 m up), not the boards in front.
+check(goop.y > 0.9, `on top of the vat, not down on the boards (y ${goop.y.toFixed(2)})`);
 check(await page.evaluate(() => window.__tubes.menu.finaleUp()), 'THANKS FOR PLAYING comes up');
 mus = await music();
 check(mus.deck === 'vat' && mus.track === 'NOVUS', 'and NOVUS is still under the dance');
-await page.evaluate(() => window.__tubes.rig(-0.6, 0.8, 0, -0.35, -0.25));
+// It dances on the LID now — the camera steps back and looks up at it.
+await page.evaluate(() => window.__tubes.rig(0.1, 1.6, 0.74, 0, 0.12));
 await page.waitForTimeout(600);
 await page.screenshot({ path: 'shots/order-walk-goop.png' });
 console.log('  · shots/order-walk-goop.png');

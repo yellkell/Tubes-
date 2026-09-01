@@ -1,24 +1,26 @@
 /**
  * GoopSystem — the last two minutes of TUBES.
  *
- * The book ends with a machine you cannot use. Six SERVOS crank the
+ * The book ends with a machine you cannot use. Three SERVOS crank the
  * fourth manifold's gate off the near pillar; behind it is PEARL, which
  * is green, and nothing in the catalogue drinks green. So the last sheet
  * hands you the VAT — the only glass on the floor — and asks you to run
  * the green line into it. The level comes up. And then something climbs
  * out.
  *
- * THE ARC, and every beat of it is a real object on your real floor:
+ * THE ARC, and every beat of it is a real object in your real room:
  *
  *   BREWING   the vat fills (FactorySystem owns the level; the sim owns
  *             the clock). Nothing of ours exists yet.
  *   BIRTH     a dome of gel forms INSIDE the tank, swells over the rim,
- *             pours down the outside and lands on the boards.
+ *             and hauls itself up onto the LID.
  *   RISE      it stands up out of the puddle — the sim's own glob→boxer
  *             morph, which is the trick this creature was built around.
- *   DANCE     it hits a stance on every beat, hops on the downbeat, and
- *             keeps you in its eyes. THANKS FOR PLAYING comes up over
- *             its shoulder; dismissing the card leaves it dancing.
+ *   DANCE     ON TOP OF THE VAT: the tank it was brewed in is its
+ *             podium, head at your eye line, hopping on the machine
+ *             that made it. It hits a stance on every beat and keeps
+ *             you in its eyes. THANKS FOR PLAYING comes up over its
+ *             shoulder; dismissing the card leaves it dancing.
  *
  * The creature itself knows nothing about any of this (goop/GoopDancer)
  * — it is fed a form target, a stance and a place to be, exactly as the
@@ -38,13 +40,13 @@ import { GoopDancer } from '../goop/GoopDancer.js';
 
 /** How big the thing is, against the sim's native 1.78 m man. A shop
  *  floor is a small room and the goop is a guest in it: two-thirds
- *  scale puts its head at about a metre, which is eye-to-eye if you
- *  crouch and cheerfully unthreatening if you don't. */
+ *  scale, stood on the vat's lid, puts its head right at your eye line
+ *  — eye-to-eye without a crouch, and still cheerfully unthreatening. */
 const SCALE = 0.62;
 
 /** Seconds for each beat of the birth. */
 const FORM_S = 2.6; // the dome gathering inside the glass
-const CLIMB_S = 2.4; // over the rim and down the outside
+const CLIMB_S = 2.4; // up over the rim and onto the lid
 const STAND_S = 1.6; // up onto its feet before the card comes up
 
 /** The dance's tempo. No music plays in TUBES — the shop's own hum is
@@ -70,7 +72,6 @@ export const goopView: {
 } = {};
 
 const _head = new Vector3();
-const _at = new Vector3();
 const _c = { x: 0, z: 0 };
 
 export class GoopSystem extends createSystem({}) {
@@ -128,20 +129,18 @@ export class GoopSystem extends createSystem({}) {
       goop.group.position.set(this.vat.x, this.vatFloor() + 0.02 * p, this.vat.z);
       goop.setForm(0);
     } else if (this.t < total) {
-      // CLIMBING OUT. Up over the lid, then down the outside face — a
-      // single arc, eased, with the mass lagging behind it (the dancer's
-      // own inertia does that part for free).
+      // CLIMBING UP. Out of the brew, over the rim, and it SETTLES ON
+      // THE LID — one heave with a little overshoot at the top, the
+      // mass lagging behind it (the dancer's own inertia does that part
+      // for free). The tank it was brewed in is where it stays: the vat
+      // is its podium now.
       const p = (this.t - FORM_S) / CLIMB_S;
       const ease = p < 0.5 ? 2 * p * p : 1 - (1 - p) ** 2 * 2;
-      const rimY = this.vatFloor() + UNITS.vat.height + 0.12;
-      // Up to the rim in the first half, down to the floor in the second.
-      const y = p < 0.45 ? this.vatFloor() + (rimY - this.vatFloor()) * (p / 0.45) : rimY * (1 - (p - 0.45) / 0.55);
+      const lidY = this.stage.y;
+      const overshoot = Math.sin(Math.min(1, p / 0.85) * Math.PI) * 0.1;
+      const y = this.vatFloor() + (lidY - this.vatFloor()) * ease + overshoot;
       goop.group.scale.setScalar(SCALE * (0.74 + 0.26 * ease));
-      goop.group.position.set(
-        this.vat.x + (this.stage.x - this.vat.x) * ease,
-        Math.max(0, y),
-        this.vat.z + (this.stage.z - this.vat.z) * ease,
-      );
+      goop.group.position.set(this.vat.x, y, this.vat.z);
       goop.setForm(0);
       if (p > 0.9 && plant.goop === 'born' && this.hopT === 0) {
         this.hopT = 1;
@@ -149,7 +148,7 @@ export class GoopSystem extends createSystem({}) {
         buzz(this.world, 'both', 0.6, 90);
       }
     } else {
-      // ON THE FLOOR. Stand up, then dance — and the card comes up the
+      // ON THE LID. Stand up, then dance — and the card comes up the
       // moment it is on its feet, not a second before.
       goop.group.scale.setScalar(SCALE);
       goop.setForm(1);
@@ -171,8 +170,8 @@ export class GoopSystem extends createSystem({}) {
     return UNITS.vat.tankFloor;
   }
 
-  /** Stand the creature up: work out where the vat is, and where in
-   *  front of it there is room to dance. */
+  /** Stand the creature up: work out where the vat is, because the vat
+   *  is also the stage — it dances on the tank's own lid. */
   private birth(): void {
     const unit = plant.goopUnit >= 0 ? unitById(plant.goopUnit) : undefined;
     if (unit) {
@@ -181,12 +180,10 @@ export class GoopSystem extends createSystem({}) {
     } else {
       this.vat.set(0, 0, 0);
     }
-    // It steps OUT of the vat toward the middle of the floor, so it is
-    // never dancing with its back inside a machine.
-    _at.copy(this.vat).normalize();
-    if (_at.lengthSq() < 1e-4) _at.set(0, 0, 1);
-    this.stage.copy(this.vat).addScaledVector(_at, -0.55);
-    this.stage.y = 0;
+    // THE PODIUM: dead centre of the lid, at lid height (the pan, the
+    // glass, and the lid plate it lands on — see the vat builder).
+    this.stage.copy(this.vat);
+    this.stage.y = UNITS.vat.tankFloor + UNITS.vat.height + 0.035;
 
     this.goop = new GoopDancer();
     this.goop.group.position.copy(this.vat);
@@ -222,9 +219,10 @@ export class GoopSystem extends createSystem({}) {
       sfx.goopStep(this.bar % 2 === 0);
     }
     // The hop: a quick rise and a heavy landing, ridden by the group so
-    // the dancer's own inertia whips the body through it.
+    // the dancer's own inertia whips the body through it — off the lid
+    // and back onto it, the whole vat its drum.
     this.hopT = Math.max(0, this.hopT - delta / BEAT_S);
     const lift = Math.sin(Math.min(1, this.hopT) * Math.PI) * 0.09;
-    goop.group.position.set(this.stage.x, lift, this.stage.z);
+    goop.group.position.set(this.stage.x, this.stage.y + lift, this.stage.z);
   }
 }

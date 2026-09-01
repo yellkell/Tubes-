@@ -45,6 +45,15 @@ export interface Unit {
   craftT: number;
   /** Combiner in-ports: a part id or −1, port 0 = left of OUT, 1 = right. */
   ports: [number, number];
+  /** THE BRIDGE. A rail crossed by another lane carries a second, raised
+   *  lane straight over its own: `over` is that deck's travel direction,
+   *  always perpendicular to `rot`. Undefined on everything that isn't a
+   *  crossing. */
+  over?: Rot;
+  /** THE TAP's cursor. A rail with branch rails hanging off it deals its
+   *  payload round-robin — ahead, then each branch — and this remembers
+   *  whose turn is next. Meaningless (and 0) on everything else. */
+  tap: number;
 }
 
 /** One supply run off a feed's spout. Field names deliberately mirror
@@ -92,7 +101,8 @@ export interface FactoryRun {
 
 export type PartAt =
   | { kind: 'chute'; unit: number; slot: number }
-  | { kind: 'belt'; unit: number }
+  /** `over` = riding a bridge's raised deck rather than the rail itself. */
+  | { kind: 'belt'; unit: number; over?: boolean }
   | { kind: 'port'; unit: number; port: 0 | 1 }
   | { kind: 'chest'; unit: number; index: number }
   | { kind: 'hand'; hand: 'left' | 'right' }
@@ -231,8 +241,12 @@ export function chuteParts(unitId: number): Part[] {
     .sort((a, b) => (a.at as { slot: number }).slot - (b.at as { slot: number }).slot);
 }
 
-export function beltPart(unitId: number): Part | undefined {
-  return plant.parts.find((p) => p.at.kind === 'belt' && p.at.unit === unitId);
+/** The part riding a rail's given lane — `over` asks about the bridge
+ *  deck; the default asks about the rail itself. Each lane holds one. */
+export function beltPart(unitId: number, over = false): Part | undefined {
+  return plant.parts.find(
+    (p) => p.at.kind === 'belt' && p.at.unit === unitId && (p.at.over === true) === over,
+  );
 }
 
 export function chestParts(unitId: number): Part[] {

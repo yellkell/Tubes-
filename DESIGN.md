@@ -359,7 +359,8 @@ background track and not on the one the whole book walks toward.
 
 ## THE GOOP
 
-The book ends with a machine you cannot use. Six SERVOS crank the fourth
+The book ends with a machine you cannot use. Three SERVOS — each a PUMP
+and a LAMP fitted into one, the book's one tier-3 part — crank the fourth
 manifold's gate off the near pillar — a hatch with crossed straps and
 eight bolt heads that has visibly never been opened — and behind it is
 PEARL, which is GREEN, and nothing in the catalogue drinks green. The

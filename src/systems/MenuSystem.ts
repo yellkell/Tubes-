@@ -1897,7 +1897,7 @@ export class MenuSystem extends createSystem({}) {
           31 *
           wrapText(
             g,
-            'You stood a maker in an empty room and ran one tube into it. Everything after that \u2014 the bank, the lanes, the combiner, the chest, six servos and a vat \u2014 you built. The shop stays open: every feed is yours, the catalogue is yours, and nobody is going to ask you for ten of anything ever again.',
+            'You stood a maker in an empty room and ran one tube into it. Everything after that \u2014 the bank, the lanes, the combiner, the chest, three deep-fitted servos and a vat \u2014 you built. The shop stays open: every feed is yours, the catalogue is yours, and nobody is going to ask you for ten of anything ever again.',
             cw / 2 - 380,
             y,
             760,

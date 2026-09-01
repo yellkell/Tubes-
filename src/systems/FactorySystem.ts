@@ -25,6 +25,7 @@ import { InputComponent, createSystem } from '@iwsdk/core';
 import {
   AdditiveBlending,
   BufferGeometry,
+  Color,
   Float32BufferAttribute,
   Group,
   InstancedMesh,
@@ -39,10 +40,11 @@ import { buzz } from '../game/haptics.js';
 import { orderComplete } from '../game/flow.js';
 import { chestBonus, ownedUpgrades, railFactor, reachBonus } from '../game/progress.js';
 import { site } from '../game/state.js';
-import { cellCenter, worldToCell } from '../floor/grid.js';
+import { CELL, cellCenter, worldToCell } from '../floor/grid.js';
 import { floorLayout, type FloorSide } from '../floor/plan.js';
 import {
   DIRS,
+  beltPart,
   chestParts,
   chuteParts,
   freshRun,
@@ -57,6 +59,8 @@ import {
   type Part,
 } from '../factory/state.js';
 import {
+  beltBranches,
+  beltEntry,
   deliverPart,
   glandPose,
   haulRoute,
@@ -66,9 +70,11 @@ import {
   simTick,
 } from '../factory/sim.js';
 import {
+  MAKER_ACCENT,
   buildFeed,
   buildUnit,
   partKit,
+  setBeltForm,
   tickBeltTread,
   type FeedRefs,
   type UnitRefs,
@@ -117,6 +123,8 @@ export const factoryView: {
     j: number;
     rot: number;
     feeds: number | null;
+    over: number | null;
+    branches: number[];
   }>;
   /** Every gland on the floor: the pose it would present to `side`'s
    *  spout (the collar swivels, so ask from somewhere), and whether a
@@ -181,6 +189,7 @@ const _m4 = new Matrix4();
 const _m4b = new Matrix4();
 const _v3 = new Vector3();
 const _v3b = new Vector3();
+const _tintColor = new Color();
 /** Own scratch: layTube's _quat is live across its whole pass. */
 const _q = new Quaternion();
 
@@ -269,6 +278,10 @@ export class FactorySystem extends createSystem({}) {
           j: u.j,
           rot: u.rot,
           feeds: next ? next.id : null,
+          /** The deck's travel where a lane bridges this rail; null else. */
+          over: u.over ?? null,
+          /** The lanes joined onto this one, dealt every other part. */
+          branches: u.type === 'belt' ? beltBranches(u).map((b) => b.id) : [],
         };
       });
     /** THE ROUTE a haul between two floor points would take, without
@@ -450,6 +463,14 @@ export class FactorySystem extends createSystem({}) {
         { di: -1, dj: 0 },
       ][unit.rot];
       refs.group.rotation.y = Math.atan2(d.di, d.dj);
+      // A rail dresses for its neighbours on every rebuild: a corner
+      // wears its curve, a crossed one raises the deck. Same generation
+      // tick that re-poses it, so it can't lag the plant either.
+      if (unit.type === 'belt' && refs.belt) {
+        const entryRel = (beltEntry(unit) - unit.rot + 4) % 4;
+        const overRel = unit.over === undefined ? -1 : (unit.over - unit.rot + 4) % 4;
+        setBeltForm(refs, entryRel, overRel);
+      }
     }
 
     // A run per awake feed (the stub waits on the spout).
@@ -517,18 +538,18 @@ export class FactorySystem extends createSystem({}) {
     this.relayLinks();
   }
 
-  /** One chevron per live join, midway between the two cells. */
+  /** One chevron per live join, midway between the two cells — the
+   *  straight-ahead link, and every branch a lane deals into. */
   private relayLinks(): void {
     const mesh = this.linkMesh;
     if (!mesh) return;
     let n = 0;
-    for (const unit of plant.units) {
-      const ahead = linkAhead(unit);
-      if (!ahead || n >= 96) continue;
-      cellCenter(unit.i, unit.j, _c);
+    const draw = (a: (typeof plant.units)[number], b: (typeof plant.units)[number]): void => {
+      if (n >= 96) return;
+      cellCenter(a.i, a.j, _c);
       const ax = _c.x;
       const az = _c.z;
-      cellCenter(ahead.i, ahead.j, _c);
+      cellCenter(b.i, b.j, _c);
       _q.setFromAxisAngle(UP_Y, Math.atan2(_c.x - ax, _c.z - az));
       _m4.compose(
         _v3.set((ax + _c.x) / 2, UNITS.railTop + 0.1, (az + _c.z) / 2),
@@ -536,6 +557,11 @@ export class FactorySystem extends createSystem({}) {
         _v3b.set(0.09, 1, 0.12),
       );
       mesh.setMatrixAt(n++, _m4);
+    };
+    for (const unit of plant.units) {
+      const ahead = linkAhead(unit);
+      if (ahead) draw(unit, ahead);
+      if (unit.type === 'belt') for (const b of beltBranches(unit)) draw(unit, b);
     }
     mesh.count = n;
     mesh.instanceMatrix.needsUpdate = true;
@@ -592,7 +618,8 @@ export class FactorySystem extends createSystem({}) {
       // over its spout — a door that has visibly never been opened — and
       // this is the one time it ever moves: the straps let go, the plate
       // tips off its bottom edge, and it falls away down the face of the
-      // column. Six servos bought this; it is worth two seconds.
+      // column. Three deep-fitted servos bought this; it is worth two
+      // seconds.
       if (refs.hatch) {
         if (!awake) {
           refs.hatch.visible = true;
@@ -711,31 +738,54 @@ export class FactorySystem extends createSystem({}) {
     if (!part) return false;
 
     // Over the dock: delivered. Over a chest: banked in the crate. Over a
-    // combiner's port tray: fitted. Anywhere else: it's on the floor now.
+    // combiner's port tray: fitted. Over a free RAIL: back on the lane,
+    // right where you let go of it — picking a part up is not a one-way
+    // door any more. NEAREST eligible box wins (dropReach overlaps
+    // neighbouring cells, and first-found used to let a rail's neighbour
+    // shadow the box you were actually over). Anywhere else: floor.
+    let best: (typeof plant.units)[number] | null = null;
+    let bestD = FACTORY.dropReach;
     for (const unit of plant.units) {
       cellCenter(unit.i, unit.j, _c);
       const d = Math.hypot(pos.x - _c.x, pos.z - _c.z);
-      if (d > FACTORY.dropReach) continue;
+      if (d >= bestD) continue;
+      const takes =
+        unit.type === 'dock' ||
+        (unit.type === 'chest' && chestParts(unit.id).length < FACTORY.chestCap + chestBonus()) ||
+        (unit.type === 'combiner' && (unit.ports[0] < 0 || unit.ports[1] < 0)) ||
+        (unit.type === 'belt' && !beltPart(unit.id));
+      if (!takes) continue;
+      bestD = d;
+      best = unit;
+    }
+    if (best) {
+      const unit = best;
       if (unit.type === 'dock') {
         deliverPart(part);
         buzz(this.world, hand, 0.5, 40);
         return true;
       }
-      if (unit.type === 'chest' && chestParts(unit.id).length < FACTORY.chestCap + chestBonus()) {
+      if (unit.type === 'chest') {
         part.at = { kind: 'chest', unit: unit.id, index: chestParts(unit.id).length };
         sfx.uiClick();
         return true;
       }
       if (unit.type === 'combiner') {
-        for (const portIdx of [0, 1] as const) {
-          if (unit.ports[portIdx] < 0) {
-            unit.ports[portIdx] = part.id;
-            part.at = { kind: 'port', unit: unit.id, port: portIdx };
-            sfx.uiClick();
-            return true;
-          }
-        }
+        const portIdx = unit.ports[0] < 0 ? 0 : 1;
+        unit.ports[portIdx] = part.id;
+        part.at = { kind: 'port', unit: unit.id, port: portIdx };
+        sfx.uiClick();
+        return true;
       }
+      // The rail: the part lands at the spot on the lane your fist was
+      // over, and rides on from there.
+      cellCenter(unit.i, unit.j, _c);
+      const dir = DIRS[unit.rot];
+      const along = (pos.x - _c.x) * dir.di + (pos.z - _c.z) * dir.dj;
+      part.at = { kind: 'belt', unit: unit.id };
+      part.p = Math.min(0.9, Math.max(0.05, 0.5 + along / (CELL * 0.92)));
+      sfx.uiClick();
+      return true;
     }
     part.at = { kind: 'loose', x: pos.x, y: 0.05, z: pos.z };
     sfx.droopSettle();
@@ -1369,6 +1419,20 @@ export class FactorySystem extends createSystem({}) {
       const refs = this.unitRefs.get(unit.id);
       if (!refs) continue;
       const crafting = unit.craftT >= 0;
+      // THE MAKER WEARS ITS LINE. Bands sit furnace-orange while the box
+      // is cold and ease over to the seated line's colour — with a low
+      // ember of the same in the emissive once it is actually fed — so
+      // "which maker is the violet one" is answered from across the room
+      // by the box itself, not by tracing a tube.
+      if (refs.tint && unit.type === 'maker') {
+        const seated = runSeatedAt(unit.id);
+        if (seated) _tintColor.setHex(seated.line.glow).multiplyScalar(0.75);
+        else _tintColor.setHex(MAKER_ACCENT);
+        refs.tint.color.lerp(_tintColor, Math.min(1, delta * 5));
+        const lit = seated && seated.phase === 'flowing' ? 0.35 : 0;
+        _tintColor.setHex(seated ? seated.line.glow : 0).multiplyScalar(lit);
+        refs.tint.emissive.lerp(_tintColor, Math.min(1, delta * 5));
+      }
       if (refs.lampMat) {
         refs.lampMat.opacity = crafting
           ? 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(this.clock * 6))

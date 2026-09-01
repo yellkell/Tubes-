@@ -277,11 +277,14 @@ every machine the book ever granted you already switched on:
 4. **FIRST FITTING** — the COMBINER: two lanes become one.
 5. **NIGHT SHIFT** — violet, the CHEST, and re-plumbing a box you already
    built by hauling its collar off in both hands.
-6. **THE FOURTH GATE** — six SERVOS into the bank, and the manifold on
-   the near side of your floor that has never opened, opens.
+6. **THE FOURTH GATE** — three SERVOS into the bank, and the manifold on
+   the near side of your floor that has never opened, opens. A servo is
+   the book's one deep fitting: a PUMP and a LAMP — every line on the
+   floor — combined into a single bolt.
 7. **THE GOOP** — it is GREEN, nothing in the catalogue drinks it, and
    the last thing in the book is a glass VAT. Fill it and something
-   climbs out onto your actual floor and dances.
+   climbs out — and dances ON TOP OF THE TANK, head at your eye line,
+   hopping on the machine that made it.
 
 Along the way: feeds on the floor's four sides, the two-handed pull
 re-aimed at bench machines whose intakes SWIVEL to meet the tube, rails
@@ -291,6 +294,29 @@ BOX PANEL on every machine — click one to see what is inside it and to
 UNPLUG its line without unbolting the machine — **Ⓧ** on the left
 controller to put a tool back down (mid-haul included), and a BANK
 counting every delivery.
+
+**THE RAIL GRAMMAR.** Rails stopped being a row of straight pieces:
+
+- A corner rail **actually curves** — a real quarter-arc of track, and
+  the part rides the arc, on the standing lane and in the ghost run you
+  drag out alike.
+- Lanes **intersect on bridges**: haul a run straight across a standing
+  rail (or press a rail onto one) and it lays a raised DECK arched over
+  the crossing — two lanes, one cell, neither giving way.
+- A rail placed **moving away from a lane joins on**: the lane deals it
+  every other part — a 50/50 tap, drawn with its own chevron.
+- The container doors swing both ways: a rail pointed INTO a chest or
+  the bank feeds it, and a rail pointing AWAY **pulls parts back out** —
+  the chest from the top of its stack, the bank whatever it holds
+  deepest.
+- A part in your fist **goes back down onto a rail**: drop it over any
+  free rail and it lands right where you let go and rides on.
+
+And the boxes wear LIVERIES now: the MAKER's drum bands take the colour
+of whichever line is seated in it (a violet maker looks violet from
+across the room), the COMBINER wears fitter's brass on its clamp and
+spine, the CHEST wears storeman's olive straps and a painted lid, and
+the BANK wears minted gold round its mouth.
 
 **THE RECORDS.** 4 LEAF CLOVERS holds the board while you read the book;
 the three NEW SONGs work the floor, shuffled; and **NOVUS** takes the

@@ -829,11 +829,12 @@ the catalogue, the goal ladder, the sheets and the box panel.
 **"Grab the goop from RAVE RAID... a machine that activates the final
 tube socket which is green... that creates the goop and it dances and a
 screen pops up that says thanks for playing."** Sheets six and seven.
-Six servos crank the fourth manifold's bolted gate off the near pillar;
+Three servos — a servo is a PUMP and a LAMP now, the book's one deep
+fitting — crank the fourth manifold's bolted gate off the near pillar;
 PEARL is green; the VAT is the only thing that drinks it; and what climbs
-out of the tank is the club's own gel creature (`src/goop/`, the fight
-left behind) dancing on your real floor with THANKS FOR PLAYING over its
-shoulder.
+out of the tank dances ON TOP OF THE VAT — the club's own gel creature
+(`src/goop/`, the fight left behind), the tank its podium, with THANKS
+FOR PLAYING over its shoulder.
 
 
 ### The second playtest pass
@@ -896,3 +897,69 @@ playing over them now.
 pale sclera for contrast, an iris that visibly swings, a dilating pupil,
 two catchlights, a lateral placement that survives the body yawing, and
 a gaze that wanders instead of staring.
+
+### The third pass — the rail grammar, the liveries, and the podium
+
+**"Let's make our rails actually curve."** A corner rail was two straight
+pieces butted at right angles, and the part slid along a line the track
+wasn't drawing. Every rail owns a wardrobe now (`factory/units.ts`):
+the straight, two quarter-curves, and the bridge deck — `setBeltForm`
+dresses it for its neighbours on every generation tick, the part rides
+the true arc (`partPose` walks the same quadrant the geometry draws),
+and the haul's ghosts wear the same forms, so the run you drag is the
+run that lands, curves and all.
+
+**"Let's have bridge rails so they can intersect."** The route search
+(`routeLeg`) treats a cell with a rail on it as open ONE way: straight
+across, over the top. A haul that crosses a standing perpendicular rail
+lays a DECK arched over it — the standing rail becomes a crossing
+(`Unit.over`), two lanes on one cell, each carrying its own part.
+Pressing a rail directly onto a crossing rail does the same by hand.
+No turning on a deck, no ending a run mid-deck, no decking a corner —
+`canBridge` is the one gate all three doors go through.
+
+**"If you place a rail moving away from another it joins on and takes
+50% of the payload."** THE TAP: a rail standing beside a lane,
+perpendicular and pointing away, is a branch — the lane deals
+round-robin between straight-ahead and each branch (`Unit.tap` holds
+whose turn is next), which with one branch is exactly half. A refused
+output passes its turn rather than damming the lane. The join draws its
+own chevron, the ghost previews it, and `bestRot` scores it so the
+piece lands the way your hand says.
+
+**"Rails facing away pull objects out of a container block just as
+facing towards puts them in."** The door swings both ways: a rail whose
+back sits against a chest or the bank, pointing away, PULLS — the chest
+from the top of its stack, the bank whichever part it holds deepest
+(so a drain levels the vault instead of stripping one shelf). One part
+per free rail; the lane's own pace is the drain's pace.
+
+**"Make it so we can place blocks back on the rails after we've picked
+them up."** `dropCarried` learned the rail: a part dropped over a free
+one lands at the exact spot on the lane your fist was over and rides
+on. Drop targeting is nearest-eligible now rather than first-found,
+because dropReach overlaps neighbouring cells and a rail used to be
+able to shadow the chest you were actually aiming at.
+
+**"Iterate on the colours and design of our boxes to give them some
+character and identity."** THE LIVERIES: the chassis stays dark iron,
+the identity rides the details. The MAKER's drum bands sit furnace
+orange cold and re-tint to whichever line is seated — a violet maker
+looks violet from across the room, which is the identity that matters:
+what it makes. The COMBINER wears fitter's brass on the clamp and the
+spine where its halves meet; the CHEST, storeman's olive straps and a
+painted lid; the BANK, minted gold round its mouth. Rails and posts
+stay plain — infrastructure has no trade.
+
+**"Make the last item harder — like you have to combine the pump and
+the lamp."** SERVO is tier 3 now: a PUMP and a LAMP fitted together,
+four base parts through three combines, every line on the floor in one
+bolt. The fourth gate wants three of them instead of six — the sheet
+got deeper, so it stopped being longer — and the part's kit and icon
+carry both parents, per the lineage law.
+
+**"Let's have the goop dance on top of the VAT."** It used to climb
+down and dance on the boards; now the climb ends ON the lid and the
+tank it was brewed in is its podium — head at your eye line, hopping
+on the machine that made it, the contact shadow grounding it on the
+lid instead of the floor.

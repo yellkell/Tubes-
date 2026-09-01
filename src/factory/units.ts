@@ -27,11 +27,13 @@
 import {
   AdditiveBlending,
   BoxGeometry,
+  BufferGeometry,
   CanvasTexture,
   CircleGeometry,
   CylinderGeometry,
   DoubleSide,
   EdgesGeometry,
+  Float32BufferAttribute,
   Group,
   LineBasicMaterial,
   LineSegments,
@@ -47,7 +49,7 @@ import {
   TorusGeometry,
   Vector3,
 } from 'three';
-import { FACTORY, LINES, UNITS, type ItemId, type LineSpec, type UnitType } from '../config.js';
+import { FACTORY, FLOOR, LINES, UNITS, type ItemId, type LineSpec, type UnitType } from '../config.js';
 
 /* ── shared geometry / materials ────────────────────────────────────────── */
 
@@ -66,6 +68,22 @@ const ringGeo = (): RingGeometry => (_ring ??= new RingGeometry(0.72, 1, 28));
 let _disc: CircleGeometry | null = null;
 const discGeo = (): CircleGeometry => (_disc ??= new CircleGeometry(1, 24));
 
+/* ── THE LIVERIES ─────────────────────────────────────────────────────────
+ * One accent per trade, so a box says what it IS from across the room
+ * the way a pillar says what it carries. The chassis stays the same dark
+ * iron everywhere — the identity rides on the DETAILS: the MAKER wears
+ * furnace orange on its drum bands (and re-tints to its line the moment
+ * one is seated — see FactorySystem, which owns that lerp), the COMBINER
+ * wears fitter's brass on the clamp and the spine where its two halves
+ * meet, the CHEST wears storeman's olive on its straps and painted lid,
+ * and the BANK wears minted gold round its mouth. Rails and posts stay
+ * plain: infrastructure has no trade.
+ */
+export const MAKER_ACCENT = 0xe07a24;
+const brassMat = new MeshStandardMaterial({ color: 0xb08d57, roughness: 0.35, metalness: 0.85 });
+const oliveMat = new MeshStandardMaterial({ color: 0x6f7c49, roughness: 0.55, metalness: 0.45 });
+const goldMat = new MeshStandardMaterial({ color: 0xd8b04a, roughness: 0.3, metalness: 0.9 });
+
 const ironMat = new MeshStandardMaterial({ color: 0x3a332c, roughness: 0.5, metalness: 0.8 });
 const ironOpenMat = new MeshStandardMaterial({
   color: 0x35302a,
@@ -74,6 +92,12 @@ const ironOpenMat = new MeshStandardMaterial({
   side: DoubleSide,
 });
 const railMat = new MeshStandardMaterial({ color: 0x2b2622, roughness: 0.55, metalness: 0.75 });
+const railOpenMat = new MeshStandardMaterial({
+  color: 0x2b2622,
+  roughness: 0.55,
+  metalness: 0.75,
+  side: DoubleSide,
+});
 const edgeMat = new LineBasicMaterial({ color: 0xffa22e, transparent: true, opacity: 0.35 });
 const chevronMat = new MeshBasicMaterial({
   color: 0xffa22e,
@@ -196,6 +220,72 @@ export function tickBeltTread(delta: number, speed: number): void {
   _treadTex.offset.y = (_treadTex.offset.y + (delta * speed) / TREAD_SLAT) % 1;
 }
 
+/* ── curved + bridged rail geometry ─────────────────────────────────────
+ * A corner rail is a real quarter-curve now, and a crossed rail carries
+ * a DECK arched over its own lane. Both are built from parametric strips
+ * so the shared scrolling tread rides them exactly like the straights:
+ * uv.v runs 1 at the entry face to 0 at the exit face, the same
+ * orientation the flat tread plane has after its −90° fold.
+ */
+
+/** A flat ring-sector strip in the XZ plane about the origin, swept from
+ *  φ=−90° through 90° of arc (sweep decides which way), radii r0..r1. */
+function arcStrip(r0: number, r1: number, segs: number, vFlip: boolean): BufferGeometry {
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  for (let k = 0; k <= segs; k++) {
+    const t = k / segs;
+    const phi = -Math.PI / 2 + t * (Math.PI / 2);
+    const c = Math.cos(phi);
+    const s = Math.sin(phi);
+    pos.push(r0 * c, 0, r0 * s, r1 * c, 0, r1 * s);
+    const v = vFlip ? t : 1 - t;
+    uv.push(0, v, 1, v);
+    if (k < segs) {
+      const a = k * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** A strip along +Z with the bridge's own rise profile — the same
+ *  sin(p·π) the sim walks a part over, so deck and part never disagree.
+ *  `skirt` hangs it vertical (a girder web) instead of lying it flat. */
+function archStrip(width: number, drop: number, segs: number): BufferGeometry {
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  for (let k = 0; k <= segs; k++) {
+    const t = k / segs;
+    const z = (t - 0.5) * FLOOR.cell * 0.92;
+    const y = Math.sin(t * Math.PI) * UNITS.bridgeRise;
+    if (drop > 0) {
+      pos.push(0, y, z, 0, y - drop, z);
+    } else {
+      pos.push(-width / 2, y, z, width / 2, y, z);
+    }
+    const v = 1 - t;
+    uv.push(0, v, 1, v);
+    if (k < segs) {
+      const a = k * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
 /* ── units ──────────────────────────────────────────────────────────────── */
 
 export interface UnitRefs {
@@ -214,6 +304,14 @@ export interface UnitRefs {
   /** The vat's under-glow — live from the moment it stands, so an empty
    *  one still reads as WAITING. */
   vatGlow: MeshBasicMaterial | null;
+  /** A rail's wardrobe: the straight piece, the two quarter-curves (by
+   *  which side the part comes in from), and the bridge deck. One form
+   *  shows at a time (+ the deck over the straight on a crossing) —
+   *  setBeltForm picks. Null on everything that isn't a rail. */
+  belt: { straight: Group; curve1: Group; curve3: Group; arch: Group } | null;
+  /** The maker's livery bands — per-unit, so FactorySystem can tint THIS
+   *  box to the line feeding it without painting every maker at once. */
+  tint: MeshStandardMaterial | null;
 }
 
 function chuteTray(group: Group): void {
@@ -245,6 +343,82 @@ function unitLeg(group: Group, top: number, radius = UNITS.crate.legRadius): voi
   group.add(leg);
 }
 
+/** One quarter-curve rail form. `rel` is the entry travel relative to
+ *  the out face — 3: the part comes in through the local −X face, 1:
+ *  through +X — matching (beltEntry − rot) mod 4 on the standing piece.
+ *  The arc's centre is the cell corner the entry and out faces share. */
+function buildCurveForm(rel: 1 | 3): Group {
+  const half = FLOOR.cell / 2;
+  const form = new Group();
+  const wrap = new Group();
+  // Corner between the entry face and the out face; the inner group's
+  // quarter-turn flips the whole arc for the mirrored chirality.
+  wrap.position.set(rel === 3 ? -half : half, UNITS.railTop, half);
+  wrap.rotation.y = rel === 3 ? 0 : Math.PI / 2;
+  for (const R of [half - 0.068, half + 0.068]) {
+    const rail = new Mesh(new TorusGeometry(R, 0.013, 6, 12, Math.PI / 2), railMat);
+    rail.rotation.x = -Math.PI / 2;
+    wrap.add(rail);
+  }
+  const tread = new Mesh(arcStrip(half - 0.057, half + 0.057, 10, rel === 1), treadMaterial());
+  tread.position.y = 0.002;
+  wrap.add(tread);
+  const chev = new Mesh(discGeo(), chevronMat);
+  chev.rotation.x = -Math.PI / 2;
+  chev.scale.setScalar(0.028);
+  chev.position.set(Math.SQRT1_2 * half, 0.006, -Math.SQRT1_2 * half);
+  wrap.add(chev);
+  form.add(wrap);
+  return form;
+}
+
+/** The bridge deck — a raised lane arched along local +Z (FactorySystem
+ *  yaws it onto the crossing's travel): two rail ribbons with hanging
+ *  girder webs, the tread between them, a chevron on the crown. */
+function buildArchForm(): Group {
+  const arch = new Group();
+  arch.position.y = UNITS.railTop + 0.012;
+  for (const side of [-1, 1]) {
+    const rail = new Mesh(archStrip(0.024, 0, 12), railMat);
+    rail.position.x = side * 0.068;
+    arch.add(rail);
+    const web = new Mesh(archStrip(0, 0.026, 12), railOpenMat);
+    web.position.x = side * 0.068;
+    arch.add(web);
+  }
+  const tread = new Mesh(archStrip(0.114, 0, 12), treadMaterial());
+  tread.position.y = -0.004;
+  arch.add(tread);
+  const chev = new Mesh(discGeo(), chevronMat);
+  chev.rotation.x = -Math.PI / 2;
+  chev.scale.setScalar(0.028);
+  chev.position.y = UNITS.bridgeRise + 0.006;
+  arch.add(chev);
+  return arch;
+}
+
+/**
+ * Dress a rail for where it stands: `entryRel` = (entry travel − rot)
+ * mod 4 picks straight or one of the curves; `overRel` = (deck travel −
+ * rot) mod 4, or −1 for no crossing, raises the arch and yaws it onto
+ * the deck's heading. The haul's ghosts wear the same wardrobe, so what
+ * you drag is what lands.
+ */
+export function setBeltForm(
+  refs: UnitRefs,
+  entryRel: number,
+  overRel: number,
+  underVisible = true,
+): void {
+  const b = refs.belt;
+  if (!b) return;
+  b.straight.visible = underVisible && entryRel !== 1 && entryRel !== 3;
+  b.curve1.visible = underVisible && entryRel === 1;
+  b.curve3.visible = underVisible && entryRel === 3;
+  b.arch.visible = overRel === 1 || overRel === 3;
+  if (b.arch.visible) b.arch.rotation.y = overRel === 3 ? Math.PI / 2 : -Math.PI / 2;
+}
+
 /**
  * All builders face OUT along local +Z; FactorySystem rotates per rot.
  * EVERY ROLE ITS OWN SILHOUETTE — readable from across the room, the way
@@ -262,17 +436,26 @@ export function buildUnit(type: UnitType): UnitRefs {
   let halo: MeshBasicMaterial | null = null;
   let fill: UnitRefs['fill'] = null;
   let vatGlow: MeshBasicMaterial | null = null;
+  let belt: UnitRefs['belt'] = null;
+  let tint: MeshStandardMaterial | null = null;
 
   if (type === 'dock') {
     // THE DOCK: a round pedestal with a flared amber mouth — the one
     // place parts LEAVE the floor. The halo breathes; a delivery flashes
-    // it (the count itself lives on the Ⓐ card, not in the room).
+    // it (the count itself lives on the Ⓐ card, not in the room). Its
+    // livery is MINTED GOLD, on the mouth and a waistband: the one box
+    // on the floor that is a vault, dressed like one.
     unitLeg(group, 0.45, 0.045);
     const drum = new Mesh(new CylinderGeometry(1, 1, 1, 12), ironMat);
     drum.scale.set(0.15, 0.4, 0.15);
     drum.position.y = 0.65;
     group.add(drum);
-    const mouth = new Mesh(torusGeo(), ironMat);
+    const waist = new Mesh(torusGeo(), goldMat);
+    waist.rotation.x = Math.PI / 2;
+    waist.scale.setScalar(0.152);
+    waist.position.y = 0.56;
+    group.add(waist);
+    const mouth = new Mesh(torusGeo(), goldMat);
     mouth.rotation.x = Math.PI / 2;
     mouth.scale.setScalar(0.115);
     mouth.position.y = benchTop + 0.012;
@@ -298,14 +481,23 @@ export function buildUnit(type: UnitType): UnitRefs {
     group.add(ring);
   } else if (type === 'maker') {
     // THE MAKER: a solidifier drum — feedstock in the back, a piston
-    // working on top, stamped parts out the front.
+    // working on top, stamped parts out the front. Its bands wear the
+    // furnace livery cold, and FactorySystem re-paints them to whichever
+    // LINE is seated: a maker on violet looks violet from across the
+    // room, which is the identity that actually matters — what it makes.
     unitLeg(group, 0.55);
     const drum = new Mesh(new CylinderGeometry(1, 1, 1, 20), ironMat);
     drum.scale.set(0.135, 0.3, 0.135);
     drum.position.y = 0.7;
     group.add(drum);
+    tint = new MeshStandardMaterial({
+      color: MAKER_ACCENT,
+      roughness: 0.4,
+      metalness: 0.8,
+      emissive: 0x000000,
+    });
     for (const y of [0.57, 0.83]) {
-      const band = new Mesh(torusGeo(), hubMat);
+      const band = new Mesh(torusGeo(), tint);
       band.rotation.x = Math.PI / 2;
       band.scale.setScalar(0.138);
       band.position.y = y;
@@ -337,31 +529,50 @@ export function buildUnit(type: UnitType): UnitRefs {
       tray.position.set(side * (size / 2 + 0.05), benchTop + 0.006, 0);
       group.add(tray);
     }
-    const clamp = new Mesh(boxGeo(), hubMat);
+    // The FITTER'S BRASS: the clamp that presses two into one, and the
+    // spine where the halves meet — the joint IS this box's trade.
+    const clamp = new Mesh(boxGeo(), brassMat);
     clamp.scale.set(0.3, 0.04, 0.11);
     clamp.position.y = benchTop + 0.024;
     group.add(clamp);
+    const spine = new Mesh(boxGeo(), brassMat);
+    spine.scale.set(0.024, 0.25, 0.2);
+    spine.position.y = benchTop - 0.125;
+    group.add(spine);
     anim = { mesh: clamp, baseY: benchTop + 0.024, travel: -0.02 };
     chuteTray(group);
     lampMat = craftLamp(group, benchTop + 0.05);
   } else if (type === 'belt') {
     // THE RAIL: floating — two slim side rails and a slatted TREAD that
     // visibly runs (one shared scrolling texture, rotation = direction).
+    // It owns a WARDROBE now: the straight piece, two quarter-curves for
+    // when it stands on a corner, and the bridge deck for when another
+    // lane crosses it. setBeltForm dresses it for its neighbours.
+    const straight = new Group();
     for (const side of [-1, 1]) {
       const rail = new Mesh(boxGeo(), railMat);
       rail.scale.set(0.024, 0.02, 0.35);
       rail.position.set(side * 0.068, UNITS.railTop, 0);
-      group.add(rail);
+      straight.add(rail);
     }
     const tread = new Mesh(new PlaneGeometry(0.114, 0.34), treadMaterial());
     tread.rotation.x = -Math.PI / 2;
     tread.position.y = UNITS.railTop + 0.002;
-    group.add(tread);
+    straight.add(tread);
     const chev = new Mesh(discGeo(), chevronMat);
     chev.rotation.x = -Math.PI / 2;
     chev.scale.setScalar(0.028);
     chev.position.set(0, UNITS.railTop + 0.006, 0.13);
-    group.add(chev);
+    straight.add(chev);
+    group.add(straight);
+    const curve1 = buildCurveForm(1);
+    const curve3 = buildCurveForm(3);
+    const arch = buildArchForm();
+    curve1.visible = false;
+    curve3.visible = false;
+    arch.visible = false;
+    group.add(curve1, curve3, arch);
+    belt = { straight, curve1, curve3, arch };
   } else if (type === 'post') {
     // THE POST: a stick, and honestly a stick. Slim enough to read as
     // scaffolding rather than plant — a survey peg you knock in to say
@@ -496,14 +707,20 @@ export function buildUnit(type: UnitType): UnitRefs {
     group.add(under);
     gland = buildGland();
   } else {
-    // THE CHEST: the banded crate — things keep here.
+    // THE CHEST: the banded crate — things keep here. STOREMAN'S OLIVE
+    // on the straps and a painted lid: the one box on the floor that is
+    // furniture, dressed like issued kit.
     bench(group);
     for (const y of [0.62, 0.72]) {
-      const band = new Mesh(boxGeo(), hubMat);
+      const band = new Mesh(boxGeo(), oliveMat);
       band.scale.set(size + 0.006, 0.012, size + 0.006);
       band.position.y = y;
       group.add(band);
     }
+    const lid = new Mesh(boxGeo(), oliveMat);
+    lid.scale.set(size - 0.03, 0.006, size - 0.03);
+    lid.position.y = benchTop + 0.004;
+    group.add(lid);
     const rim = new Mesh(torusGeo(), ironMat);
     rim.rotation.x = Math.PI / 2;
     rim.scale.setScalar(0.11);
@@ -518,7 +735,7 @@ export function buildUnit(type: UnitType): UnitRefs {
     gland.group.rotation.y = Math.PI;
     group.add(gland.group);
   }
-  return { group, gland, lampMat, anim, halo, fill, vatGlow };
+  return { group, gland, lampMat, anim, halo, fill, vatGlow, belt, tint };
 }
 
 /* ── the feeds ──────────────────────────────────────────────────────────── */
@@ -777,12 +994,17 @@ export function partKit(item: ItemId): PartComponent[] {
       comp(c20, cyan, 0.037, 0.012, 0.037, -0.02),
     ];
   } else {
-    // servo — GEAR + CHIP: an eight-sided iron ring round a hex glass
-    // core, violet at the crown.
+    // servo — PUMP + LAMP, the deepest fitting in the book and dressed
+    // like it: the pump's eight-sided iron body and amber base under an
+    // alloy throat, crowned with the lamp's hex glass and violet, cyan
+    // at the joint. Every line on the floor, readable in one part.
     kit = [
-      comp(c8, iron, 0.05, 0.028, 0.05),
-      comp(c6, glass, 0.027, 0.052, 0.027),
-      comp(c6, violet, 0.018, 0.01, 0.018, 0.031),
+      comp(c8, iron, 0.05, 0.048, 0.05, -0.014),
+      comp(c8, amber, 0.051, 0.008, 0.051, -0.04),
+      comp(c20, alloy, 0.028, 0.03, 0.028, 0.024),
+      comp(c20, cyan, 0.0305, 0.009, 0.0305, 0.004),
+      comp(c6, glass, 0.04, 0.017, 0.04, 0.052),
+      comp(c6, violet, 0.027, 0.012, 0.027, 0.068),
     ];
   }
   _kits.set(item, kit);

@@ -446,6 +446,10 @@ export const UNITS = {
   },
   /** Rails ride a touch under the bench so parts sit AT the datum. */
   railTop: 0.8,
+  /** THE BRIDGE — how high a crossing lane's deck arches over the rail
+   *  it crosses. Enough for a part to visibly clear the traffic under
+   *  it; low enough that the hop still reads as the same lane. */
+  bridgeRise: 0.13,
   /** THE PULL. A rail is not stamped a cell at a time — you stand one
    *  and HAUL, and the run ratchets out of it exactly like a tube comes
    *  out of a wall. These are the stops on that haul. */
@@ -548,7 +552,7 @@ export type ItemId = 'gear' | 'cell' | 'chip' | 'pump' | 'lamp' | 'servo';
 export interface ItemSpec {
   id: ItemId;
   name: string;
-  tier: 1 | 2;
+  tier: 1 | 2 | 3;
   /** The lines whose look this part carries (first = the body). */
   lineage: CoreLineId[];
   /** THE DOCKET — what the works DOES with it. One line, on the sheet:
@@ -596,8 +600,14 @@ export const ITEMS: Record<ItemId, ItemSpec> = {
   servo: {
     id: 'servo',
     name: 'SERVO',
-    tier: 2,
-    lineage: ['mains', 'volt'],
+    // THE LAST ITEM IS THE DEEP ONE. A servo used to be a gear and a chip
+    // — one combine, same as everything else — which made the sheet that
+    // opens the fourth gate no harder than the sheet before it. It is a
+    // PUMP and a LAMP fitted together now: every base part on the floor,
+    // through three combines, into one bolt. The only tier-3 in the book,
+    // and the gate is bolted with them for exactly that reason.
+    tier: 3,
+    lineage: ['mains', 'coolant', 'volt'],
     docket: 'an old arm on the far side learns its reach again',
   },
 };
@@ -611,11 +621,13 @@ export const MAKES: Partial<Record<LineId, ItemId>> = {
   volt: 'chip',
 };
 
-/** The combiner's law: two DIFFERENT tier-1 parts, alphabetical key. */
+/** The combiner's law: two DIFFERENT parts, alphabetical key. Tier-1
+ *  pairs make the tier-2s — and the two tier-2s make the SERVO, the one
+ *  fitting deep enough to crank the fourth gate. */
 export const COMBINES: Record<string, ItemId> = {
   'cell+gear': 'pump',
   'cell+chip': 'lamp',
-  'chip+gear': 'servo',
+  'lamp+pump': 'servo',
 };
 
 export function combineKey(a: ItemId, b: ItemId): string {
@@ -811,13 +823,16 @@ export const ORDERS: OrderSpec[] = [
     id: 'the-fourth-gate',
     name: 'THE FOURTH GATE',
     brief:
-      'There is a fourth manifold on the near side of your floor and it has never opened. It is bolted, not locked — and the bolts are SERVOS. Bank six of them and the works cranks the gate itself.',
+      'There is a fourth manifold on the near side of your floor and it has never opened. It is bolted, not locked — and the bolts are SERVOS: a PUMP and a LAMP fitted into one. Every line you have runs through that part. Bank three and the works cranks the gate itself.',
     steps: [
-      'SERVO is a GEAR and a CHIP fitted together \u2014 amber and violet into one combiner',
-      'Six into the bank, and the near pillar starts to move',
+      'SERVO is a PUMP and a LAMP fitted together \u2014 the whole trade in one bolt',
+      'Three combiners\u2019 work: gears and cells make pumps, cells and chips make lamps',
+      'Three into the bank, and the near pillar starts to move',
     ],
     target: { kind: 'item', item: 'servo' },
-    goal: 6,
+    // THREE, NOT SIX. Each servo is four base parts through three
+    // fittings now \u2014 the sheet got deeper, so it stopped being longer.
+    goal: 3,
     wakes: {},
   },
   {

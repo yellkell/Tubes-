@@ -58,7 +58,29 @@ export function partPose(part: Part, out: Vector3): Vector3 {
     return out.set(_c.x + dir.di * reach, UNITS.crate.benchTop + 0.045, _c.z + dir.dj * reach);
   }
   if (at.kind === 'belt') {
-    const along = (part.p - 0.5) * CELL * 0.92;
+    const p = Math.min(1, Math.max(0, part.p));
+    // THE BRIDGE DECK: straight over the top, with the hop in the middle.
+    if (at.over && unit.over !== undefined) {
+      const od = DIRS[unit.over];
+      const along = (p - 0.5) * CELL * 0.92;
+      const rise = Math.sin(p * Math.PI) * UNITS.bridgeRise;
+      return out.set(_c.x + od.di * along, UNITS.railTop + 0.05 + rise, _c.z + od.dj * along);
+    }
+    // THE CURVE: a corner rail carries its part round a real quarter-arc
+    // — entry face to out face about the corner the two share — instead
+    // of sliding it along a straight it isn't drawing.
+    const e = beltEntry(unit);
+    if (e !== unit.rot) {
+      const ed = DIRS[e];
+      const half = CELL / 2;
+      const cx = _c.x + (dir.di - ed.di) * half;
+      const cz = _c.z + (dir.dj - ed.dj) * half;
+      const a = p * Math.PI * 0.5;
+      const dx = -dir.di * Math.cos(a) + ed.di * Math.sin(a);
+      const dz = -dir.dj * Math.cos(a) + ed.dj * Math.sin(a);
+      return out.set(cx + dx * half, UNITS.railTop + 0.05, cz + dz * half);
+    }
+    const along = (p - 0.5) * CELL * 0.92;
     return out.set(_c.x + dir.di * along, UNITS.railTop + 0.05, _c.z + dir.dj * along);
   }
   if (at.kind === 'port') {
@@ -158,6 +180,83 @@ export function linkAhead(unit: Unit): Unit | null {
 }
 
 /**
+ * WHICH WAY A PART COMES INTO THIS RAIL — its out face is `rot`; this is
+ * the travel direction it receives along, and when the two differ the
+ * rail is a CORNER and draws (and carries) a quarter-curve. A feeder is
+ * anything that hands parts across the shared face: an emitter pointing
+ * at us, a bridge whose deck lands on us, or a lane we branched off. A
+ * straight feeder always wins over a cornering one — a side-merge into a
+ * through lane bends the MERGING rail, not the lane. Bridges themselves
+ * are always straight underneath: the deck needs a level rail to cross.
+ */
+export function beltEntry(unit: Unit): Rot {
+  if (unit.type !== 'belt' || unit.over !== undefined) return unit.rot;
+  return beltEntryAt(unit.i, unit.j, unit.rot);
+}
+
+/** The same question asked of a rail that ISN'T THERE YET — the ghost
+ *  wears the curve it would land with, so what you see is what you get. */
+export function beltEntryAt(i: number, j: number, rot: Rot): Rot {
+  let corner: Rot | null = null;
+  for (let r = 0; r < 4; r++) {
+    const d = r as Rot;
+    if (d === ((rot + 2) % 4)) continue; // nothing curves back on itself
+    const dd = DIRS[d];
+    const n = unitAtCell(i - dd.di, j - dd.dj);
+    if (!n) continue;
+    const feeds =
+      (emits(n) && n.rot === d) ||
+      (n.type === 'belt' && n.over === d) ||
+      // …or the piece IS a branch: standing beside a lane, pointing away.
+      (d === rot && n.type === 'belt' && n.over === undefined && n.rot % 2 !== rot % 2);
+    if (!feeds) continue;
+    if (d === rot) return rot; // straight wins
+    if (corner === null) corner = d;
+  }
+  return corner ?? rot;
+}
+
+/**
+ * THE JOIN LAW's other half: a rail standing beside lane `unit`,
+ * perpendicular to it and pointing AWAY, has JOINED ON — it is a branch,
+ * and the lane deals it every other part (see the tap in simTick).
+ * Bridges carry a second lane across their cell already; their laterals
+ * are that deck's own doorway, so a crossing never doubles as a fork.
+ */
+export function beltBranches(unit: Unit): Unit[] {
+  if (unit.type !== 'belt' || unit.over !== undefined) return [];
+  const out: Unit[] = [];
+  for (const side of [1, 3] as const) {
+    const d = ((unit.rot + side) % 4) as Rot;
+    const dd = DIRS[d];
+    const n = unitAtCell(unit.i + dd.di, unit.j + dd.dj);
+    if (n && n.type === 'belt' && n.rot === d) out.push(n);
+  }
+  return out;
+}
+
+/** Can a crossing lane travelling `rot` bridge over this standing unit?
+ *  Only a straight, not-yet-bridged rail at right angles takes a deck. */
+export function canBridge(standing: Unit, rot: Rot): boolean {
+  return (
+    standing.type === 'belt' &&
+    standing.over === undefined &&
+    standing.rot % 2 !== rot % 2 &&
+    beltEntry(standing) === standing.rot
+  );
+}
+
+/** Lay the deck: the standing rail becomes a crossing, carrying `rot`'s
+ *  lane straight over its own. The one mutation that adds plant without
+ *  claiming a cell. */
+export function layBridge(standing: Unit, rot: Rot): boolean {
+  if (!canBridge(standing, rot)) return false;
+  standing.over = rot;
+  plant.generation++;
+  return true;
+}
+
+/**
  * THE FACING IS THE GAME'S PROBLEM, NOT YOURS. Given where your hand
  * points, pick the facing that actually connects: a rail turns to feed
  * the thing in front of it, a maker turns its chute toward a rail, a
@@ -181,9 +280,25 @@ export function bestRot(type: UnitType, i: number, j: number, handRot: Rot): Rot
     let score = rot === handRot ? 1.5 : 0;
     const d = DIRS[rot];
     const ahead = unitAtCell(i + d.di, j + d.dj);
-    if (ahead) score += canLink(ahead, rot) ? 3 : -1.5;
     const b = DIRS[((rot + 2) % 4) as Rot];
     const behind = unitAtCell(i + b.di, j + b.dj);
+    // A RAIL FACING AWAY IS A JOIN TOO: away from a lane it taps half the
+    // payload; away from a chest or the bank it PULLS. Scored under the
+    // link-ahead 3 so a certain feed still wins cold, but over it once
+    // the hand's own 1.5 says "away" — your aim picks which way the door
+    // swings, exactly as the law promises.
+    const joinBehind =
+      type === 'belt' &&
+      behind !== undefined &&
+      ((behind.type === 'belt' && behind.over === undefined && behind.rot % 2 !== rot % 2) ||
+        behind.type === 'chest' ||
+        behind.type === 'dock');
+    if (joinBehind) score += 2.5;
+    // A dead face ahead normally counts against a rot — but not on a
+    // join: an out-rail's purpose sits BEHIND it, and a hauled lane will
+    // re-aim the head anyway. Without the waiver, pulling from the bank
+    // toward standing plant was unreachable by hand.
+    if (ahead) score += canLink(ahead, rot) ? 3 : joinBehind ? 0 : -1.5;
     if (behind && emits(behind) && behind.rot === rot) score += 0.75;
     if (type === 'combiner') {
       for (const port of [0, 1] as const) {
@@ -221,11 +336,14 @@ export function bestRot(type: UnitType, i: number, j: number, handRot: Rot): Rot
  * visits in order, and the sticks are spent as the rail passes.
  */
 
-/** A cell on a haul, in order, with the way the rail there must face. */
+/** A cell on a haul, in order, with the way the rail there must face.
+ *  `bridge` marks a cell where a rail already stands ACROSS the run:
+ *  laying the haul puts a deck over it rather than a rail on it. */
 export interface HaulStep {
   i: number;
   j: number;
   rot: Rot;
+  bridge?: boolean;
 }
 
 /** Corners cost. High enough that a clear floor gets one bend and not a
@@ -276,6 +394,9 @@ function routeLeg(
     cost: number;
     steps: number;
     prev: Node | null;
+    /** Standing on a rail we would bridge — the next step must carry
+     *  straight on (a deck has no corners) and cannot be the last. */
+    crossing?: boolean;
   }
   const seen = new Map<number, number>(); // (cell,rot) → best cost
   // A tiny sorted frontier: the floors this runs on are at most a few
@@ -318,14 +439,34 @@ function routeLeg(
     if (node.steps >= limit) continue;
     for (let r = 0; r < 4; r++) {
       const rot = r as Rot;
+      // A deck has no corners: off a crossing, the run carries straight on.
+      if (node.crossing && rot !== node.rot) continue;
       const d = DIRS[rot];
       const ni = node.i + d.di;
       const nj = node.j + d.dj;
       if (ni < lo.i || ni > hi.i || nj < lo.j || nj > hi.j) continue;
       if (blocked.has(KEY(ni, nj))) continue;
-      if (!haulPassable(ni, nj)) continue;
+      // A cell a rail already stands on is still open ONE way: straight
+      // across it, over the top — the haul lays a BRIDGE there. It costs
+      // a little over a clear cell so an open floor is still preferred,
+      // and far less than walking round the lane.
+      let crossing = false;
+      if (!haulPassable(ni, nj)) {
+        const standing = unitAtCell(ni, nj);
+        if (!standing || !canBridge(standing, rot)) continue;
+        if (ni === to.i && nj === to.j) continue; // a run can't END mid-deck
+        crossing = true;
+      }
       const turn = node.prev === null && enter === -1 ? 0 : rot === node.rot ? 0 : TURN_COST;
-      push({ i: ni, j: nj, rot, cost: node.cost + 1 + turn, steps: node.steps + 1, prev: node });
+      push({
+        i: ni,
+        j: nj,
+        rot,
+        cost: node.cost + 1 + turn + (crossing ? 0.4 : 0),
+        steps: node.steps + 1,
+        prev: node,
+        crossing,
+      });
     }
   }
   return null;
@@ -414,7 +555,11 @@ export function haulRoute(anchor: Cell, to: Cell, limit: number): HaulStep[] {
     const c = cells[n];
     const next = cells[n + 1] ?? (n === cells.length - 1 ? aimAt : null);
     const prev: Cell = n === 0 ? anchor : cells[n - 1];
-    steps.push({ i: c.i, j: c.j, rot: next ? dirTo(c, next) : dirTo(prev, c) });
+    const step: HaulStep = { i: c.i, j: c.j, rot: next ? dirTo(c, next) : dirTo(prev, c) };
+    // A rail standing on a route cell means the leg CROSSED it (that is
+    // the only way the search steps onto one): the haul decks it.
+    if (unitAtCell(c.i, c.j)?.type === 'belt') step.bridge = true;
+    steps.push(step);
   }
   return steps;
 }
@@ -427,12 +572,18 @@ function dirTo(a: Cell, b: Cell): Rot {
 }
 
 /** Lay a hauled run. Posts on the route are spent — the stick marked the
- *  corner and the rail takes its place. Returns how many rails landed. */
+ *  corner and the rail takes its place — and a rail lying ACROSS the run
+ *  gets a deck bridged over it. Returns how many pieces landed. */
 export function layHaul(anchor: Cell, steps: HaulStep[]): number {
   let laid = 0;
   for (const step of steps) {
     const standing = unitAtCell(step.i, step.j);
     if (standing) {
+      if (standing.type === 'belt' && canBridge(standing, step.rot)) {
+        layBridge(standing, step.rot);
+        laid++;
+        continue;
+      }
       if (standing.type !== 'post') break;
       removeUnit(standing);
     }
@@ -442,7 +593,7 @@ export function layHaul(anchor: Cell, steps: HaulStep[]): number {
   // The anchor itself now has somewhere to send: point it down the run.
   const first = steps[0];
   const head = unitAtCell(anchor.i, anchor.j);
-  if (laid > 0 && first && head && head.type === 'belt') {
+  if (laid > 0 && first && head && head.type === 'belt' && head.over === undefined) {
     head.rot = dirTo(anchor, { i: first.i, j: first.j });
     plant.generation++; // the mesh has to hear about a rot set after the fact
   }
@@ -484,7 +635,7 @@ export function placeUnit(type: UnitType, i: number, j: number, rot: Rot): Unit 
   const id = plant.nextUnit;
   if (!occupy(i, j, id)) return null;
   plant.nextUnit++;
-  const unit: Unit = { id, type, i, j, rot, craftT: -1, ports: [-1, -1] };
+  const unit: Unit = { id, type, i, j, rot, craftT: -1, ports: [-1, -1], tap: 0 };
   plant.units.push(unit);
   faceStrandedMakers(unit);
   plant.generation++;
@@ -676,25 +827,100 @@ export function simTick(dt: number): void {
     }
   }
 
-  // BELTS carry (BELT PACE quickens them), and hand off at each end.
+  // BELTS carry (BELT PACE quickens them), and hand off at each end. A
+  // bridged cell runs two lanes — the rail's own and the deck over it —
+  // and each carries one part on its own heading.
   const railSpeed = FACTORY.railSpeed * railFactor();
   for (const part of [...plant.parts]) {
     if (part.at.kind !== 'belt') continue;
     const belt = unitById(part.at.unit);
     if (!belt) continue;
+    const onDeck = part.at.over === true && belt.over !== undefined;
     part.p += (dt * railSpeed) / CELL;
     if (part.p < 1) continue;
     part.p = 1;
-    const dir = DIRS[belt.rot];
+    const travel = onDeck ? belt.over! : belt.rot;
+    const dir = DIRS[travel];
     const ahead = unitAtCell(belt.i + dir.di, belt.j + dir.dj);
-    if (ahead) acceptPart(part, ahead, belt.rot);
+    if (onDeck) {
+      if (ahead) acceptPart(part, ahead, travel);
+      continue;
+    }
+    // THE TAP. A rail with branches deals round-robin — ahead, then each
+    // joined lane in turn — so one branch takes exactly half the payload.
+    // A refused output passes its turn rather than damming the lane.
+    const outs: Array<{ into: Unit; travel: Rot }> = [];
+    if (ahead) outs.push({ into: ahead, travel });
+    for (const b of beltBranches(belt)) outs.push({ into: b, travel: b.rot });
+    for (let k = 0; k < outs.length; k++) {
+      const pick = outs[(belt.tap + k) % outs.length];
+      if (acceptPart(part, pick.into, pick.travel)) {
+        belt.tap = (belt.tap + k + 1) % outs.length;
+        break;
+      }
+    }
   }
+
+  // OUT-RAILS. The container's door swings both ways: a rail pointed
+  // INTO a chest or the bank feeds it, and a rail whose back sits against
+  // one, pointing AWAY, PULLS — the chest from the top of its stack, the
+  // bank whichever part it holds deepest. One part per free rail, so the
+  // lane's own pace is the drain's pace.
+  for (const unit of plant.units) {
+    if (unit.type !== 'belt' || unit.over !== undefined) continue;
+    if (beltPart(unit.id)) continue;
+    const b = DIRS[((unit.rot + 2) % 4) as Rot];
+    const src = unitAtCell(unit.i + b.di, unit.j + b.dj);
+    if (!src) continue;
+    if (src.type === 'chest') {
+      const stack = chestParts(src.id);
+      const top = stack[stack.length - 1];
+      if (!top) continue;
+      top.at = { kind: 'belt', unit: unit.id };
+      top.p = 0;
+    } else if (src.type === 'dock') {
+      const item = unbank();
+      if (!item) continue;
+      plant.parts.push({
+        id: plant.nextPart++,
+        item,
+        at: { kind: 'belt', unit: unit.id },
+        p: 0,
+      });
+    }
+  }
+}
+
+/** Draw one part back OUT of the bank — the deepest-stocked item, so a
+ *  drain rail levels the vault instead of stripping one shelf bare. */
+function unbank(): ItemId | null {
+  let best: ItemId | null = null;
+  let deepest = 0;
+  for (const [item, count] of Object.entries(plant.bank) as Array<[ItemId, number | undefined]>) {
+    if ((count ?? 0) > deepest) {
+      deepest = count ?? 0;
+      best = item;
+    }
+  }
+  if (!best) return null;
+  if (deepest <= 1) delete plant.bank[best];
+  else plant.bank[best] = deepest - 1;
+  return best;
 }
 
 /** Can `into` take this part arriving FROM travel direction `travel`?
  *  Performs the transfer when it can. */
 function acceptPart(part: Part, into: Unit, travel: Rot): boolean {
   if (into.type === 'belt') {
+    // A crossing routes by axis: traffic running the deck's way rides
+    // OVER; traffic running the rail's way rides the rail. Two lanes,
+    // one cell, one part each.
+    if (into.over !== undefined && travel % 2 === into.over % 2) {
+      if (beltPart(into.id, true)) return false;
+      part.at = { kind: 'belt', unit: into.id, over: true };
+      part.p = 0;
+      return true;
+    }
     if (beltPart(into.id)) return false;
     part.at = { kind: 'belt', unit: into.id };
     part.p = 0;

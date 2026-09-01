@@ -329,11 +329,20 @@ function drawItem(p: Pen, item: ItemId): void {
     g.strokeStyle = ink.ink;
     return;
   }
-  // servo — a gear's ring with a chip's core standing in it.
-  gon(8, 0.42);
-  box(p, 0.36, 0.14, 0.28, 0.72, ink.dim);
+  // servo — PUMP + LAMP: the pump's eight-sided body and amber base
+  // under a throat, the lamp's crown lit violet on top, cyan at the
+  // joint. Three colours because it carries all three lines.
+  gon(8, 0.3, 0.5, 0.66);
+  g.strokeStyle = AMBER;
+  box(p, 0.26, 0.88, 0.48, 0.07, AMBER);
+  g.strokeStyle = ink.ink;
+  box(p, 0.4, 0.3, 0.2, 0.18); // the throat
+  g.strokeStyle = CYAN;
+  box(p, 0.38, 0.42, 0.24, 0.07, CYAN);
+  g.strokeStyle = ink.ink;
+  box(p, 0.28, 0.16, 0.44, 0.14); // the crown
   g.strokeStyle = VIOLET;
-  box(p, 0.38, 0.14, 0.24, 0.1, VIOLET);
+  box(p, 0.34, 0.06, 0.32, 0.1, VIOLET);
   g.strokeStyle = ink.ink;
 }
 

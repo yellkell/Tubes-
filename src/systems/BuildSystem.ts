@@ -57,7 +57,7 @@ import {
   Vector3,
 } from 'three';
 import { UNITS, type UnitType } from '../config.js';
-import { buildUnit } from '../factory/units.js';
+import { buildUnit, setBeltForm, type UnitRefs } from '../factory/units.js';
 import * as sfx from '../audio/sfx.js';
 import { buzz } from '../game/haptics.js';
 import { site } from '../game/state.js';
@@ -71,10 +71,13 @@ import {
   type Cell,
 } from '../floor/grid.js';
 import {
+  beltEntryAt,
   bestRot,
+  canBridge,
   canLink,
   emits,
   haulRoute,
+  layBridge,
   layHaul,
   placeUnit,
   removeUnit,
@@ -122,6 +125,9 @@ export const buildView: {
     rot: Rot;
     feeds: Cell | null;
     fedBy: Cell[];
+    /** True when the press would DECK the rail standing here rather
+     *  than stand a piece — a bridge, not a refusal. */
+    bridge?: boolean;
   } | null;
   trigger?: () => boolean;
   /**
@@ -174,11 +180,12 @@ export class BuildSystem extends createSystem({}) {
   /** Preview chevrons: [0] what we feed, [1..] what feeds us. */
   private links: Mesh[] = [];
   private linkMat!: MeshBasicMaterial;
-  /** One ghost body per tool — the real silhouette, in glass. */
-  private bodies!: Map<UnitType, Group>;
+  /** One ghost body per tool — the real silhouette, in glass. Kept as
+   *  full refs so the rail ghost can dress in its curve and deck forms. */
+  private bodies!: Map<UnitType, UnitRefs>;
   /** The haul's own ghosts: the run you are dragging out, before it is
    *  real. Pooled to UNITS.pull.maxRun; each wears a rail body. */
-  private haulGhosts: Group[] = [];
+  private haulGhosts: UnitRefs[] = [];
   /** Live haul, while the trigger is down on an armed rail. */
   private haul: { anchor: Cell; steps: HaulStep[] } | null = null;
   private haulHeld = false;
@@ -206,6 +213,7 @@ export class BuildSystem extends createSystem({}) {
     rot: Rot;
     feeds: Cell | null;
     fedBy: Cell[];
+    bridge?: boolean;
   } | null = null;
   /** The tools' last headless aim (see buildView.aimAt). */
   private headless: { x: number; z: number; handRot: Rot } | null = null;
@@ -233,15 +241,15 @@ export class BuildSystem extends createSystem({}) {
     // mouth, the crate's bands, a post's stick. One is shown at a time.
     this.bodies = new Map();
     for (const type of ['dock', 'maker', 'belt', 'combiner', 'chest', 'post', 'vat'] as UnitType[]) {
-      const body = buildUnit(type).group;
-      body.traverse((o) => {
+      const refs = buildUnit(type);
+      refs.group.traverse((o) => {
         const m = o as Mesh;
         if (m.isMesh) m.material = this.ghostMat;
         o.renderOrder = 11;
       });
-      body.visible = false;
-      this.ghost.add(body);
-      this.bodies.set(type, body);
+      refs.group.visible = false;
+      this.ghost.add(refs.group);
+      this.bodies.set(type, refs);
     }
     // THE OUT ARROW — big, lifted, unmissable. The old one was a 5 cm
     // triangle lying on the bench top; nobody ever saw which way a box
@@ -282,17 +290,19 @@ export class BuildSystem extends createSystem({}) {
       this.links.push(m);
     }
 
-    // The run you are hauling out, drawn as rails before it is rails.
+    // The run you are hauling out, drawn as rails before it is rails —
+    // full refs each, so a cornering step ghosts its curve and a
+    // crossing step ghosts the deck it will lay.
     for (let i = 0; i < UNITS.pull.maxRun; i++) {
-      const g = buildUnit('belt').group;
-      g.traverse((o) => {
+      const refs = buildUnit('belt');
+      refs.group.traverse((o) => {
         const m = o as Mesh;
         if (m.isMesh) m.material = this.ghostMat;
         o.renderOrder = 11;
       });
-      g.visible = false;
-      this.scene.add(g);
-      this.haulGhosts.push(g);
+      refs.group.visible = false;
+      this.scene.add(refs.group);
+      this.haulGhosts.push(refs);
     }
 
     buildView.aim = () => (this.lastAim ? { ...this.lastAim } : null);
@@ -315,7 +325,7 @@ export class BuildSystem extends createSystem({}) {
       const out: Record<string, number> = {};
       for (const [type, body] of this.bodies) {
         let n = 0;
-        body.traverse((o) => {
+        body.group.traverse((o) => {
           if ((o as Mesh).isMesh) n++;
         });
         out[type] = n;
@@ -358,11 +368,14 @@ export class BuildSystem extends createSystem({}) {
         site.paused = true;
         return true;
       }
-      const ok = this.commit(this.resolve(cell, h.handRot));
+      const v = this.resolve(cell, h.handRot);
+      const ok = this.commit(v);
       // A landed rail is a haul waiting to happen — the same as the
       // press. haulTo/haulRelease then drive it, or ignore it, and a
       // released haul of zero cells is just the single rail you placed.
-      if (ok && this.armed === 'belt') {
+      // (A press that DECKED a crossing is not a fresh anchor — the rail
+      // underneath already points wherever its own lane goes.)
+      if (ok && this.armed === 'belt' && !v?.bridge) {
         this.haul = { anchor: { ...cell }, steps: [] };
         this.haulHeld = true;
         this.haulDriven = true;
@@ -373,7 +386,7 @@ export class BuildSystem extends createSystem({}) {
       const h = this.haul;
       if (!h) return [];
       h.steps = haulRoute(h.anchor, worldToCell(x, z), UNITS.pull.maxRun);
-      this.showHaul(h.steps);
+      this.showHaul(h.steps, h.anchor);
       return h.steps.map((s) => ({ ...s }));
     };
     buildView.haulRelease = () => {
@@ -423,13 +436,32 @@ export class BuildSystem extends createSystem({}) {
   private resolve(
     cell: Cell,
     handRot: Rot,
-  ): { cell: Cell; placeable: boolean; rot: Rot; feeds: Cell | null; fedBy: Cell[] } | null {
+  ): {
+    cell: Cell;
+    placeable: boolean;
+    rot: Rot;
+    feeds: Cell | null;
+    fedBy: Cell[];
+    bridge?: boolean;
+  } | null {
     const occupied = unitAtCell(cell.i, cell.j);
     const inFloor = cellInFloor(cell.i, cell.j);
     if (this.armed === 'delete') {
       return { cell, placeable: occupied !== undefined, rot: handRot, feeds: null, fedBy: [] };
     }
     if (!this.armed) return { cell, placeable: false, rot: handRot, feeds: null, fedBy: [] };
+    // A RAIL ONTO A CROSSING RAIL LAYS A DECK. The one placement that
+    // lands on an occupied cell: aim a rail at a rail running the other
+    // way and the piece in your hand becomes the bridge over it. The
+    // heading is forced perpendicular — a deck has exactly one axis to
+    // offer, so a hand pointing along the lane still gets the crossing.
+    if (this.armed === 'belt' && occupied?.type === 'belt') {
+      const want = this.forced ?? handRot;
+      const across = (want % 2 !== occupied.rot % 2 ? want : (want + 1) % 4) as Rot;
+      if (canBridge(occupied, across)) {
+        return { cell, placeable: true, rot: across, feeds: null, fedBy: [], bridge: true };
+      }
+    }
     const rot = this.forced ?? bestRot(this.armed, cell.i, cell.j, handRot);
     const placeable = inFloor && occupied === undefined && unitAvailable(this.armed);
 
@@ -442,6 +474,23 @@ export class BuildSystem extends createSystem({}) {
       if (ahead && canLink(ahead, rot)) feeds = { i: ahead.i, j: ahead.j };
     }
     const fedBy: Cell[] = [];
+    // A rail pointing AWAY from a lane, a chest or the bank is a JOIN
+    // too — it taps the lane, or pulls the container — and the preview
+    // owes you that chevron just as much as the feed-in one. (The loop
+    // below only sees emitters POINTING at us; these doors swing the
+    // other way.)
+    if (this.armed === 'belt') {
+      const b = DIRS[((rot + 2) % 4) as Rot];
+      const behind = unitAtCell(cell.i + b.di, cell.j + b.dj);
+      if (
+        behind &&
+        ((behind.type === 'belt' && behind.over === undefined && behind.rot % 2 !== rot % 2) ||
+          behind.type === 'chest' ||
+          behind.type === 'dock')
+      ) {
+        fedBy.push({ i: behind.i, j: behind.j });
+      }
+    }
     const takesParts =
       this.armed === 'belt' ||
       this.armed === 'dock' ||
@@ -480,6 +529,15 @@ export class BuildSystem extends createSystem({}) {
       return true;
     }
     if (!v.placeable) return false;
+    // The deck: the rail in your hand goes OVER the one on the floor.
+    if (v.bridge) {
+      const standing = unitAtCell(v.cell.i, v.cell.j);
+      if (!standing || !layBridge(standing, v.rot)) return false;
+      sfx.mountThunk();
+      sfx.seatClunk();
+      this.forced = null;
+      return true;
+    }
     const ok = placeUnit(this.armed, v.cell.i, v.cell.j, v.rot) !== null;
     if (ok) {
       sfx.mountThunk();
@@ -542,7 +600,23 @@ export class BuildSystem extends createSystem({}) {
       this.ghost.position.set(_c.x, 0, _c.z);
       const d = DIRS[this.view.rot];
       this.ghost.rotation.y = Math.atan2(d.di, d.dj);
-      for (const [type, body] of this.bodies) body.visible = type === this.armed;
+      for (const [type, body] of this.bodies) body.group.visible = type === this.armed;
+      // The rail ghost dresses for the spot: the curve it would land
+      // with, or — over a crossing rail — just the deck it would lay.
+      const beltRefs = this.bodies.get('belt');
+      if (this.armed === 'belt' && beltRefs?.belt) {
+        if (this.view.bridge) {
+          const f = beltRefs.belt;
+          f.straight.visible = false;
+          f.curve1.visible = false;
+          f.curve3.visible = false;
+          f.arch.visible = true;
+          f.arch.rotation.y = 0; // the ghost group already faces the deck's way
+        } else {
+          const entryRel = (beltEntryAt(cell.i, cell.j, this.view.rot) - this.view.rot + 4) % 4;
+          setBeltForm(beltRefs, entryRel, -1);
+        }
+      }
       this.ghost.visible = true;
       const breathe = 0.5 + 0.5 * Math.sin(this.clock * 3.2);
       this.ghostMat.opacity = 0.12 + 0.08 * breathe;
@@ -588,12 +662,15 @@ export class BuildSystem extends createSystem({}) {
       buzz(this.world, 'right', 0.3, 25);
     }
     if (pad?.getButtonDown(InputComponent.Trigger) && this.armed && cell) {
+      const wasBridge = this.view?.bridge === true;
       if (this.commit(this.view)) {
         this.pointer.click();
         buzz(this.world, 'right', deleting ? 0.4 : 0.6, deleting ? 40 : 50);
         // A RAIL THAT LANDS IS A RAIL YOU CAN HAUL. Keep hold of the
         // trigger and the run comes out of it — see updateHaul below.
-        if (this.armed === 'belt') {
+        // (A deck laid over a crossing anchors nothing: the rail under
+        // it already belongs to another lane.)
+        if (this.armed === 'belt' && !wasBridge) {
           this.haul = { anchor: { ...cell }, steps: [] };
           this.haulDriven = false;
         }
@@ -669,7 +746,7 @@ export class BuildSystem extends createSystem({}) {
       } else if (h.steps.length < was) {
         sfx.segmentClick(Math.max(0, h.steps.length));
       }
-      this.showHaul(h.steps);
+      this.showHaul(h.steps, h.anchor);
       return;
     }
     // RELEASED. Lay it.
@@ -685,10 +762,17 @@ export class BuildSystem extends createSystem({}) {
     }
   }
 
-  /** The run as it stands in your hand: rail ghosts down the route. */
-  private showHaul(steps: HaulStep[]): void {
+  /** The run as it stands in your hand: rail ghosts down the route —
+   *  each dressed as it will land: curves on the corners, a deck ghost
+   *  where the route crosses a standing rail. */
+  private showHaul(steps: HaulStep[], anchor?: Cell): void {
+    const rotBetween = (a: Cell, b: Cell): Rot => {
+      if (Math.abs(b.i - a.i) >= Math.abs(b.j - a.j)) return b.i > a.i ? 1 : 3;
+      return b.j > a.j ? 2 : 0;
+    };
     for (let n = 0; n < this.haulGhosts.length; n++) {
-      const g = this.haulGhosts[n];
+      const refs = this.haulGhosts[n];
+      const g = refs.group;
       const step = steps[n];
       if (!step) {
         g.visible = false;
@@ -698,6 +782,19 @@ export class BuildSystem extends createSystem({}) {
       g.position.set(_c2.x, 0, _c2.z);
       const d = DIRS[step.rot];
       g.rotation.y = Math.atan2(d.di, d.dj);
+      if (refs.belt) {
+        if (step.bridge) {
+          refs.belt.straight.visible = false;
+          refs.belt.curve1.visible = false;
+          refs.belt.curve3.visible = false;
+          refs.belt.arch.visible = true;
+          refs.belt.arch.rotation.y = 0; // the group faces the deck's way
+        } else {
+          const prev = n === 0 ? anchor : steps[n - 1];
+          const entry = prev ? rotBetween(prev, step) : step.rot;
+          setBeltForm(refs, (entry - step.rot + 4) % 4, -1);
+        }
+      }
       g.visible = true;
     }
   }
