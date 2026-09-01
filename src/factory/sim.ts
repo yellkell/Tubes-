@@ -122,9 +122,22 @@ export function glandPose(unit: Unit, point: Vector3, normal: Vector3, toward?: 
     nx = back.di;
     nz = back.dj;
   }
-  const reach = UNITS.crate.size / 2;
+  const reach = glandReach(unit.type);
   point.set(_c.x + nx * reach, UNITS.glandHeight, _c.z + nz * reach);
   normal.set(nx, 0, nz);
+}
+
+/** How far a gland's face stands off its cell centre: the radius of the
+ *  BODY it actually bolts to, sunk a few millimetres so the mounting
+ *  boss presses in with no daylight at any swivel angle — the maker's
+ *  drum, the vat's glass (where the sunk boss doubles as the intake
+ *  stub you can see inside the tank), a crate face otherwise. The seat
+ *  maths, the live mesh and the build ghost all read this one number,
+ *  so the collar can never seat where the metal isn't. */
+export function glandReach(type: UnitType): number {
+  if (type === 'maker') return 0.131;
+  if (type === 'vat') return 0.156;
+  return UNITS.crate.size / 2;
 }
 
 /* ── mutations (BuildSystem / FactorySystem / the walk drive these) ─────── */

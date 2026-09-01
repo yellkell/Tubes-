@@ -50,6 +50,7 @@ import {
   Vector3,
 } from 'three';
 import { FACTORY, FLOOR, LINES, UNITS, type ItemId, type LineSpec, type UnitType } from '../config.js';
+import { glandReach } from './sim.js';
 
 /* ── shared geometry / materials ────────────────────────────────────────── */
 
@@ -126,6 +127,10 @@ function bench(group: Group, height = UNITS.crate.height, size = UNITS.crate.siz
   leg.scale.set(legRadius, legH, legRadius);
   leg.position.y = legH / 2;
   group.add(leg);
+  const foot = new Mesh(cylGeo(), ironMat);
+  foot.scale.set(legRadius * 3.4, 0.016, legRadius * 3.4);
+  foot.position.y = 0.008;
+  group.add(foot);
   return box;
 }
 
@@ -136,29 +141,48 @@ export interface GlandRefs {
   guideMat: MeshBasicMaterial;
   glowMat: MeshBasicMaterial;
   iris: Mesh;
-  /** Where the head seats (local +Z, metres off the face). */
-  seatOffset: number;
 }
 
 /** Neutral until a line arrives — FactorySystem tints glow + guide from
- *  the seated run. Local +Z faces outward (the pull approaches along it). */
+ *  the seated run. Local +Z faces outward (the pull approaches along it).
+ *
+ *  NO DAYLIGHT IN THE JOINT. Two gaps used to live here: the gland's
+ *  origin floated a finger's width off the maker's drum (levitating
+ *  plumbing), and the collar seated 20 mm BEHIND the rim, clipping
+ *  through the throat wall. So the gland now stands on a BOSS — a stub
+ *  barrel sunk into the body it serves (sim.glandReach buries it a few
+ *  millimetres, so it presses in at every swivel angle) — the mouth is
+ *  drawn tighter round the bore it actually takes, and the collar seats
+ *  against the rim from the OUTSIDE (FACTORY.glandSeat), pressed on
+ *  like a union nut. */
 export function buildGland(): GlandRefs {
   const group = new Group();
   const r = 0.058; // the head's radius — the bore it takes
 
+  // The mounting boss and its clamp band — the part that touches the box.
+  const boss = new Mesh(cylGeo(), ironMat);
+  boss.rotation.x = Math.PI / 2;
+  boss.scale.set(0.068, 0.055, 0.068);
+  boss.position.z = -0.022;
+  group.add(boss);
+  const band = new Mesh(torusGeo(), hubMat);
+  band.scale.setScalar(0.072);
+  band.position.z = 0.008;
+  group.add(band);
+
   const rim = new Mesh(torusGeo(), ironMat);
-  rim.scale.setScalar(r * 1.45);
+  rim.scale.setScalar(r * 1.3);
   rim.position.z = 0.1;
   group.add(rim);
 
   const throat = new Mesh(openCylGeo(), ironOpenMat);
   throat.rotation.x = Math.PI / 2;
-  throat.scale.set(r * 1.45, 0.1, r * 1.45);
+  throat.scale.set(r * 1.3, 0.1, r * 1.3);
   throat.position.z = 0.05;
   group.add(throat);
 
   const iris = new Mesh(discGeo(), irisMat);
-  iris.scale.setScalar(r * 1.3);
+  iris.scale.setScalar(r * 1.15);
   iris.position.z = 0.03;
   group.add(iris);
 
@@ -184,7 +208,7 @@ export function buildGland(): GlandRefs {
   guide.renderOrder = 12;
   group.add(guide);
 
-  return { group, guideMat, glowMat, iris, seatOffset: 0.08 };
+  return { group, guideMat, glowMat, iris };
 }
 
 /* ── the belt tread (shared, scrolling) ─────────────────────────────────── */
@@ -319,6 +343,14 @@ function chuteTray(group: Group): void {
   tray.scale.set(0.16, 0.012, 0.16);
   tray.position.set(0, UNITS.crate.benchTop + 0.006, UNITS.crate.size / 2 + 0.05);
   group.add(tray);
+  // Lips up the sides — a TRAY, not a shelf: the stamped part sits IN
+  // something while it waits for the lane.
+  for (const side of [-1, 1]) {
+    const lip = new Mesh(boxGeo(), railMat);
+    lip.scale.set(0.012, 0.024, 0.16);
+    lip.position.set(side * 0.074, UNITS.crate.benchTop + 0.012, UNITS.crate.size / 2 + 0.05);
+    group.add(lip);
+  }
 }
 
 function craftLamp(group: Group, y: number): MeshBasicMaterial {
@@ -341,6 +373,12 @@ function unitLeg(group: Group, top: number, radius = UNITS.crate.legRadius): voi
   leg.scale.set(radius, top, radius);
   leg.position.y = top / 2;
   group.add(leg);
+  // The foot flange — same language as the pillars: a box STANDS on the
+  // boards; a bare leg read as stabbed into them.
+  const foot = new Mesh(cylGeo(), ironMat);
+  foot.scale.set(radius * 3.4, 0.016, radius * 3.4);
+  foot.position.y = 0.008;
+  group.add(foot);
 }
 
 /** One quarter-curve rail form. `rel` is the entry travel relative to
@@ -503,6 +541,17 @@ export function buildUnit(type: UnitType): UnitRefs {
       band.position.y = y;
       group.add(band);
     }
+    // The drum stands on a skirt where it meets the leg, and the piston
+    // works through a stuffing box — nothing enters or leaves a pressure
+    // vessel through a bare hole.
+    const skirt = new Mesh(new CylinderGeometry(1, 1, 1, 20), ironMat);
+    skirt.scale.set(0.142, 0.018, 0.142);
+    skirt.position.y = 0.552;
+    group.add(skirt);
+    const stuffing = new Mesh(cylGeo(), hubMat);
+    stuffing.scale.set(0.063, 0.016, 0.063);
+    stuffing.position.y = benchTop + 0.004;
+    group.add(stuffing);
     const piston = new Mesh(cylGeo(), hubMat);
     piston.scale.set(0.05, 0.06, 0.05);
     piston.position.y = benchTop + 0.03;
@@ -528,6 +577,12 @@ export function buildUnit(type: UnitType): UnitRefs {
       tray.scale.set(0.16, 0.012, 0.16);
       tray.position.set(side * (size / 2 + 0.05), benchTop + 0.006, 0);
       group.add(tray);
+      for (const lz of [-1, 1]) {
+        const lip = new Mesh(boxGeo(), railMat);
+        lip.scale.set(0.16, 0.024, 0.012);
+        lip.position.set(side * (size / 2 + 0.05), benchTop + 0.012, lz * 0.074);
+        group.add(lip);
+      }
     }
     // The FITTER'S BRASS: the clamp that presses two into one, and the
     // spine where the halves meet — the joint IS this box's trade.
@@ -536,9 +591,18 @@ export function buildUnit(type: UnitType): UnitRefs {
     clamp.position.y = benchTop + 0.024;
     group.add(clamp);
     const spine = new Mesh(boxGeo(), brassMat);
-    spine.scale.set(0.024, 0.25, 0.2);
+    spine.scale.set(0.024, 0.25, 0.25);
     spine.position.y = benchTop - 0.125;
     group.add(spine);
+    // Two hex heads down the spine's face: the union is BOLTED, which is
+    // the whole promise of a box that fits things together.
+    for (const dy of [-0.06, -0.19]) {
+      const bolt = new Mesh(sided(6), hubMat);
+      bolt.rotation.x = Math.PI / 2;
+      bolt.scale.set(UNITS.boltR, 0.01, UNITS.boltR);
+      bolt.position.set(0, benchTop + dy, 0.13);
+      group.add(bolt);
+    }
     anim = { mesh: clamp, baseY: benchTop + 0.024, travel: -0.02 };
     chuteTray(group);
     lampMat = craftLamp(group, benchTop + 0.05);
@@ -721,6 +785,15 @@ export function buildUnit(type: UnitType): UnitRefs {
     lid.scale.set(size - 0.03, 0.006, size - 0.03);
     lid.position.y = benchTop + 0.004;
     group.add(lid);
+    // Four hex heads pin the lid's corners — issued kit is BOLTED kit.
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const bolt = new Mesh(sided(6), hubMat);
+        bolt.scale.set(UNITS.boltR, 0.012, UNITS.boltR);
+        bolt.position.set(sx * (size / 2 - 0.038), benchTop + 0.007, sz * (size / 2 - 0.038));
+        group.add(bolt);
+      }
+    }
     const rim = new Mesh(torusGeo(), ironMat);
     rim.rotation.x = Math.PI / 2;
     rim.scale.setScalar(0.11);
@@ -730,8 +803,9 @@ export function buildUnit(type: UnitType): UnitRefs {
 
   if (gland) {
     // On the BACK face (local −Z), facing backward — where the tube
-    // arrives from.
-    gland.group.position.set(0, UNITS.glandHeight, -size / 2 - 0.01);
+    // arrives from, sunk to the body's own surface with the same reach
+    // the live swivel uses, so the ghost seals like the real thing.
+    gland.group.position.set(0, UNITS.glandHeight, -(glandReach(type) + 0.001));
     gland.group.rotation.y = Math.PI;
     group.add(gland.group);
   }

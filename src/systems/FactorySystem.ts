@@ -63,6 +63,7 @@ import {
   beltEntry,
   deliverPart,
   glandPose,
+  glandReach,
   haulRoute,
   linkAhead,
   partPose,
@@ -931,7 +932,7 @@ export class FactorySystem extends createSystem({}) {
         // the player is "bring it near". Nothing is ever refused for
         // approaching a box from the wrong side again.
         glandPose(unit, _g, _gn, run.pointA);
-        _seat.copy(_g).addScaledVector(_gn, 0.08);
+        _seat.copy(_g).addScaledVector(_gn, FACTORY.glandSeat);
         const d = run.headVisual.distanceTo(_seat);
         if (d >= bestD) continue;
         bestD = d;
@@ -948,7 +949,7 @@ export class FactorySystem extends createSystem({}) {
       }
     }
     if (run.magnet) {
-      _seat.copy(run.pointB).addScaledVector(run.normalB, 0.08);
+      _seat.copy(run.pointB).addScaledVector(run.normalB, FACTORY.glandSeat);
       run.seatP = Math.min(1, run.seatP + delta / (SEAT.magnetS + SEAT.seatS));
       const e = 1 - (1 - run.seatP) ** 3;
       run.head.lerp(_seat, e);
@@ -1297,7 +1298,9 @@ export class FactorySystem extends createSystem({}) {
     const sin = Math.sin(yaw);
     const lx = _gn.x * cos - _gn.z * sin;
     const lz = _gn.x * sin + _gn.z * cos;
-    const reach = UNITS.crate.size / 2 + 0.01;
+    // The mesh stands exactly where the seat maths thinks it does — one
+    // reach for both, so the collar can't press against thin air.
+    const reach = glandReach(unit.type) + 0.001;
     group.position.set(lx * reach, UNITS.glandHeight, lz * reach);
     group.rotation.y = Math.atan2(lx, lz);
   }

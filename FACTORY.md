@@ -987,3 +987,32 @@ slightly askew, forever. Each pillar now snaps to the nearest lattice
 centreline (`FactorySystem.sideMid`), so the spout looks straight down
 a row of cells — and because opposite sides share one midline, facing
 pillars line up with each other down the same lane by construction.
+
+### The fifth pass — no daylight in the joints, and the boxes get their fittings
+
+**"Make sure there's no gaps in these connections and sockets between
+the tubes and boxes."** There were two, both measured off a close-up:
+the gland's origin floated a finger's width off the maker's drum
+(glandPose reached to a crate face that isn't there on a round drum —
+levitating plumbing), and the collar seated 20 mm BEHIND the gland's
+rim, clipping through the throat wall in a three-ring argument. Fixed
+at the root: `sim.glandReach` gives every gland the radius of the BODY
+it actually bolts to, sunk a few millimetres so its new mounting BOSS —
+a stub barrel with a clamp band — presses in at every swivel angle
+(through the vat's glass it doubles as the intake stub you can see
+inside the tank); the seat maths, the live mesh and the build ghost all
+read that one number. The mouth is drawn tighter round the bore it
+takes, and the collar now seats at `FACTORY.glandSeat` — pressed
+against the rim from the OUTSIDE, like a union nut, cap just inside the
+mouth. The spout end already sealed (the root section starts inside the
+pillar boss's gland ring); it stays as it was.
+
+**"And further polish the boxes."** The fittings pass: every box stands
+on a FOOT FLANGE now, same language as the pillars — a bare leg read as
+stabbed into the boards, not stood on them. The maker's drum lands on a
+skirt where it meets the leg and its piston works through a stuffing
+box (nothing enters a pressure vessel through a bare hole); the chute
+trays grew lips — a TRAY, not a shelf — on makers and both combiner
+ports; the chest's olive lid is pinned by four hex heads; and the
+combiner's brass spine, drawn proud of its lobes, wears two more down
+its face. Draw budget after all of it: 104 of 420.

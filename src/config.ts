@@ -535,6 +535,13 @@ export const FACTORY = {
    *  the only thing left to ask of the player is "get it near", and we
    *  ask that generously. */
   seatRadius: 0.42,
+  /** THE SEAL — how far off a gland's face the collar seats. The gland's
+   *  rim ring stands 0.1 off its face and the collar's own stock is
+   *  ~13 mm, so this lands the collar PRESSED against the rim from the
+   *  outside, cap just inside the mouth: a clamped joint. (It sat at
+   *  0.08 — 20 mm BEHIND the rim — so the collar clipped through the
+   *  throat wall and the joint read as three rings in an argument.) */
+  glandSeat: 0.105,
   /** Hand-carry: how close a grip must be to take a loose part, and how
    *  close a drop must be to a hopper/port/chest to land IN it. */
   partReach: 0.35,
