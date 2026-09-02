@@ -393,6 +393,22 @@ export const PORTS = {
   horizontalSamples: 10,
   /** A floor port never wakes under the player's feet. */
   floorAvoidRadius: 0.9,
+  /**
+   * THE REACH LAW, and it is the ceiling's whole problem. A wall port is
+   * clamped into the mount band (WALLS.maxHeight) because that is where
+   * hands can work; a ceiling had no such clamp, so a socket could wake
+   * at 2.7 m — visible, promised by the knock, and impossible to carry
+   * the collar to. The job simply could not be finished.
+   *
+   * So no port wakes higher than the player's OWN eye line plus this:
+   * both hands raised, plus most of the magnet's snap radius, which is
+   * how high a two-hand haul can honestly present a collar. It is
+   * measured per player, so a tall fitter gets the reach they have. An
+   * ordinary ceiling (2.4 m and up) therefore stops answering, which is
+   * correct; a low one — a basement, a loft, a garage — still takes its
+   * turn, and that is when overhead ports were ever any fun.
+   */
+  overheadReach: 0.72,
 };
 
 /* ────────────────────────────── THE FLOOR ────────────────────────────────

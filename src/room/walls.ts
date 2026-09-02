@@ -115,9 +115,10 @@ const _basis = new Matrix4();
  * cone caps flat runs short by geometry, and on a distance-flavoured
  * score short spots never outbid a wall — a lane, not a bias, is how
  * "sometimes the ceiling answers" actually happens. Every candidate,
- * whatever its surface, is kept only if the straight run from the mount
- * lands inside RUN_RANGE AND arrives inside the seat's alignment cone —
- * every pick the room makes is a pick the magnet can take, by
+ * whatever its surface, is kept only if it sits inside the FITTER'S OWN
+ * REACH, if the straight run from the mount lands inside RUN_RANGE, and
+ * if it arrives inside the seat's alignment cone — every pick the room
+ * makes is a pick the magnet can take AND the hands can get to, by
  * construction. Scoring within a lane: long-haul jobs want the farthest
  * honest spot, ordinary jobs a middle-distance one, every job prefers a
  * spot the flange roughly faces, and a seeded jitter keeps reruns fresh
@@ -135,7 +136,7 @@ export function pickSocket(
   mountNormal: Vector3,
   seed: number,
   longHaul: boolean,
-  avoid?: { x: number; z: number },
+  fitter?: { x: number; z: number; reachY: number },
 ): WallSpot | null {
   const rng = mulberry32(seed);
   const spots: Array<{ spot: WallSpot; score: number }> = [];
@@ -150,11 +151,18 @@ export function pickSocket(
       const u = (rng() * 2 - 1) * band.u;
       const v = band.vLo + rng() * (band.vHi - band.vLo);
       const p = pointOn(w, u, v, new Vector3());
+      // THE REACH LAW: nothing wakes above the hands. A wall's band is
+      // already clamped to working height; a CEILING had no clamp at
+      // all, so a socket could iris awake at 2.7 m — knocked for,
+      // lit, aimed at, and impossible to carry a collar to. A port the
+      // fitter cannot reach is a job that cannot be finished, so it is
+      // not a port (PORTS.overheadReach).
+      if (fitter && p.y > fitter.reachY) continue;
       // Not under the fitter's own feet.
       if (
         w.kind === 'floor' &&
-        avoid &&
-        (p.x - avoid.x) ** 2 + (p.z - avoid.z) ** 2 < PORTS.floorAvoidRadius ** 2
+        fitter &&
+        (p.x - fitter.x) ** 2 + (p.z - fitter.z) ** 2 < PORTS.floorAvoidRadius ** 2
       ) {
         continue;
       }

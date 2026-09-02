@@ -21,7 +21,7 @@
 
 import { InputComponent, createSystem } from '@iwsdk/core';
 import { Quaternion, Vector3 } from 'three';
-import { JOBS, RUN_RANGE, WAKE } from '../config.js';
+import { JOBS, PORTS, RUN_RANGE, WAKE } from '../config.js';
 import * as sfx from '../audio/sfx.js';
 import { buzz } from '../game/haptics.js';
 import { mix } from '../game/rng.js';
@@ -198,10 +198,14 @@ export class PlacementSystem extends createSystem({}) {
     // headless mount hands it over), and reading the camera into that
     // vector here once re-aimed the whole picker at the player's head —
     // every range, facing and alignment measured from the wrong place.
-    const feet = this.camera.getWorldPosition(_feet);
+    const eye = this.camera.getWorldPosition(_feet);
+    // Where the fitter stands, and how high they can honestly work: no
+    // port wakes above the hands (PORTS.overheadReach), which is what
+    // keeps the room from answering on a ceiling nobody can reach.
+    const fitter = { x: eye.x, z: eye.z, reachY: eye.y + PORTS.overheadReach };
     const spot =
-      pickSocket(walls, wall.id, point, wall.normal, seed, longHaul, { x: feet.x, z: feet.z }) ??
-      this.lastResort(wall, point);
+      pickSocket(walls, wall.id, point, wall.normal, seed, longHaul, fitter) ??
+      this.lastResort(wall, point, fitter.reachY);
     if (!spot) {
       // No legal answer anywhere (a broom-cupboard scan). Stay placing —
       // the player can try a wall with more room across from it.
@@ -223,8 +227,14 @@ export class PlacementSystem extends createSystem({}) {
   }
 
   /** When the picker finds nothing legal: the farthest band point on any
-   *  other usable wall, range be damned — a short run beats no job. */
-  private lastResort(mountWall: Wall, mountPoint: Vector3): ReturnType<typeof pickSocket> {
+   *  other usable wall, range be damned — a short run beats no job. The
+   *  reach law still holds, though: a fallback the hands can't get to is
+   *  not a fallback, it's a dead job. */
+  private lastResort(
+    mountWall: Wall,
+    mountPoint: Vector3,
+    reachY: number,
+  ): ReturnType<typeof pickSocket> {
     let best: { wall: Wall; point: Vector3 } | null = null;
     let bestD = RUN_RANGE.min * 0.6; // still never closer than a stride
     for (const w of walls) {
@@ -232,6 +242,7 @@ export class PlacementSystem extends createSystem({}) {
       const band = mountBand(w);
       if (!band) continue;
       const p = pointOn(w, 0, (band.vLo + band.vHi) / 2, new Vector3());
+      if (p.y > reachY) continue;
       const d = p.distanceTo(mountPoint);
       if (d > bestD) {
         bestD = d;

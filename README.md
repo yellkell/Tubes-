@@ -17,8 +17,11 @@ industrial tube at a time.
   opening the doors. And not only the walls: sometimes the knock comes
   from OVER YOUR HEAD, or under your feet — the scan's ceiling and floor
   carry exit ports too, and a run that dives into the floorboards or
-  climbs into the ceiling is always a short, steep, reachable one (the
-  picker guarantees every port it wakes is one the magnet can take).
+  climbs into the ceiling is always a short, steep one. Never a
+  hopeless one: nothing wakes above what your own hands can present a
+  collar to, so an ordinary 2.4 m ceiling simply never answers and a
+  low one — a basement, a loft, a garage — does (the picker guarantees
+  every port it wakes is one the magnet can take AND one you can reach).
 - **The tube takes two hands.** A capped stub sticks out of the flange,
   collar glowing "grab me". One hand alone RATTLES it — a loose clank and
   a buzz that says *more hands* without a word. Both grips squeezing and

@@ -73,11 +73,17 @@ never touches a raw XRPlane.
 - **The socket picker** is a pure seeded function in two lanes: sample
   candidate spots across every other usable surface, keep those whose
   straight run fits [1.15 m, 6.4 m], require the spot to be in FRONT of
-  the flange's face, AND require the chord to arrive inside the seat's
-  own alignment cone with margin — **every pick the room makes is a
-  pick the magnet can take, by construction**, which also means flat
-  ports are always short and steep (the cone caps them by geometry: a
-  ceiling port is always an arm's reach up, never a room away). A
+  the flange's face, require the chord to arrive inside the seat's own
+  alignment cone with margin, AND require the spot to sit inside the
+  fitter's own reach — **every pick the room makes is a pick the magnet
+  can take and the hands can get to, by construction**. The cone
+  already capped flat runs short and steep; the REACH LAW
+  (PORTS.overheadReach, measured off the player's live eye line plus a
+  two-hand raise and most of the magnet's snap) is what stops a socket
+  irising awake on a 2.7 m ceiling: knocked for, lit, aimed at, and
+  impossible to finish. Ordinary ceilings therefore stop answering and
+  low ones still take their turn, which is the only room an overhead
+  port was ever fun in. A
   seeded roll (PORTS.flatChance) sometimes tries the overhead lane
   first — a lane, not a score bias, because on a distance-flavoured
   score a short flat spot never outbids a wall, and "sometimes the

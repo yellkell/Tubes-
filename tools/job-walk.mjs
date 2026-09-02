@@ -205,13 +205,20 @@ check(sheet.unlocked === 5, `every sheet is open (${sheet.unlocked}/5)`);
 
 // THE PORTS: sweep seeds through the REAL picker (start a job with a
 // forced seed, mount, read where the room answered, walk away) and make
-// sure the floor and the ceiling both take their turn — and that every
-// answer, whatever the surface, arrives inside the magnet's alignment
-// cone, because a port the magnet can't take is a port that never was.
+// sure every answer, whatever the surface, is one the fitter could
+// actually finish: inside the magnet's alignment cone, because a port
+// the magnet can't take is a port that never was — and inside the
+// HANDS' REACH, because the fallback room's ceiling is 2.7 m and a
+// socket up there is a job that cannot be done. The floor still takes
+// its turn; the ceiling only answers in a room low enough to work.
 const ports = await page.evaluate(() => {
   const t = window.__tubes;
   const seen = { wall: 0, floor: 0, ceiling: 0 };
   let misaligned = 0;
+  let outOfReach = 0;
+  let highest = 0;
+  // The rig's own eye line, plus PORTS.overheadReach (0.72).
+  const reachY = 1.6 + 0.72;
   const wallsOnly = t.walls.filter((w) => w.kind === 'wall');
   for (let seed = 1; seed <= 60; seed++) {
     t.startJob(0, seed);
@@ -220,6 +227,8 @@ const ports = await page.evaluate(() => {
     const target = t.walls.find((w) => w.id === run.wallB);
     if (target) {
       seen[target.kind]++;
+      highest = Math.max(highest, run.pointB.y);
+      if (run.pointB.y > reachY) outOfReach++;
       const dx = run.pointB.x - run.pointA.x;
       const dy = run.pointB.y - run.pointA.y;
       const dz = run.pointB.z - run.pointA.z;
@@ -230,11 +239,19 @@ const ports = await page.evaluate(() => {
     }
     t.abandonShift();
   }
-  return { seen, misaligned };
+  return { seen, misaligned, outOfReach, highest };
 });
 check(ports.seen.floor + ports.seen.ceiling > 0, `the room answers from overhead or underfoot sometimes (walls ${ports.seen.wall} · floor ${ports.seen.floor} · ceiling ${ports.seen.ceiling} / 60 seeds)`);
 check(ports.seen.wall > ports.seen.floor + ports.seen.ceiling, 'walls still carry most of the shift');
 check(ports.misaligned === 0, 'every answered port sits inside the magnet\'s cone');
+check(
+  ports.outOfReach === 0,
+  `no port wakes above the hands (highest ${ports.highest.toFixed(2)}m of 2.32m)`,
+);
+check(
+  ports.seen.ceiling === 0,
+  `a 2.7m ceiling never answers (${ports.seen.ceiling} of 60 seeds)`,
+);
 
 await browser.close();
 if (fails.length) {
