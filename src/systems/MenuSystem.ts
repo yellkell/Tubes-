@@ -96,6 +96,7 @@ import {
 import { removeUnit } from '../factory/sim.js';
 import { buildView, typeAvailable, type BuildTool } from './BuildSystem.js';
 import { factoryView } from './FactorySystem.js';
+import { goopView } from './GoopSystem.js';
 import { font } from '../ui/fonts.js';
 import {
   GLYPH_DEAD,
@@ -205,6 +206,11 @@ export const menuView: {
 const _origin = new Vector3();
 const _dir = new Vector3();
 const _fwd = new Vector3();
+const _avoid = new Vector3();
+const _avoidAt = new Vector3();
+/** Roughly half the creature's shoulder width, for the finale card's
+ *  step-aside. Generous on purpose: it dances. */
+const GOOP_HALF_WIDTH = 0.34;
 
 export class MenuSystem extends createSystem({}) {
   private board!: Panel;
@@ -249,6 +255,7 @@ export class MenuSystem extends createSystem({}) {
 
     this.finale = new Panel(BOARD.widthM * 0.78, BOARD.heightM * 0.78, 1060, 700);
     this.finale.setShown(false, true);
+    this.finale.alwaysOnTop();
     this.scene.add(this.finale.group);
 
     this.pointers = { left: new PointerRay(this.scene), right: new PointerRay(this.scene) };
@@ -301,6 +308,52 @@ export class MenuSystem extends createSystem({}) {
     _fwd.normalize();
     group.position.set(_origin.x + _fwd.x * reach, height, _origin.z + _fwd.z * reach);
     group.rotation.set(0, Math.atan2(_fwd.x, _fwd.z) + Math.PI, 0);
+  }
+
+  /**
+   * Plant a panel that must NOT land on something else in the room —
+   * which, on the last screen, is the whole creature you just made.
+   *
+   * The finale card used to go dead ahead like every other panel, so it
+   * came up ON the goop: the gel is transparent and writes no depth, but
+   * its EYES are solid, so the card drew over the body and the eyes drew
+   * over the card. Half a creature in front of a sign and half behind
+   * it. The card steps aside instead: if `avoid` falls inside the cone
+   * the card will occupy, the placement bearing swings just past it —
+   * to whichever side moves it less — so the sign stands BESIDE the
+   * thing it is congratulating you for, and both are whole.
+   */
+  private plantClear(
+    group: Object3D,
+    height: number,
+    reach: number,
+    halfWidth: number,
+    avoid: Vector3 | null,
+  ): void {
+    this.camera.getWorldPosition(_origin);
+    this.camera.getWorldDirection(_fwd);
+    _fwd.y = 0;
+    if (_fwd.lengthSq() < 1e-4) _fwd.set(0, 0, -1);
+    _fwd.normalize();
+    let yaw = Math.atan2(_fwd.x, _fwd.z);
+    if (avoid) {
+      _avoid.copy(avoid).sub(_origin);
+      _avoid.y = 0;
+      const range = _avoid.length();
+      if (range > 0.2) {
+        // How wide each of them looks from here, plus a little air.
+        const cardHalf = Math.atan2(halfWidth, reach);
+        const goopHalf = Math.atan2(GOOP_HALF_WIDTH, range);
+        const clear = cardHalf + goopHalf + 0.1;
+        let off = Math.atan2(_avoid.x, _avoid.z) - yaw;
+        off = Math.atan2(Math.sin(off), Math.cos(off)); // to (-pi, pi]
+        if (Math.abs(off) < clear) yaw += off >= 0 ? -(clear - off) : clear + off;
+      }
+    }
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    group.position.set(_origin.x + fx * reach, height, _origin.z + fz * reach);
+    group.rotation.set(0, yaw + Math.PI, 0);
   }
 
   /** The plant's idle envelope — the under-halo's slow chug. */
@@ -362,7 +415,19 @@ export class MenuSystem extends createSystem({}) {
     // as everything else in this file: you clicked a box from wherever
     // you were standing, so that is where the answer appears.
     if (boxUp && !this.box.isShown) this.plant(this.box.group, BOARD.boxPosition[1], 0.86);
-    if (finaleUp && !this.finale.isShown) this.plant(this.finale.group, 1.4, 1.5);
+    if (finaleUp && !this.finale.isShown) {
+      // …and the finale card comes to where you are AND steps out of
+      // the creature's way, which is the only thing on the last screen
+      // worth looking at.
+      const g = goopView.state?.();
+      this.plantClear(
+        this.finale.group,
+        1.4,
+        1.5,
+        (BOARD.widthM * 0.78) / 2,
+        g ? _avoidAt.set(g.x, g.y, g.z) : null,
+      );
+    }
 
     this.board.setShown(boardUp);
     this.card.setShown(cardUp);
@@ -1854,11 +1919,17 @@ export class MenuSystem extends createSystem({}) {
   /**
    * THANKS FOR PLAYING — the last card in the game.
    *
-   * It comes up once, on its own, while the goop is dancing on your
-   * actual floor behind it. Deliberately the only screen in TUBES that
-   * is not made of shop chrome: no rail, no tabs, no counters. One
-   * picture, one line, one button that gets out of the way so you can
-   * watch the thing you built.
+   * It comes up once, on its own, while the goop dances on your actual
+   * floor BESIDE it (see plantClear: the card steps out of the
+   * creature's way rather than fighting it for the same air).
+   * Deliberately the only screen in TUBES that is not made of shop
+   * chrome — but it is made of the shop's METAL: a bolted nameplate,
+   * the kind screwed to the side of a machine to say who built it,
+   * which is exactly what a credits card is.
+   *
+   * It used to carry a closing paragraph about the shift. The names are
+   * the point of the last screen, so the paragraph is gone and the
+   * credits have the plate to themselves.
    */
   private paintFinale(): void {
     const cw = 1060;
@@ -1869,47 +1940,105 @@ export class MenuSystem extends createSystem({}) {
         label: 'WATCH IT DANCE',
         primary: true,
         x: cw / 2 - 220,
-        y: ch - 148,
+        y: ch - 132,
         w: 440,
-        h: 96,
+        h: 92,
       },
     ];
     this.finale.paint(
       '',
       (g) => {
-        // EVERY Y HERE FLOWS. The first cut nailed the clock to a fixed
-        // offset and the closing paragraph grew into it — the same class
-        // of bug the GOALS page was rebuilt to kill, and it deserves no
-        // more mercy on the last screen in the game than it got there.
         g.textAlign = 'center';
         g.textBaseline = 'middle';
-        goopGlyph(g, cw / 2 - 84, 58, 168, true);
-        g.font = font(700, 72);
-        g.letterSpacing = '8px';
+
+        // THE PLATE: a bolted rectangle with a hairline inside it and
+        // four hex heads holding it on, in the works' own iron.
+        const px = 40;
+        const py = 30;
+        const pw = cw - px * 2;
+        const ph = ch - py - 158;
+        g.fillStyle = 'rgba(255,162,46,0.05)';
+        g.beginPath();
+        g.roundRect(px, py, pw, ph, 18);
+        g.fill();
+        g.strokeStyle = UI.accentDim;
+        g.lineWidth = 3;
+        g.stroke();
+        g.strokeStyle = UI.lineFaint;
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.roundRect(px + 13, py + 13, pw - 26, ph - 26, 12);
+        g.stroke();
+        for (const [bx, by] of [
+          [px + 34, py + 34],
+          [px + pw - 34, py + 34],
+          [px + 34, py + ph - 34],
+          [px + pw - 34, py + ph - 34],
+        ]) {
+          g.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+            const hx = bx + Math.cos(a) * 11;
+            const hy = by + Math.sin(a) * 11;
+            if (i === 0) g.moveTo(hx, hy);
+            else g.lineTo(hx, hy);
+          }
+          g.closePath();
+          g.fillStyle = 'rgba(255,255,255,0.10)';
+          g.fill();
+          g.strokeStyle = UI.line;
+          g.lineWidth = 2;
+          g.stroke();
+        }
+
+        goopGlyph(g, cw / 2 - 68, 60, 136, true);
+
+        g.font = font(700, 62);
+        g.letterSpacing = '9px';
         g.fillStyle = UI.textHi;
-        g.fillText('THANKS FOR PLAYING', cw / 2, 292);
+        g.fillText('THANKS FOR PLAYING', cw / 2, 252);
         g.letterSpacing = '0px';
-        g.font = font(600, 26);
-        g.fillStyle = LINES.pearl.hex;
-        g.fillText('the fourth manifold is open, and something came out of it', cw / 2, 344);
-        let y = 400;
-        y +=
-          31 *
-          wrapText(
-            g,
-            'You stood a maker in an empty room and ran one tube into it. Everything after that \u2014 the bank, the lanes, the combiner, the chest, three deep-fitted servos and a vat \u2014 you built. The shop stays open: every feed is yours, the catalogue is yours, and nobody is going to ask you for ten of anything ever again.',
-            cw / 2 - 380,
-            y,
-            760,
-            31,
-            font(500, 23),
-            UI.dim,
-            'center',
-          );
-        g.textAlign = 'center';
-        g.font = font(500, 20);
-        g.fillStyle = UI.faint;
-        g.fillText(`the works ran for ${fmtMs(plant.elapsedMs)}`, cw / 2, y + 6);
+
+        // The stamped rule under the title: amber, broken in the middle
+        // the way a maker's plate carries its serial.
+        g.strokeStyle = UI.accent;
+        g.lineWidth = 3;
+        for (const dir of [-1, 1]) {
+          g.beginPath();
+          g.moveTo(cw / 2 + dir * 56, 296);
+          g.lineTo(cw / 2 + dir * 296, 296);
+          g.stroke();
+        }
+        g.fillStyle = UI.accent;
+        g.beginPath();
+        g.arc(cw / 2, 296, 6, 0, Math.PI * 2);
+        g.fill();
+
+        // THE CREDITS: small stencilled label over a big name — a plate,
+        // not a paragraph. The names are given the type size that FITS
+        // rather than a fixed one, because a name is not something to
+        // wrap, hyphenate or run off the end of a card.
+        const stencil = (label: string, y: number): void => {
+          g.font = font(600, 21);
+          g.letterSpacing = '6px';
+          g.fillStyle = UI.faint;
+          g.fillText(label, cw / 2, y);
+          g.letterSpacing = '0px';
+        };
+        const name = (text: string, y: number, want: number, colour: string): void => {
+          let size = want;
+          for (; size > 18; size -= 2) {
+            g.font = font(700, size);
+            if (g.measureText(text).width <= pw - 96) break;
+          }
+          g.fillStyle = colour;
+          g.fillText(text, cw / 2, y);
+        };
+
+        stencil('CREATED BY', 348);
+        name('yellkell', 396, 48, UI.accent);
+        stencil('MUSIC BY', 460);
+        name('IBWildcat1998, poopoodoodoo698 & JakeThePro', 506, 34, UI.text);
       },
       buttons,
       this.hover,

@@ -1183,3 +1183,42 @@ and 0.6 degrees off axis, head standoff exactly on the seat. The one
 standing caveat is unchanged and inherent: the last 20 cm into a
 gland is a descent to a port at 0.7 m, so a lane hauled hard against
 a fed box still passes under a tube that is coming down to meet it.
+
+### The eleventh pass — the last screen
+
+**"The thank you for playing sign doesn't go behind or in front of the
+goop."** It was doing both at once, and that is the giveaway: the card
+planted dead ahead like every other panel, straight through the
+creature, and the goop is not one kind of surface — the gel is
+transparent and writes no depth, so the sign drew over its body, while
+the eyes are solid geometry, so they drew over the sign. Half a creature
+in front of a card and half behind it.
+
+Two moves. The card STEPS ASIDE: if the goop falls inside the cone the
+card would occupy — its own half-width at arm's length, plus the
+creature's, plus a little air — the placement bearing swings just past
+it, to whichever side moves it less. And the card draws as ONE PIECE
+over the room (Panel.alwaysOnTop), so if you walk somewhere that puts
+them together anyway, the sign stays a sign instead of being punctured.
+
+**The sign is themed and it carries the credits.** It is the shop's own
+metal now: a riveted plate with hex heads at the corners, the stencilled
+title over an amber rule broken in the middle like a maker's serial, and
+the goop's glyph above it. The closing paragraph about the shift is
+gone, because the names are the point of a last screen:
+
+    CREATED BY  yellkell
+    MUSIC BY    IBWildcat1998, poopoodoodoo698 & JakeThePro
+
+The names are typeset at the size that FITS the plate (measured, then
+stepped down) rather than a fixed one — a name is not something to wrap
+or run off the end of a card.
+
+**And the eyes went back.** Two rebuilds had chased legibility across a
+lit room — a sclera/iris/pupil eye, then a bigger one with an amber iris
+— and the verdict on both was the same: not him. The beads he was ported
+with are restored, near-black with a single white speck, sunk into the
+gel. The two things the rebuilds got right are kept, because neither
+shows on the bead: the pair is separated by a real width rather than a
+splay angle (a fixed angle slid both eyes onto the same spot as the body
+turned), and the gaze wanders instead of locking on.

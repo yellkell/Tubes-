@@ -382,29 +382,35 @@ and then it dances, hitting a stance on every beat and keeping you in
 its eyes. THANKS FOR PLAYING comes up over its shoulder, and dismissing
 the card leaves it dancing.
 
-**The eyes carry all of it, and the first pair did not.** They were one
-near-black bead each with a single white speck, on a dark green body:
-against that gel the bead vanished, so the creature read as two floating
-sparks, and because the whole eye was one colour, TRACKING was invisible
-— it could swing right round to face you and nothing on screen changed.
+**The eyes are the pair he was ported with.** One near-black bead each
+with a single white speck, sunk into the gel so it closes over them —
+wet, not stuck on. They were twice rebuilt for legibility (a
+sclera/iris/pupil eye, then a bigger warmer one with an amber iris) and
+twice put back: both read better across a lit room and neither of them
+was him. The beads stay.
 
-An eye needs contrast inside itself. Each is now a pale unlit SCLERA (the
-value the dark parts read against), a deep green IRIS bulging off the
-front — the part that visibly swings — a PUPIL that dilates with the
-sim's agitation and on the beat, and TWO catchlights, because one is
-paint and two is glass. They ride a centimetre inside the surface so the
-gel washes over them and tints them green for free, which is why the
-sclera is warm rather than white.
+What the rebuilds were right about is kept, because none of it shows on
+the bead itself. They are placed by a lateral OFFSET, not a splay angle:
+the first cut rotated the gaze vector by a fixed angle and marched out
+from the head's centre, which works head-on and collapses the moment the
+body yaws, because a fixed angle subtends less and less width as the
+exit points converge round the silhouette — it could put both eyes
+almost on top of each other. And they wander: a saccade re-aimed every
+half-second or two, with an occasional proper look-away, plus a blink
+that sometimes goes twice. Eyes locked dead on you read as a turret; the
+wander is the cheapest thing on that list and does the most.
 
-They are placed by a lateral OFFSET, not a splay angle. The first cut
-rotated the gaze vector ±0.36 rad and marched out from the head's centre;
-that works head-on and collapses the moment the body yaws, because a
-fixed angle subtends less and less width as the exit points converge
-round the silhouette — it could put both eyes almost on top of each
-other. And they wander: a saccade re-aimed every half-second or two,
-with an occasional proper look-away, plus a blink that sometimes goes
-twice. Eyes locked dead on you read as a turret; the wander is the
-cheapest thing on that list and does the most.
+**THANKS FOR PLAYING is a bolted nameplate, and it stands BESIDE him.**
+The card used to plant dead ahead like every other panel, which put it
+straight through the creature: the gel is transparent and writes no
+depth, but the beads are solid, so the sign came out half in front of
+the goop and half behind it. Now the placement steps aside — if the goop
+falls inside the cone the card would occupy, the bearing swings just
+past it, to whichever side moves it less — and the card draws as one
+piece over the room rather than arguing with anything for the same air.
+Its face is the shop's own metal: a riveted plate, a stencilled title
+over an amber rule broken like a serial, and under that the only thing
+the last screen is actually for — who made it, and who made the music.
 
 ## The board
 

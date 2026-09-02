@@ -211,6 +211,28 @@ export class Panel {
     return this.canvas.getContext('2d')!;
   }
 
+  /**
+   * Draw this panel as ONE PIECE, over everything.
+   *
+   * Panels normally respect the room's depth: something solid in front
+   * of one occludes it, which is right for a card you walk around. The
+   * finale card meets a creature whose body is transparent (no depth
+   * written) but whose EYES are solid, so it came out half in front of
+   * the goop and half behind — the sign and the thing it congratulates
+   * you for, arguing. A credits plate is a sign held up to your face,
+   * not furniture: it wins, whole, or it steps aside (MenuSystem's
+   * plantClear does the stepping).
+   */
+  alwaysOnTop(): void {
+    for (const child of this.group.children) {
+      if (!(child instanceof Mesh)) continue;
+      const mat = child.material as MeshBasicMaterial;
+      mat.depthTest = false;
+      mat.needsUpdate = true;
+      child.renderOrder += 20;
+    }
+  }
+
   /** The ids currently painted on this panel — headless probes read it to
    *  ask what a card is offering without matching pixels. */
   buttonIds(): string[] {

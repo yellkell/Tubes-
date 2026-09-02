@@ -46,11 +46,18 @@ const _side = new Vector3();
 const _m = new Matrix4();
 
 /** Half the gap between the eyes, in creature-local metres — a real
- *  width, measured against the head blob's 0.155 m radius. */
-const EYE_SEP = 0.078;
-/** How far up the head they sit. Low enough to be a face and not a
- *  crown; the first cut rode 0.12 up and looked like a periscope. */
-const EYE_RISE = 0.032;
+ *  width, measured against the head blob's 0.155 m radius. The ported
+ *  pair splayed by an ANGLE instead, which works head-on and collapses
+ *  the moment the body yaws: a fixed angle subtends less and less width
+ *  as the exit points converge round the silhouette, and it could put
+ *  both beads almost on top of each other. This is that same spacing,
+ *  measured in metres so it survives any yaw. */
+const EYE_SEP = 0.062;
+/** How far up the head they sit: level with its centre, as ported. */
+const EYE_RISE = 0;
+/** How far the bead rides INSIDE the surface, so the gel closes over it
+ *  and tints it — the wet look is the point. */
+const EYE_SINK = 0.02;
 
 /** The contact shadow that grounds it on your REAL floor. Without this
  *  a passthrough creature reads as a sticker; with it, it is standing
@@ -80,8 +87,8 @@ export class GoopDancer {
   private eyeL: Group;
   private eyeR: Group;
   private eyeMats: MeshBasicMaterial[] = [];
-  /** The moving parts of each eye, for the dilation and the aim. */
-  private eyeParts: Array<{ group: Group; iris: Mesh; pupil: Mesh }> = [];
+  /** Each eye's group, for the aim. */
+  private eyeParts: Array<{ group: Group }> = [];
   private blinkTimer = 2.4;
   private blink = 0;
   /** A double blink, now and then — the tell that reads as ALIVE rather
@@ -92,8 +99,6 @@ export class GoopDancer {
   private saccade = new Vector3();
   private saccadeTarget = new Vector3();
   private saccadeTimer = 0;
-  /** Pupil dilation, 0..1 over the resting size. */
-  private dilate = 0;
 
   /** 0 = a dome of gel, 1 = up on its feet. Eased toward `formTarget`. */
   private form = 0;
@@ -135,71 +140,33 @@ export class GoopDancer {
     this.shadow.renderOrder = 0;
     this.group.add(this.shadow);
 
-    /* THE EYES are the whole personality, and the first pair were not
-     * pulling their weight: one near-black bead (0x101b10) with a single
-     * white speck, sitting on a dark green body. Against that gel the
-     * bead simply vanished — the only thing you could actually see was
-     * the glint, so the creature read as two floating sparks rather than
-     * as something looking at you. And because the whole eye was one
-     * solid colour, TRACKING was invisible: it could swing right round
-     * to face you and nothing on screen would change.
+    /* THE EYES are the whole personality: two glossy beads that ride
+     * wherever the gel surface happens to be, found by walking the field
+     * outward from the head blob. They sink into the dome while it is
+     * forming and surface as it stands up, for free.
      *
-     * A real eye needs contrast inside itself. So each one is now four
-     * parts on a group that aims at you:
-     *
-     *   SCLERA  a pale, unlit ball — the value contrast the dark parts
-     *           read against, and the thing that makes the creature
-     *           legible at all across a lit room
-     *   IRIS    a deep green dome bulging off the front, which is the
-     *           part that visibly SWINGS as it looks around
-     *   PUPIL   black, dilating with agitation and on the beat
-     *   GLINTS  a hard specular and a soft secondary, offset — two
-     *           catchlights is the difference between glass and paint
-     *
-     * All MeshBasic: the gel's own shader is analytic and unlit, the
-     * room is passthrough, and an eye that dims when the player turns
-     * round is an eye that keeps disappearing. They ride slightly INSIDE
-     * the surface so the gel washes over them, which tints them green
-     * for free and is why the sclera is warm rather than white.
+     * These are the beads he was PORTED WITH, restored by request after
+     * two attempts at "improving" them — a four-part sclera/iris/pupil
+     * eye, and then a bigger warmer one. Both were more legible across
+     * a room and neither was him. What the redraws WERE right about is
+     * kept, because none of it is visible on the bead itself: the pair
+     * is separated by a real width rather than by a splay angle (a
+     * fixed angle let both eyes slide onto the same spot the moment the
+     * body yawed away), and the gaze wanders instead of locking on.
      */
     const mkEye = (): Group => {
       const g = new Group();
-      const sclera = new MeshBasicMaterial({ color: 0xdff5e4 });
-      this.eyeMats.push(sclera);
-      g.add(new Mesh(new SphereGeometry(0.056, 18, 14), sclera));
-
-      const iris = new Mesh(
-        new SphereGeometry(0.035, 16, 12),
-        new MeshBasicMaterial({ color: 0x123d22 }),
-      );
-      iris.position.z = 0.034;
-      iris.scale.set(1, 1, 0.62); // a dome, not a ball stuck on the front
-      g.add(iris);
-
-      const pupil = new Mesh(
-        new SphereGeometry(0.0185, 12, 10),
-        new MeshBasicMaterial({ color: 0x04100a }),
-      );
-      pupil.position.z = 0.0475;
-      pupil.scale.set(1, 1, 0.5);
-      g.add(pupil);
-
+      const ball = new MeshBasicMaterial({ color: 0x101b10 });
+      this.eyeMats.push(ball);
+      g.add(new Mesh(new SphereGeometry(0.046, 16, 12), ball));
       const glint = new Mesh(
-        new SphereGeometry(0.0115, 8, 6),
-        new MeshBasicMaterial({ color: 0xffffff }),
+        new SphereGeometry(0.013, 8, 6),
+        new MeshBasicMaterial({ color: 0xf4fff2 }),
       );
-      glint.position.set(0.018, 0.021, 0.048);
+      glint.position.set(0.015, 0.017, 0.035);
       g.add(glint);
-
-      const glint2 = new Mesh(
-        new SphereGeometry(0.0062, 6, 5),
-        new MeshBasicMaterial({ color: 0xc8f2d6 }),
-      );
-      glint2.position.set(-0.016, -0.018, 0.045);
-      g.add(glint2);
-
       this.group.add(g);
-      this.eyeParts.push({ group: g, iris, pupil });
+      this.eyeParts.push({ group: g });
       return g;
     };
     this.eyeL = mkEye();
@@ -331,7 +298,7 @@ export class GoopDancer {
   /**
    * THE EYES ride the surface — walked outward from the head blob along
    * the gaze until the field says we have popped out of the gel — and
-   * then do four small things that between them are the difference
+   * then do three small things that between them are the difference
    * between a creature and a prop:
    *
    *  THE SACCADE. Eyes locked dead on you read as a turret. A small
@@ -339,13 +306,10 @@ export class GoopDancer {
    *    the gaze drifts, catches you again, glances off. It is the single
    *    cheapest thing on this list and the one that does the most.
    *  THE BLINK, sometimes TWICE. A lone blink on a timer is a timer; a
-   *    double now and then is a habit. The lid squashes the whole eye,
+   *    double now and then is a habit. The lid squashes the whole bead,
    *    which is what a blink does to a ball of jelly with no eyelid.
-   *  DILATION. The pupil opens with the sim's agitation and on the beat,
-   *    so the thing visibly reacts to its own dancing.
-   *  THE SINK. They ride a good centimetre INSIDE the surface, so the
-   *    gel draws over them and tints them green — which is why the
-   *    sclera is a warm off-white and not white.
+   *  THE SINK. They ride a couple of centimetres INSIDE the surface, so
+   *    the gel draws over them: the beads are wet, not stuck on.
    */
   private updateEyes(dt: number, playerHeadWorld: Vector3): void {
     // Blink, and every so often blink again.
@@ -377,10 +341,6 @@ export class GoopDancer {
     }
     this.saccade.lerp(this.saccadeTarget, Math.min(1, dt * 9));
 
-    // Dilation: the sim's own agitation, plus a lift while it dances.
-    const wantDilate = Math.min(1, this.sim.agitation * 0.7 + (this.form > 0.9 ? 0.35 : 0));
-    this.dilate += (wantDilate - this.dilate) * Math.min(1, dt * 4);
-
     this.sim.corePos(A.HEAD, _v);
     _v3.copy(this.playerLocal).sub(_v);
     _v3.y *= 0.4; // level-ish: it looks at you, it doesn't crane
@@ -393,18 +353,14 @@ export class GoopDancer {
     _gaze.x += this.saccade.x;
     _gaze.y += this.saccade.y;
 
-    // THE FACE'S OWN SIDEWAYS, so the two eyes can be offset by a real
-    // DISTANCE rather than by an angle. The first cut splayed the gaze
-    // vector by ±0.36 rad and marched out from the head's centre — which
-    // works head-on and collapses the moment the body yaws away, because
-    // a fixed angle subtends less and less width as the exit points
-    // converge round the silhouette. It could put both eyes almost on
-    // top of each other, which is a very particular kind of wrong.
+    // THE FACE'S OWN SIDEWAYS, so the two beads can be offset by a real
+    // DISTANCE rather than by an angle (see EYE_SEP: the splay could
+    // slide both of them onto the same spot as the body turned).
     _side.set(_v3.z, 0, -_v3.x);
     if (_side.lengthSq() < 1e-6) _side.set(1, 0, 0);
     _side.normalize();
 
-    const place = (eye: Group, side: number, parts: { iris: Mesh; pupil: Mesh }): void => {
+    const place = (eye: Group, side: number): void => {
       // Start beside the head's centre and march OUT along the gaze: the
       // separation is now a width in metres and survives any yaw.
       const hx = this.sim.packed[A.HEAD * 4] + _side.x * EYE_SEP * side;
@@ -417,22 +373,18 @@ export class GoopDancer {
         if (this.sim.fieldAt(_v) > -0.02) break;
         s += 0.035;
       }
-      // Sunk, so the gel closes over the ball and only the iris bulges.
+      // Sunk, so the gel closes over the ball's rim while its face stays
+      // clear of the wash (EYE_SINK — the last cut buried it).
       eye.position.set(
-        _v.x - _v2.x * 0.032,
-        _v.y - _v2.y * 0.032,
-        _v.z - _v2.z * 0.032,
+        _v.x - _v2.x * EYE_SINK,
+        _v.y - _v2.y * EYE_SINK,
+        _v.z - _v2.z * EYE_SINK,
       );
       eye.scale.set(1, lid, 1);
       eye.lookAt(_gaze);
-      const d = 1 + this.dilate * 0.5;
-      parts.pupil.scale.set(d, d, 0.5);
-      parts.iris.scale.set(1 + this.dilate * 0.1, 1 + this.dilate * 0.1, 0.62);
     };
-    if (this.eyeParts.length === 2) {
-      place(this.eyeL, 1, this.eyeParts[0]);
-      place(this.eyeR, -1, this.eyeParts[1]);
-    }
+    place(this.eyeL, 1);
+    place(this.eyeR, -1);
   }
 
   /** Everything this owns, back to the driver. */
