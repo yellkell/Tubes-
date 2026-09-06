@@ -40,6 +40,7 @@ import { buzz } from '../game/haptics.js';
 import { orderComplete } from '../game/flow.js';
 import { chestBonus, ownedUpgrades, railFactor, reachBonus } from '../game/progress.js';
 import { site } from '../game/state.js';
+import { updateConnectionGuide } from '../tube/connection.js';
 import { CELL, cellCenter, worldToCell } from '../floor/grid.js';
 import { floorLayout, type FloorSide } from '../floor/plan.js';
 import {
@@ -522,6 +523,7 @@ export class FactorySystem extends createSystem({}) {
 
     // The runs: pull physics, seat magnet, pours, retraction.
     for (const run of plant.runs) this.tickRun(run, delta);
+    this.tickGlandTells();
 
     // The machine itself. The card pauses the HANDS, never the works.
     const dt = delta * plant.timeScale;
@@ -1147,7 +1149,7 @@ export class FactorySystem extends createSystem({}) {
     } else {
       target = 1;
     }
-    run.energy += (target - run.energy) * Math.min(1, delta * 6);
+    run.energy += (target - run.energy) * (1 - Math.exp(-delta * 6));
     for (const seg of hw.segments) {
       const u = seg.pourMat.uniforms;
       u.uTime.value = this.clock;
@@ -1646,33 +1648,50 @@ export class FactorySystem extends createSystem({}) {
       hw.collar.capMat.opacity = 0.25;
       hw.collar.glowMat.opacity = 0.1;
     }
+  }
+
+  private tickGlandTells(): void {
     // Free glands breathe their guides while any collar is loose or held
     // — and SWIVEL: a seated gland holds its run's line, a free one
     // turns to face whichever tube is nearest your hands. The box you
     // are walking a tube toward opens its door as you come.
-    const wanting = plant.runs.some((r) => r.phase === 'pull');
     for (const unit of plant.units) {
       const gland = this.unitRefs.get(unit.id)?.gland;
       if (!gland) continue;
       const seated = runSeatedAt(unit.id);
-      gland.guideMat.opacity = seated ? 0 : wanting ? 0.12 + 0.16 * breathe : 0.06;
-      gland.glowMat.opacity = seated ? 0.45 : 0.15;
-
+      let candidate: FactoryRun | undefined;
+      let proximity = 0;
       let toward: Vector3 | undefined;
       if (seated) {
         toward = seated.pointA;
       } else {
         let bestD = Infinity;
-        cellCenter(unit.i, unit.j, _c);
         for (const run of plant.runs) {
           if (run.phase !== 'pull') continue;
-          const d = (run.headVisual.x - _c.x) ** 2 + (run.headVisual.z - _c.z) ** 2;
+          if (run.spurnUnit === unit.id && run.spurnT > 0) continue;
+          if (run.magnet && run.targetUnit !== unit.id) continue;
+          // Reserve a captured gland for its incoming collar.
+          if (plant.runs.some((other) => other !== run && other.magnet && other.targetUnit === unit.id)) continue;
+          glandPose(unit, _g, _gn, run.pointA);
+          _seat.copy(_g).addScaledVector(_gn, FACTORY.glandSeat);
+          const d = run.headVisual.distanceTo(_seat);
           if (d < bestD) {
             bestD = d;
-            toward = run.headVisual;
+            candidate = run;
+            toward = run.pointA;
           }
         }
+        if (candidate?.held || candidate?.magnet) proximity = 1 - bestD / (FACTORY.seatRadius * 3);
       }
+      const source = seated ?? candidate;
+      gland.guideMat.color.setHex(source?.line.glow ?? 0xfff0dc);
+      gland.glowMat.color.copy(gland.guideMat.color);
+      const arrival = seated ? Math.max(0, 1 - seated.phaseT / 0.55) : 0;
+      gland.glowMat.opacity = seated
+        ? Math.min(1, 0.2 + seated.energy * 0.35 + arrival * 0.4)
+        : 0.15 + Math.max(0, proximity) * 0.2;
+      updateConnectionGuide(gland, this.clock, proximity, candidate?.magnet ?? false,
+        candidate?.seatP ?? 0, seated?.phase ?? 'pull', seated?.phaseT ?? 0);
       this.poseGland(unit, gland.group, toward);
     }
   }
@@ -1859,11 +1878,13 @@ export class FactorySystem extends createSystem({}) {
         // The level, in the tank's own local space. It surges a little as
         // it fills — a tank that comes up perfectly smoothly reads as a
         // loading bar, and this is meant to read as a liquid.
-        const surge = brewing ? 1 + 0.035 * Math.sin(this.clock * 3.4) : 1;
-        const h = Math.max(0.0005, refs.fill.top * brewP * surge);
+        const h = Math.max(0.0005, refs.fill.top * brewP);
         refs.fill.mesh.visible = brewP > 0.002;
         refs.fill.mesh.scale.y = h;
         refs.fill.mesh.position.y = refs.fill.floor + h / 2;
+        refs.fill.time.value = this.clock;
+        refs.fill.height.value = h;
+        refs.fill.activity.value += ((brewing ? 1 : 0) - refs.fill.activity.value) * (1 - Math.exp(-delta * 3));
         refs.fill.mat.emissiveIntensity = 0.6 + 0.5 * breathe;
       }
       if (refs.vatGlow) {

@@ -143,7 +143,7 @@ export class FlowSystem extends createSystem({}) {
         targetEnergy = 1;
       }
       const e = (this.energy[i] ??= 0);
-      this.energy[i] = e + (targetEnergy - e) * Math.min(1, delta * 6);
+      this.energy[i] = e + (targetEnergy - e) * (1 - Math.exp(-delta * 6));
 
       // The front races the run.
       if (run.phase === 'seated' && run.front >= 0) {
@@ -172,7 +172,8 @@ export class FlowSystem extends createSystem({}) {
       const en = this.energy[i];
       hw.flange.glowMat.opacity = 0.18 + 0.14 * breathe + 0.3 * en + 0.3 * flash * (run.phase === 'wake' ? 1 : 0);
       hw.socket.glowMat.opacity =
-        0.16 + 0.12 * breathe + 0.4 * en + (run.phase === 'wake' ? 0.4 * flash : 0);
+        Math.min(1, 0.16 + 0.12 * breathe + 0.4 * en
+          + (run.phase === 'wake' || run.phase === 'seated' || run.phase === 'flowing' ? 0.4 * flash : 0));
     }
   }
 
