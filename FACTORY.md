@@ -1222,3 +1222,65 @@ gel. The two things the rebuilds got right are kept, because neither
 shows on the bead: the pair is separated by a real width rather than a
 splay angle (a fixed angle slid both eyes onto the same spot as the body
 turned), and the gaze wanders instead of locking on.
+
+### The twelfth pass — every item made its own way
+
+**"Let's work on the maker and combiner animations and have each item be
+made in a unique visual way."** They had one animation between them: the
+maker's piston bobbed on a sine wave for four seconds and the combiner's
+clamp dipped two centimetres on the same wave for six, whatever was
+being made, and then a part popped onto the chute at 2.4× scale for a
+third of a second. Nothing in the motion said WHAT was being made, and
+the one moment that did was over before you turned your head.
+
+`factory/craft.ts` is THE CRAFT THEATRE: one choreography per item,
+driven by the sim's own craft progress (0..1, so QUICK BOXES and the
+tools' fast-forward simply play it faster) and staged on the machine's
+own hardware. A maker forms a PHANTOM — the item's own kit, drawn
+through the same instanced pools as the parts, with a per-component
+matrix the theatre writes each frame, so a molten slug costs what a gear
+on a rail costs. A combiner animates the two REAL parts sitting in its
+ports (the sim leaves them there until the craft lands): they walk in
+from their trays, meet under the press, and FIT.
+
+| Item | How it is made |
+| --- | --- |
+| GEAR | **struck** — a molten slug on the anvil, lit through an additive heat shell; the die set winds up and DROPS three times, sparks off each blow (glint sprites, not squares), the plates spread and the top one indexes a third of the half-tooth per blow, hub and axle rising out of the iron; the glow cools to nothing before the eject |
+| CELL | **drawn** — the canister extrudes up out of the die under the raised plate, sweating a cyan sheen; the plate comes down and PRESSES the caps on with a hydraulic sigh and a visible squeeze; the charge band lights and pulses full in three surges |
+| CHIP | **etched** — a wafer on an indexing table under a scriber: six clicks round, the probe dipping on each and the traces growing a sixth at a time; then the pin comes down from above and is pressed home with a snap of arc |
+| PUMP | **screwed** — the gear slides in, the cell arcs in over it and threads DOWN onto it, four turns at constant pitch, then the clamp presses the union |
+| LAMP | **kindled** — the chip is lowered onto the cell as a crown and tapped home; the filament flickers twice and dies, then comes on and stays |
+| SERVO | **torqued** — lamp onto pump, clamped, then the stack indexed a quarter turn four times under the press with the clamp biting on each, the flash cycling amber, cyan, violet, white (one bolt per line); then RUN IN: it spins up and brakes |
+
+And every one ends the same way: the finished thing slides forward to
+the exact chute slot the sim will stand it on (`sim.chuteReach`),
+turning into the idle spin the real part will be born with (the sim's
+next id is known before it spawns), so the swap from ghost to part is a
+hand-off and not a cut. The birth punch shrank from 2.4× to a nudge.
+
+Two pieces of hardware changed to stage it. The maker's piston is a DIE
+SET now — a punch plate riding two guide pins that stand OUTSIDE the
+work and run down into the drum (the first cut was a single central ram
+on a rod, and the rod stabbed straight through the canister it was
+pressing; the look tool caught it in one frame). The combiner's clamp
+rides two brass columns on a PRESS FRAME, tall enough to lift clear of a
+lamp hovering over a pump, so the parts can walk in under it and be
+pressed rather than tapped from a bar lying on the lobes. The chute
+slots and port trays moved too: a part waits IN the tray the builder
+draws (0.21 and 0.105 off centre, ±0.2 for the ports) instead of hanging
+off the drum's edge short of it and sitting under the piston.
+
+Sound follows the cue, not the frame: the theatre reports `strike`,
+`press`, `charge`, `etch`, `pin`, `thread`, `seat`, `torque`, `spark`,
+`lit` and `spin` through a callback, FactorySystem plays them (two new
+voices in the kit: `forgeStrike`, deader with each blow, and `servoRun`,
+which winds up and holds or winds up and brakes), and all of it is
+silenced under the tools' fast-forward, where a craft plays in a frame.
+
+`tools/craft-look.mjs` stands three fed makers and a hand-fed combiner
+on the fallback floor and shoots each craft at the moments that carry it
+(`shots/craft/`), at quarter speed with the sim all but stopped for the
+exposure so a frame lands within a hundredth of its mark. It also
+asserts what can be asserted: the theatre is live, the die set and the
+clamp leave their rests, the draw budget holds with all of it running
+(338 of 420).

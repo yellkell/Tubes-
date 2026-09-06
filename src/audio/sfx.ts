@@ -412,6 +412,24 @@ export function latchDogs(): void {
   }
 }
 
+/* ── the craft theatre ──────────────────────────────────────────────────── */
+
+/** The ram lands on the slug — a forge blow, each one a little deader
+ *  than the last as the iron takes its shape. */
+export function forgeStrike(n: number): void {
+  clank(150 - n * 12, 0.26, 0.3);
+  whooshNoise(0.08, 0.06, 2600, 900, 0.005);
+  subSwell(60, 34, 0.24, 0.12, 0, 0.008);
+}
+
+/** A servo running: winds up and holds (the thread), or winds up and
+ *  BRAKES (the run-in) — the fitting's own voice. */
+export function servoRun(brake: boolean): void {
+  servo(180, 760, 0.45, 0.05);
+  if (brake) servo(760, 200, 0.28, 0.05, 0.45);
+  else servo(760, 700, 0.2, 0.03, 0.45);
+}
+
 /** Steam off hot metal — MAINS' signature exhale on a fresh seat. */
 export function steamHiss(): void {
   whooshNoise(0.7, 0.1, 3400, 900, 0.05);

@@ -34,11 +34,24 @@ import {
   Quaternion,
   Vector3,
 } from 'three';
-import { FACTORY, FLOW, ITEMS, LINES, ORDERS, SEAT, TUBE, UNITS, type ItemId } from '../config.js';
+import {
+  COMBINES,
+  FACTORY,
+  FLOW,
+  ITEMS,
+  LINES,
+  MAKES,
+  ORDERS,
+  SEAT,
+  TUBE,
+  UNITS,
+  combineKey,
+  type ItemId,
+} from '../config.js';
 import * as sfx from '../audio/sfx.js';
 import { buzz } from '../game/haptics.js';
 import { orderComplete } from '../game/flow.js';
-import { chestBonus, ownedUpgrades, railFactor, reachBonus } from '../game/progress.js';
+import { chestBonus, craftFactor, ownedUpgrades, railFactor, reachBonus } from '../game/progress.js';
 import { site } from '../game/state.js';
 import { updateConnectionGuide } from '../tube/connection.js';
 import { CELL, cellCenter, worldToCell } from '../floor/grid.js';
@@ -51,6 +64,7 @@ import {
   freshRun,
   openShopFully,
   orderSpec,
+  partById,
   plant,
   postOrder,
   runForSide,
@@ -63,6 +77,7 @@ import {
 import {
   beltBranches,
   beltEntry,
+  chuteReach,
   deliverPart,
   glandPose,
   glandReach,
@@ -72,6 +87,7 @@ import {
   retractRun,
   simTick,
 } from '../factory/sim.js';
+import { tickCraft, type CraftContext, type CraftCue } from '../factory/craft.js';
 import {
   MAKER_ACCENT,
   buildFeed,
@@ -165,6 +181,19 @@ export const factoryView: {
   drop?: (x: number, y: number, z: number) => boolean;
   timeScale?: (s: number) => void;
   parts?: () => Array<{ id: number; item: ItemId; kind: string; unit?: number }>;
+  /** THE CRAFT THEATRE, per machine: what it is making, how far along
+   *  (0..1, −1 idle), how high its ram/clamp stands, and whether a
+   *  phantom or the port parts are being posed. The look tool shoots
+   *  each item at chosen moments off this. */
+  crafts?: () => Array<{
+    unit: number;
+    type: string;
+    item: ItemId | null;
+    p: number;
+    lift: number;
+    phantom: number;
+    portOn: boolean;
+  }>;
   /** TOOLS ONLY. Open every feed and the whole catalogue without walking
    *  the book — a look-tool wants one of each machine on the floor, and
    *  a finale walk wants to be standing at the last sheet. Neither is a
@@ -343,6 +372,17 @@ export class FactorySystem extends createSystem({}) {
   private dodgeB: Vector3[] = Array.from({ length: 26 }, () => new Vector3());
   /** The winning clash's push direction, captured during the scan. */
   private clashA = new Vector3();
+  /** One context record, refilled per machine per frame for the theatre. */
+  private craftCtx: CraftContext = {
+    dt: 0,
+    clock: 0,
+    slotZ: 0,
+    chuteFull: false,
+    spinTarget: 0,
+    ports: [null, null],
+    portSpin: [0, 0],
+    cue: (cue, n) => this.craftCue(cue, n),
+  };
 
   init(): void {
     factoryView.state = () => {
@@ -486,6 +526,22 @@ export class FactorySystem extends createSystem({}) {
         kind: p.at.kind,
         unit: 'unit' in p.at ? p.at.unit : undefined,
       }));
+    factoryView.crafts = () =>
+      plant.units
+        .filter((u) => u.type === 'maker' || u.type === 'combiner')
+        .map((u) => {
+          const rig = this.unitRefs.get(u.id)?.craft;
+          const dur = (u.type === 'maker' ? FACTORY.makerS : FACTORY.combinerS) * craftFactor();
+          return {
+            unit: u.id,
+            type: u.type,
+            item: rig?.item ?? null,
+            p: u.craftT < 0 ? -1 : Math.min(1, u.craftT / dur),
+            lift: rig ? rig.head.position.y - rig.headBase : 0,
+            phantom: rig?.phantomN ?? 0,
+            portOn: rig?.portOn ?? false,
+          };
+        });
   }
 
   update(delta: number): void {
@@ -533,8 +589,10 @@ export class FactorySystem extends createSystem({}) {
     tickBeltTread(dt, FACTORY.railSpeed * railFactor());
 
     this.drainEvents();
+    // Dressing first: the craft theatre poses the forming parts that
+    // renderParts then draws.
+    this.tickUnitDressing(delta, dt);
     this.renderParts();
-    this.tickUnitDressing(delta);
   }
 
   /* ── structures: feeds, unit meshes, run hardware ─────────────────────── */
@@ -603,6 +661,9 @@ export class FactorySystem extends createSystem({}) {
         { di: -1, dj: 0 },
       ][unit.rot];
       refs.group.rotation.y = Math.atan2(d.di, d.dj);
+      // The craft theatre composes its phantoms through this matrix the
+      // same frame, before the renderer would have refreshed it.
+      refs.group.updateMatrix();
       // A rail dresses for its neighbours on every rebuild: a corner
       // wears its curve, a crossed one raises the deck. Same generation
       // tick that re-poses it, so it can't lag the plant either.
@@ -721,6 +782,13 @@ export class FactorySystem extends createSystem({}) {
       refs.gland.guideMat.dispose();
     }
     if (refs.lampMat) refs.lampMat.dispose();
+    if (refs.craft) {
+      refs.craft.glowMat.dispose();
+      refs.craft.flashMat.dispose();
+      refs.craft.heatMat.dispose();
+      refs.craft.sparkMat.dispose();
+      refs.craft.sparks.geometry.dispose();
+    }
     if (refs.halo) refs.halo.dispose();
     if (refs.fill) refs.fill.mat.dispose();
     if (refs.vatGlow) refs.vatGlow.dispose();
@@ -1357,7 +1425,9 @@ export class FactorySystem extends createSystem({}) {
                 : 1.0 // a rail, with a part riding it
               : unit.type === 'post'
                 ? 0.73
-                : 0.99; // bench plant: drum crowns, pistons, lids
+                : unit.type === 'combiner'
+                  ? 1.2 // the press frame's columns, and a clamp at full lift
+                  : 0.99; // bench plant: drum crowns, the ram's lift, lids
         if (top > floor) floor = top;
       }
     }
@@ -1780,24 +1850,49 @@ export class FactorySystem extends createSystem({}) {
         this.partSeen.set(part.id, born);
       }
       const age = this.clock - born;
-      // A part is BORN with a punch — the one moment that says "the
-      // maker made something", which playtest never once saw.
-      const punch = age < 0.4 ? 1 + 1.4 * (1 - age / 0.4) ** 3 : 1;
+      // A part is BORN with a punch — a clack as it lands on the chute.
+      // (It was a 2.4× pop, the one moment that said "the maker made
+      // something"; the craft theatre now shows the whole making, and
+      // the ghost hands off to the part in place, so the pop is a nudge.)
+      const punch = age < 0.3 ? 1 + 0.4 * (1 - age / 0.3) ** 3 : 1;
       const inHand = part.at.kind === 'hand';
-      if (inHand) {
-        const obj = grips?.[(part.at as { hand: 'left' | 'right' }).hand]?.object3D;
-        if (obj) obj.getWorldPosition(_pA);
-        else partPose(part, _pA);
+      // A COMBINER'S PORT PARTS, mid-craft, are walked in and fitted by
+      // the theatre: the pose comes from the rig, in the unit's frame.
+      const portRefs = part.at.kind === 'port' ? this.unitRefs.get(part.at.unit) : undefined;
+      if (portRefs?.craft?.portOn && part.at.kind === 'port') {
+        _m4.multiplyMatrices(portRefs.group.matrix, portRefs.craft.portPose[part.at.port]);
       } else {
-        partPose(part, _pA);
+        if (inHand) {
+          const obj = grips?.[(part.at as { hand: 'left' | 'right' }).hand]?.object3D;
+          if (obj) obj.getWorldPosition(_pA);
+          else partPose(part, _pA);
+        } else {
+          partPose(part, _pA);
+        }
+        // A slow idle turn, offset per part — parts at rest read as
+        // alive; a part in the fist holds still.
+        const spin = inHand ? 0 : this.clock * 0.7 + part.id * 1.3;
+        _q.setFromAxisAngle(UP_Y, spin);
+        _m4.compose(_pA, _q, _v3.set(punch, punch, punch));
       }
-      // A slow idle turn, offset per part — parts at rest read as alive;
-      // a part in the fist holds still.
-      const spin = inHand ? 0 : this.clock * 0.7 + part.id * 1.3;
-      _q.setFromAxisAngle(UP_Y, spin);
-      _m4.compose(_pA, _q, _v3.set(punch, punch, punch));
       for (let c = 0; c < pools.length; c++) {
         _m4b.multiplyMatrices(_m4, locals[c]);
+        pools[c].setMatrixAt(idx, _m4b);
+      }
+    }
+    // THE PHANTOMS: a maker's part-in-the-making, drawn through the same
+    // pools as the parts — the rig has already folded each component's
+    // kit matrix in, so only the unit's own frame is left to apply.
+    for (const refs of this.unitRefs.values()) {
+      const rig = refs.craft;
+      if (!rig || rig.phantomN === 0 || !rig.item) continue;
+      const pools = this.partPools.get(rig.item);
+      if (!pools) continue;
+      const idx = counts.get(rig.item) ?? 0;
+      if (idx >= 64) continue;
+      counts.set(rig.item, idx + 1);
+      for (let c = 0; c < pools.length && c < rig.phantomN; c++) {
+        _m4b.multiplyMatrices(refs.group.matrix, rig.phantom[c]);
         pools[c].setMatrixAt(idx, _m4b);
       }
     }
@@ -1814,11 +1909,29 @@ export class FactorySystem extends createSystem({}) {
     }
   }
 
-  /** The working tells: craft lamps pulse, the maker's piston bobs, the
-   *  combiner's clamp presses, and the dock's halo breathes — flashing
-   *  when a delivery lands. (The COUNT lives on the Ⓐ card, not in the
-   *  room — the halo only says "it went in".) */
-  private tickUnitDressing(delta: number): void {
+  /** A craft cue → the shop's noise for it. Silenced under the tools'
+   *  fast-forward, where a four-second craft plays in a fraction of one
+   *  and every cue would land in the same frame. */
+  private craftCue = (cue: CraftCue, n: number): void => {
+    if (plant.timeScale > 2 || site.screen !== 'factory') return;
+    if (cue === 'strike') sfx.forgeStrike(n);
+    else if (cue === 'press') sfx.hydraulicSigh();
+    else if (cue === 'charge') sfx.chargeRise(0.5);
+    else if (cue === 'etch') sfx.segmentClick(8 + n);
+    else if (cue === 'pin' || cue === 'spark') sfx.arcZap();
+    else if (cue === 'thread' || cue === 'spin') sfx.servoRun(cue === 'spin');
+    else if (cue === 'seat') sfx.latchDogs();
+    else if (cue === 'torque') sfx.segmentClick(4 + n * 3);
+    else if (cue === 'lit') sfx.flowArrive('volt');
+  };
+
+  /** The working tells: craft lamps pulse, THE CRAFT THEATRE plays each
+   *  item's own making on its machine (factory/craft.ts), and the dock's
+   *  halo breathes — flashing when a delivery lands. (The COUNT lives on
+   *  the Ⓐ card, not in the room — the halo only says "it went in".)
+   *  `dt` is sim time (scaled); `delta` is wall time for the tells that
+   *  should not speed up with the tools' fast-forward. */
+  private tickUnitDressing(delta: number, dt: number): void {
     this.dockFlash = Math.max(0, this.dockFlash - delta * 2.2);
     const breathe = 0.5 + 0.5 * Math.sin(this.clock * 2.2);
     // THE BREW. The level in the vat is the only progress bar in TUBES
@@ -1867,9 +1980,36 @@ export class FactorySystem extends createSystem({}) {
           ? 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(this.clock * 6))
           : 0.12;
       }
-      if (refs.anim) {
-        const stroke = crafting ? (0.5 + 0.5 * Math.sin(this.clock * 7)) * refs.anim.travel : 0;
-        refs.anim.mesh.position.y = refs.anim.baseY + stroke;
+      if (refs.craft) {
+        // What is being made, and how far along: the sim's own craft
+        // clock over the craft's own length (QUICK BOXES shortens both).
+        const rig = refs.craft;
+        let item: ItemId | null = null;
+        let p = -1;
+        const ctx = this.craftCtx;
+        ctx.ports[0] = null;
+        ctx.ports[1] = null;
+        if (unit.type === 'maker') {
+          const seated = runSeatedAt(unit.id);
+          item = (seated ? MAKES[seated.line.id] : undefined) ?? rig.item;
+          if (crafting && item) p = Math.min(1, unit.craftT / (FACTORY.makerS * craftFactor()));
+        } else {
+          const a = unit.ports[0] >= 0 ? partById(unit.ports[0]) : undefined;
+          const b = unit.ports[1] >= 0 ? partById(unit.ports[1]) : undefined;
+          ctx.ports[0] = a?.item ?? null;
+          ctx.ports[1] = b?.item ?? null;
+          ctx.portSpin[0] = this.clock * 0.7 + (a?.id ?? 0) * 1.3;
+          ctx.portSpin[1] = this.clock * 0.7 + (b?.id ?? 0) * 1.3;
+          if (a && b) item = COMBINES[combineKey(a.item, b.item)] ?? null;
+          if (crafting && item) p = Math.min(1, unit.craftT / (FACTORY.combinerS * craftFactor()));
+        }
+        const queue = chuteParts(unit.id).length;
+        ctx.dt = dt;
+        ctx.clock = this.clock;
+        ctx.slotZ = chuteReach(Math.min(FACTORY.chuteSlots - 1, queue));
+        ctx.chuteFull = queue >= FACTORY.chuteSlots;
+        ctx.spinTarget = this.clock * 0.7 + plant.nextPart * 1.3;
+        tickCraft(rig, item, p, ctx);
       }
       if (refs.halo) {
         refs.halo.opacity = 0.16 + 0.14 * breathe + 0.55 * this.dockFlash;

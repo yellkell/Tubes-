@@ -15,7 +15,9 @@
  * so it is built in this idiom rather than the other one — a banded tank,
  * which is what a vat is anyway.
  *
- * Everything here BUILDS; FactorySystem poses and animates. The gland
+ * Everything here BUILDS; FactorySystem poses and animates, and
+ * factory/craft.ts plays each item's own making on the die set and the
+ * press frame built here. The gland
  * (a unit's tube intake) deliberately mirrors the socket's anatomy —
  * ring, open throat, iris, guide — because to the pull it IS a socket,
  * just one that stands on legs. Only a MAKER and the VAT wear one: the
@@ -42,15 +44,19 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
+  Points,
   Quaternion,
   RepeatWrapping,
   RingGeometry,
   SRGBColorSpace,
   TorusGeometry,
   Vector3,
+  type Object3D,
 } from 'three';
 import { FACTORY, FLOOR, LINES, UNITS, type ItemId, type LineSpec, type UnitType } from '../config.js';
 import { glandReach } from './sim.js';
+import type { CraftRig } from './craft.js';
+import { glintTexture, sizedPointsMaterial } from '../materials/glow.js';
 import { createVatLiquid } from '../materials/vat.js';
 
 /* ── shared geometry / materials ────────────────────────────────────────── */
@@ -326,9 +332,11 @@ export interface UnitRefs {
   gland: GlandRefs | null;
   /** Maker/combiner: the craft lamp FactorySystem pulses. */
   lampMat: MeshBasicMaterial | null;
-  /** The working part — the maker's piston, the combiner's clamp —
-   *  FactorySystem bobs it while a craft runs. */
-  anim: { mesh: Mesh; baseY: number; travel: number } | null;
+  /** THE CRAFT THEATRE — the maker's ram over its anvil, the combiner's
+   *  clamp on its press frame, and the flash, glow and sparks each craft
+   *  plays with. factory/craft.ts drives it, one choreography per item;
+   *  this file only builds it. Null on everything that doesn't craft. */
+  craft: CraftRig | null;
   /** The dock's delivery halo — breathes, and flashes when one lands. */
   halo: MeshBasicMaterial | null;
   /** The vat's brew: the level mesh that rises inside the glass, its
@@ -360,6 +368,106 @@ function chuteTray(group: Group): void {
     lip.position.set(side * 0.074, UNITS.crate.benchTop + 0.012, UNITS.crate.size / 2 + 0.05);
     group.add(lip);
   }
+}
+
+/** How many sparks a forge throws — the pool every rig carries. */
+export const SPARKS = 24;
+
+/**
+ * THE CRAFT RIG's effects: a glow disc lying on the stage (molten iron,
+ * pooled coolant, a lit filament), a flash ring that expands off a
+ * strike, and a pool of sparks (glint sprites, so they read as sparks
+ * and not confetti). All of it dark at rest and `visible = false`, so
+ * the build ghost — which glasses every mesh it is handed — never shows
+ * them. factory/craft.ts owns every number in here after this.
+ */
+function craftRig(
+  group: Group,
+  kind: 'maker' | 'combiner',
+  head: Object3D,
+  stageY: number,
+): CraftRig {
+  const glowMat = new MeshBasicMaterial({
+    color: 0xffa22e,
+    transparent: true,
+    opacity: 0,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    side: DoubleSide,
+  });
+  const glow = new Mesh(discGeo(), glowMat);
+  glow.rotation.x = -Math.PI / 2;
+  glow.scale.setScalar(kind === 'maker' ? 0.088 : 0.1);
+  glow.position.y = stageY + 0.002;
+  glow.renderOrder = 12;
+  glow.visible = false;
+  group.add(glow);
+
+  const flashMat = glowMat.clone();
+  const flash = new Mesh(ringGeo(), flashMat);
+  flash.rotation.x = -Math.PI / 2;
+  flash.position.y = stageY + 0.005;
+  flash.renderOrder = 12;
+  flash.visible = false;
+  group.add(flash);
+
+  // THE HEAT: an additive shell hugging the work — a slug reads as
+  // MOLTEN from the side (the disc under it is hidden by it), a canister
+  // as sweating coolant, a stack as lit — sized and coloured per frame.
+  const heatMat = glowMat.clone();
+  const heat = new Mesh(openCylGeo(), heatMat);
+  heat.renderOrder = 12;
+  heat.visible = false;
+  group.add(heat);
+
+  const sparkPos = new Float32Array(SPARKS * 3);
+  const sparkVel = new Float32Array(SPARKS * 3);
+  const sizes = new Float32Array(SPARKS);
+  for (let n = 0; n < SPARKS; n++) sizes[n] = 0.5 + Math.random() * 0.9;
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new Float32BufferAttribute(sparkPos, 3));
+  geo.setAttribute('aSize', new Float32BufferAttribute(sizes, 1));
+  const sparkMat = sizedPointsMaterial({
+    map: glintTexture(),
+    color: 0xffa22e,
+    size: 0.035,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0,
+    blending: AdditiveBlending,
+    depthWrite: false,
+  });
+  const sparks = new Points(geo, sparkMat);
+  sparks.frustumCulled = false;
+  sparks.renderOrder = 13;
+  sparks.visible = false;
+  group.add(sparks);
+
+  return {
+    kind,
+    head,
+    headBase: head.position.y,
+    stageY,
+    glow,
+    glowMat,
+    flash,
+    flashMat,
+    flashSize: 0.1,
+    heat,
+    heatMat,
+    sparks,
+    sparkMat,
+    sparkPos,
+    sparkVel,
+    item: null,
+    lastP: -1,
+    flashT: Infinity,
+    sparkT: Infinity,
+    phantom: Array.from({ length: 6 }, () => new Matrix4()),
+    phantomN: 0,
+    portPose: [new Matrix4(), new Matrix4()],
+    portOn: false,
+  };
 }
 
 function craftLamp(group: Group, y: number): MeshBasicMaterial {
@@ -469,17 +577,18 @@ export function setBeltForm(
 /**
  * All builders face OUT along local +Z; FactorySystem rotates per rot.
  * EVERY ROLE ITS OWN SILHOUETTE — readable from across the room, the way
- * the lines are: the MAKER is a drum with a working piston (something is
- * being formed in there), the COMBINER is twin-lobed under one clamp
- * (two things meet), the CHEST is a banded crate (things keep), and the
- * DOCK is the round pedestal with the amber mouth (things LEAVE here).
+ * the lines are: the MAKER is a drum with a working die set on its crown
+ * (something is being formed there, in the open), the COMBINER is
+ * twin-lobed under one clamp on a press frame (two things meet), the
+ * CHEST is a banded crate (things keep), and the DOCK is the round
+ * pedestal with the amber mouth (things LEAVE here).
  */
 export function buildUnit(type: UnitType): UnitRefs {
   const group = new Group();
   const { benchTop, size } = UNITS.crate;
   let gland: GlandRefs | null = null;
   let lampMat: MeshBasicMaterial | null = null;
-  let anim: UnitRefs['anim'] = null;
+  let craft: CraftRig | null = null;
   let halo: MeshBasicMaterial | null = null;
   let fill: UnitRefs['fill'] = null;
   let vatGlow: MeshBasicMaterial | null = null;
@@ -527,7 +636,7 @@ export function buildUnit(type: UnitType): UnitRefs {
     ring.renderOrder = 12;
     group.add(ring);
   } else if (type === 'maker') {
-    // THE MAKER: a solidifier drum — feedstock in the back, a piston
+    // THE MAKER: a solidifier drum — feedstock in the back, a die set
     // working on top, stamped parts out the front. Its bands wear the
     // furnace livery cold, and FactorySystem re-paints them to whichever
     // LINE is seated: a maker on violet looks violet from across the
@@ -550,24 +659,42 @@ export function buildUnit(type: UnitType): UnitRefs {
       band.position.y = y;
       group.add(band);
     }
-    // The drum stands on a skirt where it meets the leg, and the piston
+    // The drum stands on a skirt where it meets the leg, and the ram
     // works through a stuffing box — nothing enters or leaves a pressure
-    // vessel through a bare hole.
+    // vessel through a bare hole. The stuffing box is also THE ANVIL:
+    // its top face is the stage every part forms on.
     const skirt = new Mesh(new CylinderGeometry(1, 1, 1, 20), ironMat);
     skirt.scale.set(0.142, 0.018, 0.142);
     skirt.position.y = 0.552;
     group.add(skirt);
-    const stuffing = new Mesh(cylGeo(), hubMat);
-    stuffing.scale.set(0.063, 0.016, 0.063);
-    stuffing.position.y = benchTop + 0.004;
-    group.add(stuffing);
-    const piston = new Mesh(cylGeo(), hubMat);
-    piston.scale.set(0.05, 0.06, 0.05);
-    piston.position.y = benchTop + 0.03;
-    group.add(piston);
-    anim = { mesh: piston, baseY: benchTop + 0.03, travel: 0.028 };
+    const stageY = benchTop + 0.02;
+    const anvil = new Mesh(cylGeo(), hubMat);
+    anvil.scale.set(0.072, 0.02, 0.072);
+    anvil.position.y = benchTop + 0.01;
+    group.add(anvil);
+    // THE DIE SET. The old piston bobbed in place on a sine wave
+    // whatever was being made. This is a punch plate riding two guide
+    // pins: it rests ON the anvil, and craft.ts lifts it clear to strike
+    // a gear, draw a cell or scribe a chip. The pins stand OUTSIDE the
+    // work (a part forms between them, on the anvil's centre — a single
+    // central rod stabbed straight through the canister it was pressing)
+    // and run down into the drum, long enough to stay buried at full
+    // lift. The craft lamp rides the plate.
+    const ram = new Group();
+    ram.position.y = stageY + 0.0175;
+    const head = new Mesh(cylGeo(), hubMat);
+    head.scale.set(0.062, 0.035, 0.062);
+    ram.add(head);
+    for (const sx of [-1, 1]) {
+      const pin = new Mesh(cylGeo(), hubMat);
+      pin.scale.set(0.007, 0.2, 0.007);
+      pin.position.set(sx * 0.06, -0.1, 0);
+      ram.add(pin);
+    }
+    lampMat = craftLamp(ram, 0.024);
+    group.add(ram);
+    craft = craftRig(group, 'maker', ram, stageY);
     chuteTray(group);
-    lampMat = craftLamp(group, benchTop + 0.062);
     gland = buildGland();
   } else if (type === 'combiner') {
     // THE COMBINER: twin lobes under one clamp — two parts walk in the
@@ -595,10 +722,28 @@ export function buildUnit(type: UnitType): UnitRefs {
     }
     // The FITTER'S BRASS: the clamp that presses two into one, and the
     // spine where the halves meet — the joint IS this box's trade.
+    //
+    // THE PRESS FRAME. The clamp used to be a bar lying on the lobes
+    // that dipped two centimetres on a sine wave. It rides two brass
+    // columns now, tall enough to lift clear of a servo stacked on a
+    // pump (the tallest thing this box ever fits), so the two parts can
+    // walk in under it, meet in the middle, and get PRESSED — craft.ts
+    // owns the stroke. Hex caps on the columns: a frame is bolted kit.
     const clamp = new Mesh(boxGeo(), brassMat);
     clamp.scale.set(0.3, 0.04, 0.11);
     clamp.position.y = benchTop + 0.024;
     group.add(clamp);
+    for (const sx of [-1, 1]) {
+      const column = new Mesh(cylGeo(), brassMat);
+      column.scale.set(0.014, 0.28, 0.014);
+      column.position.set(sx * 0.128, benchTop + 0.14, 0);
+      group.add(column);
+      const cap = new Mesh(sided(6), hubMat);
+      cap.scale.set(0.022, 0.014, 0.022);
+      cap.position.set(sx * 0.128, benchTop + 0.287, 0);
+      group.add(cap);
+    }
+    craft = craftRig(group, 'combiner', clamp, benchTop + 0.003);
     const spine = new Mesh(boxGeo(), brassMat);
     spine.scale.set(0.024, 0.25, 0.25);
     spine.position.y = benchTop - 0.125;
@@ -612,7 +757,6 @@ export function buildUnit(type: UnitType): UnitRefs {
       bolt.position.set(0, benchTop + dy, 0.13);
       group.add(bolt);
     }
-    anim = { mesh: clamp, baseY: benchTop + 0.024, travel: -0.02 };
     chuteTray(group);
     lampMat = craftLamp(group, benchTop + 0.05);
   } else if (type === 'belt') {
@@ -809,7 +953,7 @@ export function buildUnit(type: UnitType): UnitRefs {
     gland.group.rotation.y = Math.PI;
     group.add(gland.group);
   }
-  return { group, gland, lampMat, anim, halo, fill, vatGlow, belt, tint };
+  return { group, gland, lampMat, craft, halo, fill, vatGlow, belt, tint };
 }
 
 /* ── the feeds ──────────────────────────────────────────────────────────── */
