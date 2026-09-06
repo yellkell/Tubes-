@@ -23,7 +23,7 @@
  * the room: a pour mid-race keeps racing, because the machine doesn't
  * know you stopped.
  *
- * THREE THINGS THIS FILE LEARNED LATE:
+ * FOUR THINGS THIS FILE LEARNED LATE:
  *
  *  · ONE DOOR. The board used to list every sheet in the book and let
  *    you START any of them — which meant starting sheet four on an empty
@@ -40,6 +40,12 @@
  *    is inside it and what is plumbed into it — and carries UNPLUG,
  *    which is the verb that did not exist at all until playtest went
  *    looking for it and found DELETE instead.
+ *  · THE COACH LINE. The first flange got lost: the board says "trigger
+ *    to mount" and leaves, the beam only draws once it is already on a
+ *    wall, and the only words left were behind Ⓐ. FIRST LIGHT now says
+ *    its one sentence in the room, low and ahead, until the mount lands
+ *    (JobSpec.coach) — and only FIRST LIGHT: after that the flange on
+ *    the ray is the cue.
  */
 
 import { InputComponent, createSystem } from '@iwsdk/core';
@@ -82,7 +88,7 @@ import {
   unlockedJobs,
   upgradeOwned,
 } from '../game/progress.js';
-import { site } from '../game/state.js';
+import { jobSpec, site } from '../game/state.js';
 import {
   bankTotal,
   chestParts,
@@ -201,6 +207,9 @@ export const menuView: {
   /** THANKS FOR PLAYING — is it up, and what does it say. */
   finaleUp?: () => boolean;
   snapFinale?: () => string;
+  /** THE COACH LINE — is it up, and what does it say. */
+  coachUp?: () => boolean;
+  snapCoach?: () => string;
 } = {};
 
 const _origin = new Vector3();
@@ -219,6 +228,8 @@ export class MenuSystem extends createSystem({}) {
   private box!: Panel;
   /** THANKS FOR PLAYING. */
   private finale!: Panel;
+  /** THE COACH LINE — the first sheet's one sentence. */
+  private coach!: Panel;
   private pointers!: Record<'left' | 'right', PointerRay>;
   private ray = new Raycaster();
   private hits: Intersection[] = [];
@@ -258,6 +269,10 @@ export class MenuSystem extends createSystem({}) {
     this.finale.alwaysOnTop();
     this.scene.add(this.finale.group);
 
+    this.coach = new Panel(BOARD.coachW, BOARD.coachH, BOARD.coachPx[0], BOARD.coachPx[1]);
+    this.coach.setShown(false, true);
+    this.scene.add(this.coach.group);
+
     this.pointers = { left: new PointerRay(this.scene), right: new PointerRay(this.scene) };
 
     this.plant(this.board.group, BOARD.position[1], 1.35);
@@ -296,6 +311,17 @@ export class MenuSystem extends createSystem({}) {
     menuView.finaleUp = () => site.finale;
     menuView.snapFinale = () =>
       (this.finale.ctx().canvas as HTMLCanvasElement).toDataURL('image/png');
+    menuView.coachUp = () => this.coach.isShown;
+    menuView.snapCoach = () => (this.coach.ctx().canvas as HTMLCanvasElement).toDataURL('image/png');
+  }
+
+  /** Does the shift want the coach line up: a sheet that carries one,
+   *  its live run still placing, and the hands not under the card. */
+  private coachWanted(): boolean {
+    if (site.screen !== 'shift' || site.paused) return false;
+    if (!jobSpec().coach) return false;
+    const run = site.runs[site.activeRun];
+    return Boolean(run && run.phase === 'place');
   }
 
   /** Plant a panel in front of the player's face: forward on the floor
@@ -402,6 +428,10 @@ export class MenuSystem extends createSystem({}) {
     const finaleUp = site.finale;
     const boxUp = site.inspect >= 0 && site.screen === 'factory' && !finaleUp;
     const cardUp = site.paused && midShift && !boxUp && !finaleUp;
+    // THE COACH LINE: the first sheet's one sentence, up while its
+    // flange rides the ray and the card is not. The card pauses the
+    // hands and says the same thing bigger, so the two never stack.
+    const coachUp = this.coachWanted() && !cardUp;
 
     // The board re-plants every time it comes back — you wandered.
     if (site.screen !== this.lastScreen) {
@@ -429,20 +459,29 @@ export class MenuSystem extends createSystem({}) {
       );
     }
 
+    // The coach line comes to where you are, like everything else in
+    // this file — planted the moment it rises, never followed (a sign
+    // that chases the head is a sign you cannot read).
+    if (coachUp && !this.coach.isShown) this.plant(this.coach.group, BOARD.coachPosition[1], 0.9);
+
     this.board.setShown(boardUp);
     this.card.setShown(cardUp);
     this.box.setShown(boxUp);
     this.finale.setShown(finaleUp);
+    this.coach.setShown(coachUp);
 
     const pulse = this.chug();
 
     if (!boardUp && !cardUp && !boxUp && !finaleUp) {
       this.pointers.left.hide();
       this.pointers.right.hide();
+      // Nothing to press — but the coach line may still want painting.
+      this.repaintIfNeeded(boardUp, cardUp, boxUp, finaleUp, coachUp);
       this.board.tick(delta, pulse);
       this.card.tick(delta, pulse);
       this.box.tick(delta, pulse);
       this.finale.tick(delta, pulse);
+      this.coach.tick(delta, pulse);
       return;
     }
 
@@ -494,11 +533,12 @@ export class MenuSystem extends createSystem({}) {
       }
     }
 
-    this.repaintIfNeeded(boardUp, cardUp, boxUp, finaleUp);
+    this.repaintIfNeeded(boardUp, cardUp, boxUp, finaleUp, coachUp);
     this.board.tick(delta, pulse);
     this.card.tick(delta, pulse);
     this.box.tick(delta, pulse);
     this.finale.tick(delta, pulse);
+    this.coach.tick(delta, pulse);
   }
 
   /** Which of our four panels a raycast landed on. */
@@ -671,6 +711,7 @@ export class MenuSystem extends createSystem({}) {
     cardUp: boolean,
     boxUp: boolean,
     finaleUp: boolean,
+    coachUp: boolean,
   ): void {
     const runsKey = site.runs.map((r) => r.phase).join(',');
     const key = [
@@ -688,6 +729,7 @@ export class MenuSystem extends createSystem({}) {
       this.quitArm > 0,
       walls.length,
       site.fallbackRoom,
+      site.wallsReady,
       runsKey,
       ordersUnlocked(),
       bookFinished(),
@@ -720,6 +762,38 @@ export class MenuSystem extends createSystem({}) {
     if (cardUp) this.paintCard();
     if (boxUp) this.paintBox();
     if (finaleUp) this.paintFinale();
+    if (coachUp) this.paintCoach();
+  }
+
+  /* ── THE COACH LINE ───────────────────────────────────────────────────── */
+
+  /** One sentence in the room, under the line's own name and colour: which
+   *  line, what to do with it. No buttons — it is read, not pressed. Before
+   *  the scan lands there is no plaster to aim at, so it says that instead. */
+  private paintCoach(): void {
+    const [cw] = BOARD.coachPx;
+    const run = site.runs[site.activeRun];
+    const text = site.wallsReady ? (jobSpec().coach ?? '') : 'Look around to find walls.';
+    this.coach.paint(
+      '',
+      (g) => {
+        g.textBaseline = 'middle';
+        g.textAlign = 'left';
+        if (run) {
+          g.fillStyle = run.line.hex;
+          g.beginPath();
+          g.arc(52, 58, 9, 0, Math.PI * 2);
+          g.fill();
+          g.font = font(700, 24);
+          g.letterSpacing = '3px';
+          g.fillText(`${run.line.name} \u00b7 MOUNT THE FLANGE`, 74, 59);
+          g.letterSpacing = '0px';
+        }
+        wrapText(g, text, 44, 104, cw - 88, 34, font(600, 29), UI.text);
+      },
+      [],
+      null,
+    );
   }
 
   /** Everything about the inspected box that could change under you. */

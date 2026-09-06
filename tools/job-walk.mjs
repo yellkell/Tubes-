@@ -162,10 +162,18 @@ for (let job = 0; job < jobRuns.length; job++) {
   await page.waitForFunction(() => window.__tubes.site.screen === 'shift', undefined, { timeout: 5000 });
   console.log(`JOB ${job + 1} — ${jobRuns[job]} run(s)`);
 
+  const coachUp = () => page.evaluate(() => window.__tubes.menu.coachUp());
+
   if (job === 0) {
+    // THE COACH LINE: the first sheet says its one sentence while the
+    // flange rides the ray — and steps aside for the card.
+    await page.waitForFunction(() => window.__tubes.menu.coachUp(), undefined, { timeout: 3000 }).catch(() => {});
+    check(await coachUp(), 'FIRST LIGHT coaches the first flange');
+
     // THE JOB CARD, once: raise it, read what it offers, put it away.
     await page.evaluate(() => window.__tubes.menu.setPause(true));
     await page.waitForTimeout(400);
+    check(!(await coachUp()), 'the coach line steps aside for the card');
     const cardButtons = await page.evaluate(() => window.__tubes.menu.cardButtons());
     check(
       cardButtons.includes('resume') && cardButtons.includes('quit'),
@@ -174,6 +182,8 @@ for (let job = 0; job < jobRuns.length; job++) {
     await page.evaluate(() => window.__tubes.menu.act('resume'));
     await page.waitForFunction(() => !window.__tubes.site.paused, undefined, { timeout: 3000 });
     check(true, 'BACK TO IT puts the card away');
+    await page.waitForFunction(() => window.__tubes.menu.coachUp(), undefined, { timeout: 3000 }).catch(() => {});
+    check(await coachUp(), 'and the coach line comes back with the hands');
   }
 
   for (let r = 0; r < jobRuns[job]; r++) {
@@ -182,7 +192,11 @@ for (let job = 0; job < jobRuns.length; job++) {
       r,
       { timeout: 10000 },
     );
+    // Only the first sheet coaches: by CROSSTOWN the flange on the ray
+    // is the cue, and the room stays quiet.
+    if (job === 1 && r === 0) check(!(await coachUp()), 'CROSSTOWN says nothing — the flange on the ray is the cue');
     await workRun(r);
+    if (job === 0 && r === 0) check(!(await coachUp()), 'the coach line goes with the mount');
   }
 
   // SEATED LINES GIVE WAY TO EACH OTHER: on a multi-run job, no two

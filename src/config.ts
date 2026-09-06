@@ -341,6 +341,16 @@ export interface JobSpec {
   brief: string;
   runs: CoreLineId[];
   longHaul?: boolean;
+  /**
+   * ONE LINE OF COACHING, in the room, while a flange wants placing.
+   * Playtest lost the first flange: the board says "trigger to mount"
+   * and then goes away, the beam only draws once it is already ON a
+   * wall, and the only words left are behind Ⓐ — which a first-time
+   * player does not know to press. So the first sheet speaks once, low
+   * and ahead, until the mount lands. Later sheets stay silent: by then
+   * the flange on the ray is the cue.
+   */
+  coach?: string;
 }
 
 export const JOBS: JobSpec[] = [
@@ -349,6 +359,7 @@ export const JOBS: JobSpec[] = [
     name: 'FIRST LIGHT',
     brief: 'Connect MAINS. Trigger to mount a flange; use both grips to haul the tube to its matching socket.',
     runs: ['mains'],
+    coach: 'Aim your right hand at a wall. Pull the trigger to mount the flange.',
   },
   {
     id: 'crosstown',
@@ -927,6 +938,13 @@ export const BOARD = {
   boxH: 0.5,
   boxPx: [560, 500] as [number, number],
   boxPosition: [0, 1.26, -0.86] as [number, number, number],
+  /** THE COACH LINE — one sentence, low and ahead, while the first
+   *  sheet's flange wants placing (JobSpec.coach). Below the eye line
+   *  and short of the card's spot, so it never sits where a hand aims. */
+  coachW: 0.64,
+  coachH: 0.2,
+  coachPx: [640, 200] as [number, number],
+  coachPosition: [0, 1.0, -0.9] as [number, number, number],
 };
 
 /** The celebration when a job's last run lands: how long the room gets to
