@@ -61,7 +61,7 @@ const state = () => page.evaluate(() => window.__tubes.floor.state());
 const moveSide = (side, v) => page.evaluate(({ s, val }) => window.__tubes.floor.moveSide(s, val), { s: side, val: v });
 const dragTo = (side, v) => page.evaluate(({ s, val }) => window.__tubes.floor.dragTo(s, val), { s: side, val: v });
 
-console.log('CLOCK IN');
+console.log('PLAY');
 await clockIn();
 
 console.log('THE FLOOR');

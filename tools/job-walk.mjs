@@ -36,7 +36,7 @@ page.on('pageerror', (e) => fails.push(`[pageerror] ${e.message}`));
 await page.goto(base, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => page.goto(base));
 await page.waitForTimeout(1200);
 
-console.log('CLOCK IN');
+console.log('PLAY');
 await page.click('#enter-ar');
 await page.waitForFunction(() => document.body.classList.contains('app-entered'), { timeout: 15000 });
 await page.waitForFunction(() => Boolean(window.__tubes?.site), { timeout: 10000 });

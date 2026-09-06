@@ -11,23 +11,20 @@
     />
     <style>
       /*
-       * THE DOOR — the one flatscreen page in TUBES, and the last thing
-       * you see before the room becomes the game.
+       * THE DOOR — the one flatscreen page in TUBES.
        *
-       * It wears the shop's own language, because it is the shop's front
-       * door: RAJDHANI (the house face, stencilled onto every panel
-       * inside), FURNACE AMBER (#ffa22e — the accent, and the only
-       * colour that ever carries primacy), dark iron, and the HAZARD
-       * TAPE the floor is marked out with. What it replaced was generic
-       * Arial Black under a cyan/red chromatic split and a scaling
-       * throb — handsome, and from a different game: that is a rave's
-       * neon, and this is a plant.
+       * IT SHOWS THE TUBES. Three runs cross the frame, one per LINE, in
+       * the lines' own colours straight off config.ts: MAINS furnace
+       * amber, COOLANT glacier cyan, VOLT violet plasma. Each is a real
+       * telescoping run — five sections stepping DOWN in bore toward the
+       * head, a collar over every joint, frosted metal over a hot core of
+       * liquid — and each pours at its own line's pace (MAINS slow and
+       * heavy, COOLANT fast, VOLT fastest), which is the one thing the
+       * three lines are actually different at.
        *
-       * Two objects, and the craft is all in them: a NAMEPLATE bolted to
-       * the wall with the word stamped on it, and one machined amber key
-       * under it. A work light hangs over the pair and breathes at the
-       * pace everything inside breathes at; the tape runs across the
-       * bottom of the frame, where the shop floor starts.
+       * The word sits over the run, the key sits under it, and that is
+       * the whole page. It has no plate and no tagline: a page for a game
+       * about hauling pipe should be pipe.
        *
        * The contract with main.ts is unchanged: #enter-ar is the one
        * control, and .landing hides itself the moment body carries
@@ -35,19 +32,17 @@
        */
       :root {
         color-scheme: dark;
-        /* The shop's palette — the same values ui/panel.ts paints with. */
         --iron: #0b0a07;
-        --iron-lit: #1b1710;
-        --amber: #ffa22e;
-        --amber-hot: #ffc470;
-        --amber-deep: #e0810f;
-        --amber-shadow: #7d430b;
-        --on-amber: #221103;
         --stencil: #fdf6ec;
         --tape-dark: #171216;
-        /* Rajdhani arrives with the bundle (ui/fonts.ts adds the faces to
-           the document), so the landing paints in Arial Black for the
-           first frame and swaps — exactly as every panel inside does. */
+        /* THE LINES — config.ts LINES, glow / deep / foam, unchanged. */
+        --mains: #ffa22e;
+        --coolant: #46e0ff;
+        --volt: #b46bff;
+        --on-amber: #221103;
+        /* Rajdhani arrives with the bundle (ui/fonts.ts puts the faces on
+           the document), so the page paints in the same Arial Black
+           fallback every canvas panel does and swaps with them. */
         --face: 'Rajdhani', 'Arial Black', system-ui, sans-serif;
       }
       html,
@@ -79,20 +74,11 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: clamp(26px, 5vh, 52px);
-        padding: clamp(16px, 5vw, 48px);
+        gap: clamp(20px, 4vh, 44px);
+        padding: clamp(16px, 5vw, 48px) 0;
         box-sizing: border-box;
         overflow: hidden;
-        background:
-          /* the lamp's throw on the wall behind everything */
-          radial-gradient(120% 78% at 50% -8%, rgba(255, 162, 46, 0.11), transparent 62%),
-          /* brushed iron: a hairline tooth, not a texture you can name */
-            repeating-linear-gradient(
-              90deg,
-              rgba(255, 255, 255, 0.013) 0 2px,
-              transparent 2px 6px
-            ),
-          linear-gradient(180deg, #100d09 0%, #0b0a07 46%, #060504 100%);
+        background: linear-gradient(180deg, #100d09 0%, #0b0a07 46%, #060504 100%);
         transition:
           opacity 220ms ease,
           visibility 220ms ease;
@@ -102,131 +88,213 @@
         visibility: hidden;
         pointer-events: none;
       }
-
-      /* THE WORK LIGHT. One warm pool hung over the plate, breathing at
-         the pace the hardware inside breathes at (2.4 s there; slower
-         here, because a lamp is not a pulse). */
-      .landing__lamp {
-        position: absolute;
-        top: -42%;
-        left: 50%;
-        width: min(135vw, 1180px);
-        aspect-ratio: 1;
-        translate: -50% 0;
-        pointer-events: none;
-        background: radial-gradient(
-          circle,
-          rgba(255, 176, 74, 0.17),
-          rgba(255, 140, 26, 0.06) 42%,
-          transparent 68%
-        );
-        filter: blur(18px);
-        animation: lamp 7.5s ease-in-out infinite;
-      }
-      @keyframes lamp {
-        0%,
-        100% {
-          opacity: 0.86;
-          transform: scale(1);
-        }
-        50% {
-          opacity: 1;
-          transform: scale(1.035);
-        }
-      }
-      /* The corners sink away: a lit spot on a dark wall, not a lit page. */
+      /* The corners sink away, so the lit run is the only thing here. */
       .landing::after {
         content: '';
         position: absolute;
         inset: 0;
         pointer-events: none;
-        background: radial-gradient(118% 88% at 50% 38%, transparent 42%, rgba(0, 0, 0, 0.62));
+        background: radial-gradient(122% 92% at 50% 46%, transparent 40%, rgba(0, 0, 0, 0.66));
       }
 
-      /* ── the nameplate ─────────────────────────────────────────────── */
-      /* Bolts are what make a thing read as fabricated rather than
-         modelled — the same law the boxes on the floor are built to. */
-      .landing__plate {
-        position: relative;
-        z-index: 1;
-        max-width: 100%;
-        box-sizing: border-box;
-        padding: clamp(20px, 4.2vh, 44px) clamp(30px, 7vw, 92px);
-        border: 1px solid rgba(255, 255, 255, 0.085);
-        border-top-color: rgba(255, 255, 255, 0.19);
-        border-radius: 3px;
-        background: linear-gradient(180deg, var(--iron-lit) 0%, #100d09 58%, #0a0806 100%);
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.06),
-          0 20px 46px rgba(0, 0, 0, 0.6);
-      }
-      .landing__plate::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        /* Lit from the lamp: a bright crown up-left, a shadowed seat. */
-        --bolt: radial-gradient(
-          circle at 40% 32%,
-          #b39b7c 0 24%,
-          #7d684f 34%,
-          #3a2e22 48%,
-          #150f0a 58%,
-          transparent 68%
-        );
-        background-image: var(--bolt), var(--bolt), var(--bolt), var(--bolt);
-        background-repeat: no-repeat;
-        background-size: 17px 17px;
-        background-position:
-          13px 13px,
-          calc(100% - 13px) 13px,
-          13px calc(100% - 13px),
-          calc(100% - 13px) calc(100% - 13px);
-      }
-      /* TUBES, stamped: warm white with a hard edge under it, and the
-         lamp's own bloom around it. No chromatic split — the three lines
-         wear amber, cyan and violet INSIDE, where they mean something. */
+      /* ── the word ──────────────────────────────────────────────────── */
       .landing__word {
+        position: relative;
+        z-index: 2;
         display: block;
         font-family: var(--face);
         font-weight: 700;
-        font-size: clamp(58px, 17vw, 228px);
+        font-size: clamp(56px, 15vw, 190px);
         line-height: 0.9;
-        letter-spacing: 0.12em;
-        text-indent: 0.12em;
+        letter-spacing: 0.14em;
+        text-indent: 0.14em;
         color: var(--stencil);
         user-select: none;
         text-shadow:
-          0 2px 0 rgba(0, 0, 0, 0.62),
-          0 3px 5px rgba(0, 0, 0, 0.45),
-          0 0 18px rgba(255, 162, 46, 0.26),
-          0 0 72px rgba(255, 140, 26, 0.16);
+          0 3px 0 rgba(0, 0, 0, 0.55),
+          0 4px 18px rgba(0, 0, 0, 0.6);
+      }
+
+      /* ── the runs ──────────────────────────────────────────────────── */
+      /* Full-bleed: pipe enters the frame and leaves it, the way plant
+         does. Nothing here is ever capped on screen. */
+      .runs {
+        position: relative;
+        z-index: 1;
+        width: 100vw;
+        display: flex;
+        flex-direction: column;
+        gap: clamp(10px, 1.7vh, 20px);
+        pointer-events: none;
+      }
+      .run {
+        display: flex;
+        align-items: center;
+        width: 112%;
+        margin-left: -6%;
+      }
+      /* COOLANT runs the other way — three runs all tapering to the same
+         side reads as a chart, not a shop. */
+      .run--coolant {
+        flex-direction: row-reverse;
+        margin-left: -6%;
+      }
+      .run--mains {
+        --glow: var(--mains);
+        --deep: #571f02;
+        --foam: #ffe9c4;
+        --halo: rgba(255, 162, 46, 0.5);
+        --bore: clamp(52px, 9.2vh, 104px);
+        --pace: 7s; /* MAINS is slow and heavy */
+      }
+      .run--coolant {
+        --glow: var(--coolant);
+        --deep: #043346;
+        --foam: #dcf8ff;
+        --halo: rgba(70, 224, 255, 0.44);
+        --bore: clamp(44px, 7.8vh, 88px);
+        --pace: 4.2s; /* COOLANT is fast and bright */
+      }
+      .run--volt {
+        --glow: var(--volt);
+        --deep: #2a0b4e;
+        --foam: #efe0ff;
+        --halo: rgba(180, 107, 255, 0.46);
+        --bore: clamp(37px, 6.6vh, 74px);
+        --pace: 3.2s; /* VOLT travels in packets, and bites */
+      }
+
+      /* ONE SECTION of a telescoping run. The bore steps down toward the
+         head (--f), and the section is METAL FIRST: an opaque cylinder,
+         dark at both rims where the barrel turns away, a specular high
+         up where the work light catches it and a bounce low down off the
+         floor. The liquid is not the pipe — it glows through a window in
+         the middle of it, which is the whole look inside: a pour riding
+         behind frosted metal, never a lit rod. */
+      .sec {
+        position: relative;
+        flex: 1 1 0;
+        height: calc(var(--bore) * var(--f));
+        background: linear-gradient(
+          180deg,
+          #060504 0%,
+          #17130f 5%,
+          #453d35 14%,
+          #8d8175 23%,
+          #6b6257 30%,
+          #453e36 39%,
+          #2b2620 47%,
+          #241f1a 57%,
+          #383129 68%,
+          #4b443b 78%,
+          #221d19 89%,
+          #050403 100%
+        );
+        box-shadow:
+          0 0 40px -6px var(--halo),
+          inset 0 1px 0 rgba(255, 255, 255, 0.09);
+      }
+      /* THE WINDOW: the pour, seen through the frost. A narrow hot band
+         down the barrel's middle — deep at its edges, the line's glow
+         either side of a foam-white centreline. */
+      .sec > i {
+        position: absolute;
+        inset: 35% 0;
+        display: block;
+        background: linear-gradient(
+          180deg,
+          rgba(0, 0, 0, 0.55) 0%,
+          var(--deep) 12%,
+          var(--glow) 34%,
+          var(--foam) 50%,
+          var(--glow) 66%,
+          var(--deep) 88%,
+          rgba(0, 0, 0, 0.55) 100%
+        );
+        opacity: 0.94;
+        filter: blur(0.4px);
+      }
+      /* THE POUR: a front travelling the run at the line's own speed. */
+      .sec > i::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          rgba(255, 255, 255, 0.42) 50%,
+          transparent 100%
+        );
+        background-size: 40% 100%;
+        background-repeat: no-repeat;
+        animation: pour var(--pace) linear infinite;
+      }
+      @keyframes pour {
+        from {
+          background-position: -60% 0;
+        }
+        to {
+          background-position: 160% 0;
+        }
+      }
+      /* THE COLLAR over every joint — the fitting that covers the step in
+         bore, standing proud of the barrel like the real one. */
+      .sec::after {
+        content: '';
+        position: absolute;
+        right: -7px;
+        top: 50%;
+        translate: 0 -50%;
+        width: 14px;
+        height: calc(100% + 12px);
+        border-radius: 2px;
+        background: linear-gradient(
+          180deg,
+          #070605 0%,
+          #2b251f 9%,
+          #6e6459 24%,
+          #948779 33%,
+          #5c534a 46%,
+          #332d27 62%,
+          #4a433a 76%,
+          #1c1814 90%,
+          #060504 100%
+        );
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+      }
+      .run > .sec:last-child::after {
+        display: none;
+      }
+      .run--coolant > .sec::after {
+        right: auto;
+        left: -0.4em;
+      }
+      .run--coolant > .sec:last-child::after {
+        display: none;
       }
 
       /* ── the key ───────────────────────────────────────────────────── */
-      /* Solid amber on dark text: the board's own primary button, the
-         one it uses for START JOB. (The landing used to wear the
-         SECONDARY style — an amber outline — for the only action on the
-         page.) It sits on a hard shadow and presses into it. */
+      /* Solid amber on dark text: the board's own primary button, the one
+         it uses inside for START JOB. */
       #enter-ar {
         position: relative;
-        z-index: 1;
+        z-index: 2;
         appearance: none;
         border: 0;
         border-radius: 2px;
-        padding: clamp(17px, 2.2vh, 21px) clamp(38px, 7vw, 62px);
+        padding: clamp(16px, 2.1vh, 20px) clamp(46px, 8vw, 76px);
         font-family: var(--face);
         font-weight: 700;
-        font-size: clamp(17px, 2.2vw, 23px);
-        letter-spacing: 0.2em;
-        text-indent: 0.2em;
+        font-size: clamp(18px, 2.3vw, 25px);
+        letter-spacing: 0.22em;
+        text-indent: 0.22em;
         color: var(--on-amber);
-        background: linear-gradient(180deg, var(--amber-hot) 0%, var(--amber) 52%, var(--amber-deep) 100%);
+        background: linear-gradient(180deg, #ffc470 0%, var(--mains) 52%, #e0810f 100%);
         cursor: pointer;
         box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.4),
-          0 4px 0 var(--amber-shadow),
-          0 12px 30px rgba(255, 162, 46, 0.22);
+          inset 0 1px 0 rgba(255, 255, 255, 0.42),
+          0 4px 0 #7d430b,
+          0 12px 32px rgba(255, 162, 46, 0.26);
         transition:
           filter 120ms ease,
           translate 90ms ease,
@@ -235,24 +303,24 @@
       #enter-ar:hover:not([disabled]) {
         filter: brightness(1.08);
         box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.45),
-          0 4px 0 var(--amber-shadow),
-          0 14px 38px rgba(255, 162, 46, 0.36);
+          inset 0 1px 0 rgba(255, 255, 255, 0.48),
+          0 4px 0 #7d430b,
+          0 14px 40px rgba(255, 162, 46, 0.4);
       }
       #enter-ar:active:not([disabled]) {
         translate: 0 3px;
         box-shadow:
           inset 0 1px 0 rgba(255, 255, 255, 0.35),
-          0 1px 0 var(--amber-shadow),
+          0 1px 0 #7d430b,
           0 6px 18px rgba(255, 162, 46, 0.24);
       }
       #enter-ar:focus-visible {
         outline: 2px solid var(--stencil);
         outline-offset: 4px;
       }
-      /* THE MACHINE IS OFF, not broken. A headset-less browser gets
+      /* THE MACHINE IS OFF, not broken: a browser with no headset gets
          "XR unavailable" here (main.ts), and a dimmed amber key reads as
-         a fault; cold iron reads as a control that isn't live yet. */
+         a fault where cold iron reads as a control that isn't live. */
       #enter-ar[disabled] {
         background: linear-gradient(180deg, #241f18 0%, #191510 100%);
         color: rgba(250, 244, 235, 0.42);
@@ -263,29 +331,37 @@
       }
 
       /* ── the site boundary ─────────────────────────────────────────── */
-      /* The hazard tape the floor gets marked out with, run across the
-         bottom of the frame: the shop starts here. Same 45° amber/black
-         cycle floor/tape.ts paints onto the real bands. */
+      /* The hazard tape the shop floor gets marked out with, run across
+         the bottom of the frame: the floor starts here. Same 45°
+         amber/black cycle floor/tape.ts paints onto the real bands. */
       .landing__tape {
         position: absolute;
         left: 0;
         right: 0;
         bottom: 0;
-        height: clamp(13px, 2.3vh, 22px);
+        height: clamp(11px, 1.9vh, 18px);
         pointer-events: none;
         background: repeating-linear-gradient(
           45deg,
-          var(--tape-dark) 0 16px,
-          var(--amber) 16px 32px
+          var(--tape-dark) 0 15px,
+          var(--mains) 15px 30px
         );
-        opacity: 0.8;
+        opacity: 0.72;
         box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.16),
-          0 -16px 34px rgba(0, 0, 0, 0.55);
+          inset 0 1px 0 rgba(255, 255, 255, 0.14),
+          0 -16px 34px rgba(0, 0, 0, 0.5);
+      }
+
+      /* A phone's width can't carry five sections without the collars
+         reading as a zip. Three, and the telescope still tells. */
+      @media (max-width: 560px) {
+        .run > .sec:nth-child(n + 4) {
+          display: none;
+        }
       }
 
       @media (prefers-reduced-motion: reduce) {
-        .landing__lamp {
+        .sec > i::after {
           animation: none;
         }
         #enter-ar {
@@ -297,11 +373,31 @@
   <body>
     <div id="scene-container"></div>
     <div class="landing">
-      <div class="landing__lamp" aria-hidden="true"></div>
-      <div class="landing__plate">
-        <span class="landing__word">TUBES</span>
+      <span class="landing__word">TUBES</span>
+      <div class="runs" aria-hidden="true">
+        <div class="run run--mains">
+          <span class="sec" style="--f: 1"><i></i></span>
+          <span class="sec" style="--f: 0.86"><i></i></span>
+          <span class="sec" style="--f: 0.73"><i></i></span>
+          <span class="sec" style="--f: 0.62"><i></i></span>
+          <span class="sec" style="--f: 0.53"><i></i></span>
+        </div>
+        <div class="run run--coolant">
+          <span class="sec" style="--f: 1"><i></i></span>
+          <span class="sec" style="--f: 0.85"><i></i></span>
+          <span class="sec" style="--f: 0.72"><i></i></span>
+          <span class="sec" style="--f: 0.61"><i></i></span>
+          <span class="sec" style="--f: 0.52"><i></i></span>
+        </div>
+        <div class="run run--volt">
+          <span class="sec" style="--f: 1"><i></i></span>
+          <span class="sec" style="--f: 0.84"><i></i></span>
+          <span class="sec" style="--f: 0.71"><i></i></span>
+          <span class="sec" style="--f: 0.6"><i></i></span>
+          <span class="sec" style="--f: 0.51"><i></i></span>
+        </div>
       </div>
-      <button id="enter-ar">CLOCK IN</button>
+      <button id="enter-ar">PLAY</button>
       <div class="landing__tape" aria-hidden="true"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

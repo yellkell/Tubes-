@@ -8,7 +8,7 @@
  * TUBES adds — flanges, sockets, the tube in your hands, the board — is
  * bolted onto or carried through the space you actually live in.
  *
- * `npm run dev` and open the page: a headset offers CLOCK IN; on desktop
+ * `npm run dev` and open the page: a headset offers PLAY; on desktop
  * the IWSDK dev plugin provides a WebXR emulator (WASD + mouse), where the
  * fallback room stands in for the scan (see room/walls.ts).
  */

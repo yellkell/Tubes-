@@ -148,7 +148,7 @@ if (typeof window !== 'undefined') {
   }
 }
 
-/** Call from a user gesture (e.g. CLOCK IN) to make sure audio is live. */
+/** Call from a user gesture (e.g. PLAY) to make sure audio is live. */
 export function ensureAudio(): void {
   unlock();
 }
