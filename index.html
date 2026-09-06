@@ -88,6 +88,12 @@
         visibility: hidden;
         pointer-events: none;
       }
+      /* A hidden element is not painted, so the pour costs nothing once
+         you are inside — but say it outright anyway: this page sits
+         behind a 90 fps session and has no business holding a frame. */
+      body.app-entered .sec > i::after {
+        animation-play-state: paused;
+      }
       /* The corners sink away, so the lit run is the only thing here. */
       .landing::after {
         content: '';
@@ -145,7 +151,7 @@
         --foam: #ffe9c4;
         --halo: rgba(255, 162, 46, 0.5);
         --bore: clamp(52px, 9.2vh, 104px);
-        --pace: 7s; /* MAINS is slow and heavy */
+        --pace: 1.2s; /* MAINS is slow and heavy */
       }
       .run--coolant {
         --glow: var(--coolant);
@@ -153,7 +159,7 @@
         --foam: #dcf8ff;
         --halo: rgba(70, 224, 255, 0.44);
         --bore: clamp(44px, 7.8vh, 88px);
-        --pace: 4.2s; /* COOLANT is fast and bright */
+        --pace: 0.66s; /* COOLANT is fast and bright */
       }
       .run--volt {
         --glow: var(--volt);
@@ -161,7 +167,7 @@
         --foam: #efe0ff;
         --halo: rgba(180, 107, 255, 0.46);
         --bore: clamp(37px, 6.6vh, 74px);
-        --pace: 3.2s; /* VOLT travels in packets, and bites */
+        --pace: 0.51s; /* VOLT travels in packets, and bites */
       }
 
       /* ONE SECTION of a telescoping run. The bore steps down toward the
@@ -214,29 +220,97 @@
         opacity: 0.94;
         filter: blur(0.4px);
       }
-      /* THE POUR: a front travelling the run at the line's own speed. */
+      /*
+       * THE POUR, MOVING — and it is ONE COLUMN, not five.
+       *
+       * Two travelling waves ride the liquid, which is what the real
+       * shader runs (materials/flow.ts: sin(travel*6) and sin(travel*13)
+       * over one `travel` term): the same SPEED, different WAVELENGTHS —
+       * a broad swell with finer currents running on it. One is half the
+       * frequency of the other, so they beat against each other and the
+       * flow never visibly loops.
+       *
+       * It stays continuous across every joint because the maths makes
+       * it: the sections are equal width (flex: 1 1 0), the tiles are a
+       * fraction OF that width, and both layers shift exactly a whole
+       * number of tiles per cycle — 0.5 of a section each, so the phase
+       * at any joint is identical on both sides of it. (A single
+       * no-repeat band per section was what this replaced: it appeared
+       * at each section's left edge, crossed it and vanished, so the run
+       * read as five blips rather than a column with something in it.)
+       *
+       * The percentages are load-bearing. For a tile t of the element's
+       * width, background-position p% moves it p/100 × (1 − t) of the
+       * width, so a whole tile lands at p = 100·k·t/(1 − t): 66.667% for
+       * two tiles of a quarter, 100% for one tile of a half. Both come
+       * to half a section, which is why the two waves travel together.
+       */
       .sec > i::after {
         content: '';
         position: absolute;
         inset: 0;
-        background: linear-gradient(
-          90deg,
-          transparent 0%,
-          rgba(255, 255, 255, 0.42) 50%,
-          transparent 100%
-        );
-        background-size: 40% 100%;
-        background-repeat: no-repeat;
+        background-image:
+          /* the currents */
+          linear-gradient(
+            90deg,
+            rgba(255, 255, 255, 0) 0%,
+            rgba(255, 255, 255, 0.05) 26%,
+            rgba(255, 255, 255, 0.32) 46%,
+            rgba(255, 255, 255, 0.38) 50%,
+            rgba(255, 255, 255, 0.32) 54%,
+            rgba(255, 255, 255, 0.05) 74%,
+            rgba(255, 255, 255, 0) 100%
+          ),
+          /* the swell under them */
+          linear-gradient(
+            90deg,
+            rgba(255, 255, 255, 0) 0%,
+            rgba(255, 255, 255, 0.15) 50%,
+            rgba(255, 255, 255, 0) 100%
+          );
+        background-size:
+          25% 100%,
+          50% 100%;
         animation: pour var(--pace) linear infinite;
       }
       @keyframes pour {
-        from {
-          background-position: -60% 0;
-        }
         to {
-          background-position: 160% 0;
+          background-position:
+            66.667% 0,
+            100% 0;
         }
       }
+      /* VOLT does not flow, it ARRIVES: the shader squares its wave into
+         plasma packets with dark water between them (uChop), and so does
+         this — slugs rather than currents, with the water between them
+         genuinely darker. Their shoulders stay soft on purpose: cut hard,
+         a packet stops reading as plasma and starts reading as a dashed
+         rule, which is what the first cut of this looked like. */
+      .run--volt > .sec > i::after {
+        background-image:
+          linear-gradient(
+            90deg,
+            rgba(12, 0, 26, 0.34) 0%,
+            rgba(12, 0, 26, 0.34) 18%,
+            rgba(255, 255, 255, 0.12) 33%,
+            rgba(255, 255, 255, 0.46) 45%,
+            rgba(255, 255, 255, 0.46) 55%,
+            rgba(255, 255, 255, 0.12) 67%,
+            rgba(12, 0, 26, 0.34) 82%,
+            rgba(12, 0, 26, 0.34) 100%
+          ),
+          linear-gradient(
+            90deg,
+            rgba(255, 255, 255, 0) 0%,
+            rgba(255, 255, 255, 0.15) 50%,
+            rgba(255, 255, 255, 0) 100%
+          );
+      }
+      /* Liquid runs root to head — and COOLANT's head is the other way. */
+      .run--coolant > .sec > i::after {
+        animation-direction: reverse;
+      }
+
       /* THE COLLAR over every joint — the fitting that covers the step in
          bore, standing proud of the barrel like the real one. */
       .sec::after {
