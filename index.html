@@ -3,14 +3,52 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#0b0a07" />
     <title>TUBES</title>
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🔧%3C/text%3E%3C/svg%3E"
     />
     <style>
+      /*
+       * THE DOOR — the one flatscreen page in TUBES, and the last thing
+       * you see before the room becomes the game.
+       *
+       * It wears the shop's own language, because it is the shop's front
+       * door: RAJDHANI (the house face, stencilled onto every panel
+       * inside), FURNACE AMBER (#ffa22e — the accent, and the only
+       * colour that ever carries primacy), dark iron, and the HAZARD
+       * TAPE the floor is marked out with. What it replaced was generic
+       * Arial Black under a cyan/red chromatic split and a scaling
+       * throb — handsome, and from a different game: that is a rave's
+       * neon, and this is a plant.
+       *
+       * Two objects, and the craft is all in them: a NAMEPLATE bolted to
+       * the wall with the word stamped on it, and one machined amber key
+       * under it. A work light hangs over the pair and breathes at the
+       * pace everything inside breathes at; the tape runs across the
+       * bottom of the frame, where the shop floor starts.
+       *
+       * The contract with main.ts is unchanged: #enter-ar is the one
+       * control, and .landing hides itself the moment body carries
+       * .app-entered.
+       */
       :root {
         color-scheme: dark;
+        /* The shop's palette — the same values ui/panel.ts paints with. */
+        --iron: #0b0a07;
+        --iron-lit: #1b1710;
+        --amber: #ffa22e;
+        --amber-hot: #ffc470;
+        --amber-deep: #e0810f;
+        --amber-shadow: #7d430b;
+        --on-amber: #221103;
+        --stencil: #fdf6ec;
+        --tape-dark: #171216;
+        /* Rajdhani arrives with the bundle (ui/fonts.ts adds the faces to
+           the document), so the landing paints in Arial Black for the
+           first frame and swaps — exactly as every panel inside does. */
+        --face: 'Rajdhani', 'Arial Black', system-ui, sans-serif;
       }
       html,
       body {
@@ -18,8 +56,8 @@
         padding: 0;
         height: 100%;
         overflow: hidden;
-        background: #0a0906;
-        font-family: system-ui, -apple-system, sans-serif;
+        background: var(--iron);
+        font-family: var(--face);
       }
       #scene-container {
         position: fixed;
@@ -31,8 +69,8 @@
           radial-gradient(circle at 74% 72%, rgba(70, 224, 255, 0.1), transparent 24rem),
           linear-gradient(150deg, #0a0906 0%, #12100a 55%, #0a0d0e 100%);
       }
-      /* The landing: a dark plant floor, work lights sweeping, one button.
-         The room on the other side of it is YOUR room. */
+
+      /* ── the shop wall ─────────────────────────────────────────────── */
       .landing {
         position: fixed;
         inset: 0;
@@ -41,140 +79,230 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: clamp(22px, 5vh, 44px);
+        gap: clamp(26px, 5vh, 52px);
         padding: clamp(16px, 5vw, 48px);
         box-sizing: border-box;
-        background: #080704;
+        overflow: hidden;
+        background:
+          /* the lamp's throw on the wall behind everything */
+          radial-gradient(120% 78% at 50% -8%, rgba(255, 162, 46, 0.11), transparent 62%),
+          /* brushed iron: a hairline tooth, not a texture you can name */
+            repeating-linear-gradient(
+              90deg,
+              rgba(255, 255, 255, 0.013) 0 2px,
+              transparent 2px 6px
+            ),
+          linear-gradient(180deg, #100d09 0%, #0b0a07 46%, #060504 100%);
         transition:
           opacity 220ms ease,
           visibility 220ms ease;
-        overflow: hidden;
       }
       body.app-entered .landing {
         opacity: 0;
         visibility: hidden;
         pointer-events: none;
       }
-      /* Sweeping work-light pools on the plant floor. */
-      .landing::before,
+
+      /* THE WORK LIGHT. One warm pool hung over the plate, breathing at
+         the pace the hardware inside breathes at (2.4 s there; slower
+         here, because a lamp is not a pulse). */
+      .landing__lamp {
+        position: absolute;
+        top: -42%;
+        left: 50%;
+        width: min(135vw, 1180px);
+        aspect-ratio: 1;
+        translate: -50% 0;
+        pointer-events: none;
+        background: radial-gradient(
+          circle,
+          rgba(255, 176, 74, 0.17),
+          rgba(255, 140, 26, 0.06) 42%,
+          transparent 68%
+        );
+        filter: blur(18px);
+        animation: lamp 7.5s ease-in-out infinite;
+      }
+      @keyframes lamp {
+        0%,
+        100% {
+          opacity: 0.86;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1.035);
+        }
+      }
+      /* The corners sink away: a lit spot on a dark wall, not a lit page. */
       .landing::after {
         content: '';
         position: absolute;
-        inset: -20%;
+        inset: 0;
         pointer-events: none;
-        background:
-          radial-gradient(circle at 22% 32%, rgba(255, 162, 46, 0.16), transparent 24rem),
-          radial-gradient(circle at 78% 24%, rgba(70, 224, 255, 0.1), transparent 20rem),
-          radial-gradient(circle at 58% 82%, rgba(255, 122, 24, 0.12), transparent 26rem);
-        animation: sweep 14s linear infinite;
-        filter: blur(12px);
+        background: radial-gradient(118% 88% at 50% 38%, transparent 42%, rgba(0, 0, 0, 0.62));
       }
-      .landing::after {
-        background:
-          radial-gradient(circle at 68% 62%, rgba(180, 107, 255, 0.08), transparent 20rem),
-          radial-gradient(circle at 32% 74%, rgba(255, 162, 46, 0.1), transparent 22rem);
-        animation-duration: 21s;
-        animation-direction: reverse;
-      }
-      @keyframes sweep {
-        from {
-          transform: rotate(0deg) scale(1.05);
-        }
-        to {
-          transform: rotate(360deg) scale(1.05);
-        }
-      }
-      .landing__title {
+
+      /* ── the nameplate ─────────────────────────────────────────────── */
+      /* Bolts are what make a thing read as fabricated rather than
+         modelled — the same law the boxes on the floor are built to. */
+      .landing__plate {
         position: relative;
         z-index: 1;
-        text-align: center;
-        line-height: 0.92;
-        user-select: none;
+        max-width: 100%;
+        box-sizing: border-box;
+        padding: clamp(20px, 4.2vh, 44px) clamp(30px, 7vw, 92px);
+        border: 1px solid rgba(255, 255, 255, 0.085);
+        border-top-color: rgba(255, 255, 255, 0.19);
+        border-radius: 3px;
+        background: linear-gradient(180deg, var(--iron-lit) 0%, #100d09 58%, #0a0806 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.06),
+          0 20px 46px rgba(0, 0, 0, 0.6);
       }
-      /* TUBES: furnace-amber face with a cyan chromatic ghost — hot metal
-         under a cold shop light. The throb runs at a pump's pace, not a
-         kick drum's: this is a machine breathing, not a rave. */
+      .landing__plate::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        /* Lit from the lamp: a bright crown up-left, a shadowed seat. */
+        --bolt: radial-gradient(
+          circle at 40% 32%,
+          #b39b7c 0 24%,
+          #7d684f 34%,
+          #3a2e22 48%,
+          #150f0a 58%,
+          transparent 68%
+        );
+        background-image: var(--bolt), var(--bolt), var(--bolt), var(--bolt);
+        background-repeat: no-repeat;
+        background-size: 17px 17px;
+        background-position:
+          13px 13px,
+          calc(100% - 13px) 13px,
+          13px calc(100% - 13px),
+          calc(100% - 13px) calc(100% - 13px);
+      }
+      /* TUBES, stamped: warm white with a hard edge under it, and the
+         lamp's own bloom around it. No chromatic split — the three lines
+         wear amber, cyan and violet INSIDE, where they mean something. */
       .landing__word {
         display: block;
-        font-family: 'Arial Black', 'Arial Narrow', system-ui, sans-serif;
-        font-weight: 900;
-        font-size: clamp(84px, 21vw, 240px);
-        letter-spacing: 0.1em;
-        text-indent: 0.1em;
-        color: #ffd9a8;
+        font-family: var(--face);
+        font-weight: 700;
+        font-size: clamp(58px, 17vw, 228px);
+        line-height: 0.9;
+        letter-spacing: 0.12em;
+        text-indent: 0.12em;
+        color: var(--stencil);
+        user-select: none;
         text-shadow:
-          -5px 0 0 rgba(70, 224, 255, 0.4),
-          5px 0 0 rgba(255, 82, 24, 0.5),
-          0 0 24px rgba(255, 162, 46, 0.95),
-          0 0 74px rgba(255, 140, 26, 0.5),
-          0 6px 0 rgba(56, 30, 4, 0.95);
-        animation: chug 2.4s ease-in-out infinite;
+          0 2px 0 rgba(0, 0, 0, 0.62),
+          0 3px 5px rgba(0, 0, 0, 0.45),
+          0 0 18px rgba(255, 162, 46, 0.26),
+          0 0 72px rgba(255, 140, 26, 0.16);
       }
-      .landing__sub {
-        display: block;
-        margin-top: clamp(10px, 2vh, 20px);
-        font-family: 'Arial Black', system-ui, sans-serif;
-        font-weight: 900;
-        font-size: clamp(13px, 2vw, 19px);
-        letter-spacing: 0.42em;
-        text-indent: 0.42em;
-        color: rgba(255, 217, 168, 0.6);
-        text-shadow: 0 0 14px rgba(255, 162, 46, 0.35);
-      }
-      @keyframes chug {
-        0%,
-        100% {
-          transform: scale(1);
-        }
-        8% {
-          transform: scale(1.03) skewX(-0.6deg);
-        }
-        16% {
-          transform: scale(0.995);
-        }
-      }
+
+      /* ── the key ───────────────────────────────────────────────────── */
+      /* Solid amber on dark text: the board's own primary button, the
+         one it uses for START JOB. (The landing used to wear the
+         SECONDARY style — an amber outline — for the only action on the
+         page.) It sits on a hard shadow and presses into it. */
       #enter-ar {
         position: relative;
         z-index: 1;
         appearance: none;
-        border: 2px solid rgba(255, 162, 46, 0.8);
-        border-radius: 999px;
-        padding: 16px 44px;
-        font-family: 'Arial Black', system-ui, sans-serif;
-        font-weight: 900;
-        font-size: clamp(16px, 2.4vw, 22px);
-        letter-spacing: 0.18em;
-        text-indent: 0.18em;
-        color: #ffd9a8;
-        background: rgba(26, 18, 6, 0.72);
+        border: 0;
+        border-radius: 2px;
+        padding: clamp(17px, 2.2vh, 21px) clamp(38px, 7vw, 62px);
+        font-family: var(--face);
+        font-weight: 700;
+        font-size: clamp(17px, 2.2vw, 23px);
+        letter-spacing: 0.2em;
+        text-indent: 0.2em;
+        color: var(--on-amber);
+        background: linear-gradient(180deg, var(--amber-hot) 0%, var(--amber) 52%, var(--amber-deep) 100%);
         cursor: pointer;
         box-shadow:
-          0 0 22px rgba(255, 162, 46, 0.4),
-          inset 0 0 18px rgba(255, 162, 46, 0.16);
+          inset 0 1px 0 rgba(255, 255, 255, 0.4),
+          0 4px 0 var(--amber-shadow),
+          0 12px 30px rgba(255, 162, 46, 0.22);
         transition:
-          transform 120ms ease,
-          box-shadow 120ms ease;
+          filter 120ms ease,
+          translate 90ms ease,
+          box-shadow 90ms ease;
       }
       #enter-ar:hover:not([disabled]) {
-        transform: scale(1.045);
+        filter: brightness(1.08);
         box-shadow:
-          0 0 34px rgba(255, 162, 46, 0.65),
-          inset 0 0 22px rgba(255, 162, 46, 0.28);
+          inset 0 1px 0 rgba(255, 255, 255, 0.45),
+          0 4px 0 var(--amber-shadow),
+          0 14px 38px rgba(255, 162, 46, 0.36);
       }
+      #enter-ar:active:not([disabled]) {
+        translate: 0 3px;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.35),
+          0 1px 0 var(--amber-shadow),
+          0 6px 18px rgba(255, 162, 46, 0.24);
+      }
+      #enter-ar:focus-visible {
+        outline: 2px solid var(--stencil);
+        outline-offset: 4px;
+      }
+      /* THE MACHINE IS OFF, not broken. A headset-less browser gets
+         "XR unavailable" here (main.ts), and a dimmed amber key reads as
+         a fault; cold iron reads as a control that isn't live yet. */
       #enter-ar[disabled] {
-        opacity: 0.45;
+        background: linear-gradient(180deg, #241f18 0%, #191510 100%);
+        color: rgba(250, 244, 235, 0.42);
         cursor: default;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.05),
+          0 4px 0 #0a0806;
+      }
+
+      /* ── the site boundary ─────────────────────────────────────────── */
+      /* The hazard tape the floor gets marked out with, run across the
+         bottom of the frame: the shop starts here. Same 45° amber/black
+         cycle floor/tape.ts paints onto the real bands. */
+      .landing__tape {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: clamp(13px, 2.3vh, 22px);
+        pointer-events: none;
+        background: repeating-linear-gradient(
+          45deg,
+          var(--tape-dark) 0 16px,
+          var(--amber) 16px 32px
+        );
+        opacity: 0.8;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.16),
+          0 -16px 34px rgba(0, 0, 0, 0.55);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .landing__lamp {
+          animation: none;
+        }
+        #enter-ar {
+          transition: none;
+        }
       }
     </style>
   </head>
   <body>
     <div id="scene-container"></div>
     <div class="landing">
-      <div class="landing__title">
+      <div class="landing__lamp" aria-hidden="true"></div>
+      <div class="landing__plate">
         <span class="landing__word">TUBES</span>
-        <span class="landing__sub">THE WORKS WANTS BACK ON</span>
       </div>
       <button id="enter-ar">CLOCK IN</button>
+      <div class="landing__tape" aria-hidden="true"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
