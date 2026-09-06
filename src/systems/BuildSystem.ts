@@ -644,6 +644,20 @@ export class BuildSystem extends createSystem({}) {
     this.showLinks(cell);
 
     const aiming = Boolean(this.armed && cell);
+    // A RAIL IS AIMED, NOT POINTED AT. With a rail in hand the cursor is
+    // an ARROW on the boards instead of a dot: nose along the way the
+    // lane will run — the last step of a haul you are dragging out, or
+    // the facing the piece would land with — so the direction is read
+    // off the floor before the trigger, not after.
+    let arrowYaw: number | null = null;
+    if (this.armed === 'belt' && cell) {
+      const h = this.haul;
+      const rot =
+        h && h.steps.length > 0 ? h.steps[h.steps.length - 1].rot : (this.view?.rot ?? handRot);
+      const d = DIRS[rot];
+      arrowYaw = Math.atan2(d.di, d.dj);
+    }
+    this.pointer.arrow(arrowYaw);
     this.pointer.update(
       delta,
       _origin,

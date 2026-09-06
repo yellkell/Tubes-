@@ -1358,3 +1358,13 @@ rail that fed it, and the craft theatre's eject and walk-in ride the
 same numbers, so the hand-off from phantom to part is still a
 hand-off. `tools/lines-look.mjs` shoots both joints close and asserts
 the slot heights.
+
+**"We want an arrow instead of a dot when placing rails."** The laser's
+cursor was the board's dot everywhere — right for a button, wrong for a
+lane, where the thing you are choosing is a direction as much as a
+spot. `PointerRay` has two faces now (`ui/pointer.ts`): the dot for
+things you press, and a flat ARROW that lies on the boards at the hit
+point, nose along a yaw the caller hands it, wearing the dot's swell
+and click pop. BuildSystem asks for the arrow whenever a rail is armed,
+pointed the way the lane will run — the facing the piece would land
+with, or, mid-haul, the last step of the run in your hand.

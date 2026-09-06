@@ -389,6 +389,12 @@ section starts inside, so a bend is an elbow and never a flat face of
 liquid through the frost — and at the socket the column runs on INTO
 the throat rather than stopping at the collar.
 
+**A RAIL IS AIMED, NOT POINTED AT.** With a rail in hand the laser's
+cursor is an ARROW lying on the boards instead of a dot — nose along
+the way the lane will run: the facing the piece would land with, or
+the last step of the run you are hauling out — so you read the
+direction off the floor before the trigger, not after.
+
 **THE RAILS MEET THEIR MACHINES.** A maker's chute is a SLIDE now: it
 leaves the drum at bench height and comes down to rail height just
 over the cell's edge, where its foot sits bolted across the skids of
