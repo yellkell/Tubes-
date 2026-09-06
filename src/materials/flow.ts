@@ -40,7 +40,11 @@ const FLOW_VERT = /* glsl */ `
   void main(){
     vec4 wp = modelMatrix * vec4(position, 1.0);
     vWorldPos = wp.xyz;
-    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    // Segments have strongly non-uniform scales. Inverse-transpose in
+    // view space, then undo the view rotation for world-space lighting.
+    vec3 vn = normalMatrix * normal;
+    vWorldNormal = normalize(vec3(dot(viewMatrix[0].xyz, vn),
+      dot(viewMatrix[1].xyz, vn), dot(viewMatrix[2].xyz, vn)));
     vAlong = position.y + 0.5; // unit cylinder: local y in [-0.5, 0.5]
     gl_Position = projectionMatrix * viewMatrix * wp;
   }
@@ -51,6 +55,7 @@ const FLOW_FRAG = /* glsl */ `
   uniform float uS1;
   uniform float uFront;   // the flow front's arc length (m); huge once landed
   uniform float uTime;
+  uniform float uFlowSpeed;
   uniform float uEnergy;  // 0 dormant → 1 fully alive (charge ramps it)
   uniform float uPulseHz; // the line's living pulse once connected
   uniform float uChop;    // 0 = liquid, 1 = plasma packets (VOLT)
@@ -66,14 +71,17 @@ const FLOW_FRAG = /* glsl */ `
     float s = mix(uS0, uS1, vAlong);
     // A wobble on the front line so the pour arrives as a surge, not a
     // laser-straight bulkhead sliding down the pipe.
-    float wobble = sin(s * 9.0 - uTime * 7.0) * 0.02 + sin(s * 23.0 + uTime * 11.0) * 0.012;
+    float travel = s - uTime * uFlowSpeed * 0.32;
+    float swirl = dot(vWorldPos, vec3(5.3, 3.1, 4.7));
+    float wobble = (sin(swirl + uTime * 3.2) * 0.018
+      + sin(swirl * 2.3 - uTime * 4.1) * 0.009) * (1.0 - uChop * 0.7);
     if (s + wobble > uFront) discard;
 
     if (!gl_FrontFacing) {
       // The open cut — the face of the advancing pour. Flat and bright,
       // shimmering with the same wobble that shapes its line.
       float shimmer = 0.9 + 0.1 * sin(uTime * 13.0 + s * 40.0);
-      gl_FragColor = vec4(uFoam * shimmer, 1.0);
+      gl_FragColor = vec4(uFoam * shimmer * (0.18 + 0.82 * uEnergy), 1.0);
       return;
     }
 
@@ -84,8 +92,8 @@ const FLOW_FRAG = /* glsl */ `
     // behind a frosted shell over a daylit real room — a body weighted
     // toward its depths read as murk, and the light is the payoff.
     float stream =
-      sin(s * 6.0 - uTime * 5.2) * 0.5 +
-      sin(s * 13.0 - uTime * 8.6) * 0.5;
+      sin(travel * 6.0 + sin(swirl) * 0.6) * 0.6 +
+      sin(travel * 13.0 + swirl * 0.4) * 0.4;
     // The living pulse: a slow breath down the whole line, with its
     // trough lifted — the line breathes, it never gutters. VOLT's chop
     // still squares it into packets with dark water between them.
@@ -95,10 +103,13 @@ const FLOW_FRAG = /* glsl */ `
     float pulse = mix(0.78 + 0.22 * breath, 0.3 + 0.85 * packets, uChop);
 
     float up = clamp(vWorldNormal.y * 0.5 + 0.5, 0.0, 1.0);
-    vec3 col = mix(uDeep, uGlow, (0.52 + 0.42 * up + 0.12 * stream) * pulse);
+    vec3 col = mix(uDeep, uGlow, clamp((0.48 + 0.35 * up + 0.2 * stream) * pulse, 0.0, 1.0));
+    // Narrow currents catch the light without washing out the line colour.
+    float ribbons = smoothstep(0.72, 0.98, sin(travel * 10.0 + sin(swirl * 1.6)));
+    col += uFoam * ribbons * (0.1 + 0.08 * up) * (1.0 - uChop * 0.75);
 
     // The hot band hugging the front — brightest just behind the face.
-    col = mix(col, uFoam, smoothstep(uBand, 0.0, uFront - s) * 0.85);
+    col = mix(col, uFoam, (1.0 - smoothstep(0.0, uBand, uFront - s)) * 0.85);
 
     // Wet gloss: a broad sheen plus a hot pin, off a fixed key light.
     vec3 n = normalize(vWorldNormal);
@@ -130,6 +141,7 @@ export interface FlowUniforms {
   uS1: { value: number };
   uFront: { value: number };
   uTime: { value: number };
+  uFlowSpeed: { value: number };
   uEnergy: { value: number };
   uPulseHz: { value: number };
   uChop: { value: number };
@@ -148,6 +160,7 @@ export function createFlowMaterial(
   pulseHz: number,
   chop: number,
   band: number,
+  flowSpeed: number,
 ): ShaderMaterial {
   return new ShaderMaterial({
     uniforms: {
@@ -155,6 +168,7 @@ export function createFlowMaterial(
       uS1: { value: 1 },
       uFront: { value: -1 },
       uTime: { value: 0 },
+      uFlowSpeed: { value: flowSpeed },
       uEnergy: { value: 0 },
       uPulseHz: { value: pulseHz },
       uChop: { value: chop },

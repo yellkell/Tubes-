@@ -191,6 +191,8 @@ export function buildFlange(line: LineSpec): FlangeRefs {
 
 export interface SocketRefs {
   group: Group;
+  guide: Mesh;
+  guideRadius: number;
   glowMat: MeshBasicMaterial;
   /** The dark iris disc — scales to zero as the tube arrives home. */
   iris: Mesh;
@@ -257,7 +259,7 @@ export function buildSocket(line: LineSpec): SocketRefs {
   guide.renderOrder = 12;
   group.add(guide);
 
-  return { group, glowMat, iris, guideMat, seatOffset: 0.1 };
+  return { group, glowMat, iris, guide, guideRadius: r * 3.1, guideMat, seatOffset: 0.1 };
 }
 
 export interface SegmentRefs {
@@ -290,6 +292,7 @@ export function buildSegment(line: LineSpec, index: number): SegmentRefs {
     line.pulseHz,
     line.chop,
     FLOW.frontBand,
+    line.flowSpeed,
   );
   const pour = new Mesh(pourGeo(), pourMat);
   pour.renderOrder = 4;

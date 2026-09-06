@@ -40,6 +40,7 @@
 import { InputComponent, createSystem } from '@iwsdk/core';
 import { Group, Quaternion, Vector3 } from 'three';
 import { SEAT, TUBE, WAKE } from '../config.js';
+import { updateConnectionGuide } from '../tube/connection.js';
 import * as sfx from '../audio/sfx.js';
 import { buzz } from '../game/haptics.js';
 import { site, type RunState } from '../game/state.js';
@@ -669,20 +670,19 @@ export class TubeSystem extends createSystem({}) {
       if (hw.magnet) {
         hw.collar.capMat.opacity = 0.95;
         hw.collar.glowMat.opacity = 0.5;
-        hw.socket.guideMat.opacity = 0.75;
       } else if (hw.held) {
         hw.collar.capMat.opacity = 0.7;
         hw.collar.glowMat.opacity = 0.28;
-        hw.socket.guideMat.opacity = 0.3 + 0.2 * breathe;
       } else {
         hw.collar.capMat.opacity = 0.4 + 0.35 * breathe;
         hw.collar.glowMat.opacity = 0.12 + 0.16 * breathe;
-        hw.socket.guideMat.opacity = 0.1 + 0.14 * breathe;
       }
     } else {
       hw.collar.capMat.opacity = 0.25;
       hw.collar.glowMat.opacity = 0.1;
-      hw.socket.guideMat.opacity = 0;
     }
+    _seat.copy(run.pointB).addScaledVector(run.normalB, hw.socket.seatOffset);
+    const proximity = hw.held ? 1 - hw.headVisual.distanceTo(_seat) / (SEAT.snapRadius * 3) : 0;
+    updateConnectionGuide(hw.socket, this.clock, proximity, hw.magnet, hw.seatP, run.phase, run.phaseT);
   }
 }

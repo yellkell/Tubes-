@@ -51,6 +51,7 @@ import {
 } from 'three';
 import { FACTORY, FLOOR, LINES, UNITS, type ItemId, type LineSpec, type UnitType } from '../config.js';
 import { glandReach } from './sim.js';
+import { createVatLiquid } from '../materials/vat.js';
 
 /* ── shared geometry / materials ────────────────────────────────────────── */
 
@@ -138,6 +139,8 @@ function bench(group: Group, height = UNITS.crate.height, size = UNITS.crate.siz
 
 export interface GlandRefs {
   group: Group;
+  guide: Mesh;
+  guideRadius: number;
   guideMat: MeshBasicMaterial;
   glowMat: MeshBasicMaterial;
   iris: Mesh;
@@ -214,7 +217,7 @@ export function buildGland(): GlandRefs {
   guide.renderOrder = 12;
   group.add(guide);
 
-  return { group, guideMat, glowMat, iris };
+  return { group, guideMat, glowMat, iris, guide, guideRadius: r * 3.1 };
 }
 
 /* ── the belt tread (shared, scrolling) ─────────────────────────────────── */
@@ -330,7 +333,7 @@ export interface UnitRefs {
   halo: MeshBasicMaterial | null;
   /** The vat's brew: the level mesh that rises inside the glass, its
    *  material, and the two datums FactorySystem drives it between. */
-  fill: { mesh: Mesh; mat: MeshStandardMaterial; top: number; floor: number } | null;
+  fill: ({ mesh: Mesh; top: number; floor: number } & ReturnType<typeof createVatLiquid>) | null;
   /** The vat's under-glow — live from the moment it stands, so an empty
    *  one still reads as WAITING. */
   vatGlow: MeshBasicMaterial | null;
@@ -743,21 +746,14 @@ export function buildUnit(type: UnitType): UnitRefs {
     // THE LEVEL — a green cylinder scaled up from the tank floor as it
     // brews. FactorySystem owns the maths; this is the mesh and its
     // datums.
-    const fillMat = new MeshStandardMaterial({
-      color: 0x2fd47a,
-      emissive: 0x0e6b38,
-      roughness: 0.2,
-      metalness: 0,
-      transparent: true,
-      opacity: 0.85,
-    });
-    const level = new Mesh(new CylinderGeometry(1, 1, 1, 16), fillMat);
+    const liquid = createVatLiquid();
+    const level = new Mesh(new CylinderGeometry(1, 1, 1, 32), liquid.mat);
     level.scale.set(vs / 2 - 0.02, 0.001, vs / 2 - 0.02);
     level.position.y = tankFloor;
     level.visible = false;
     level.renderOrder = 5;
     group.add(level);
-    fill = { mesh: level, mat: fillMat, top: vh - 0.04, floor: tankFloor };
+    fill = { mesh: level, ...liquid, top: vh - 0.04, floor: tankFloor };
 
     vatGlow = new MeshBasicMaterial({
       color: 0x4dff9b,
