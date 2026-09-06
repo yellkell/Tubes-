@@ -54,7 +54,7 @@ import {
   type Object3D,
 } from 'three';
 import { FACTORY, FLOOR, LINES, UNITS, type ItemId, type LineSpec, type UnitType } from '../config.js';
-import { glandReach } from './sim.js';
+import { CHUTE_SLIDE, glandReach } from './sim.js';
 import type { CraftRig } from './craft.js';
 import { glintTexture, sizedPointsMaterial } from '../materials/glow.js';
 import { createVatLiquid } from '../materials/vat.js';
@@ -355,19 +355,52 @@ export interface UnitRefs {
   tint: MeshStandardMaterial | null;
 }
 
-function chuteTray(group: Group): void {
+/**
+ * THE CHUTE SLIDE — the piece that actually joins a machine to a rail.
+ *
+ * A chute was a flat tray at bench height, hung 0.1 m out over the next
+ * cell, six centimetres above the rail standing there and touching
+ * nothing: a part left the tray by falling through it. The slide leaves
+ * the machine's face at bench height and comes down to rail height just
+ * over the cell edge (sim.CHUTE_SLIDE — the sim walks parts down the
+ * same slope), where its foot rests on the rail's skid tops with a
+ * bolted cross-bar under it: a spout the lane runs out of. Built along
+ * local +Z; `yaw` turns it onto a combiner's side port, where the same
+ * slide is the hopper a lane runs UP into.
+ */
+function chuteSlide(group: Group, yaw = 0): void {
+  const { from, to, topY, footY } = CHUTE_SLIDE;
+  const len = Math.hypot(to - from, topY - footY);
+  const slide = new Group();
+  slide.rotation.y = yaw;
+  const bed = new Group();
+  bed.position.set(0, (topY + footY) / 2 - 0.006, (from + to) / 2);
+  bed.rotation.x = Math.atan2(topY - footY, to - from);
   const tray = new Mesh(boxGeo(), railMat);
-  tray.scale.set(0.16, 0.012, 0.16);
-  tray.position.set(0, UNITS.crate.benchTop + 0.006, UNITS.crate.size / 2 + 0.05);
-  group.add(tray);
-  // Lips up the sides — a TRAY, not a shelf: the stamped part sits IN
-  // something while it waits for the lane.
+  tray.scale.set(0.16, 0.012, len);
+  bed.add(tray);
+  // Lips up the sides — a chute, not a shelf: the part is IN something
+  // all the way down.
   for (const side of [-1, 1]) {
     const lip = new Mesh(boxGeo(), railMat);
-    lip.scale.set(0.012, 0.024, 0.16);
-    lip.position.set(side * 0.074, UNITS.crate.benchTop + 0.012, UNITS.crate.size / 2 + 0.05);
-    group.add(lip);
+    lip.scale.set(0.012, 0.03, len);
+    lip.position.set(side * 0.074, 0.009, 0);
+    bed.add(lip);
   }
+  slide.add(bed);
+  // The foot's cross-bar, sat across the rail's skids — with a hex head
+  // at each end, because a chute that touches a rail is BOLTED to it.
+  const bar = new Mesh(boxGeo(), railMat);
+  bar.scale.set(0.17, 0.014, 0.02);
+  bar.position.set(0, footY - 0.013, to - 0.004);
+  slide.add(bar);
+  for (const side of [-1, 1]) {
+    const bolt = new Mesh(sided(6), hubMat);
+    bolt.scale.set(UNITS.boltR, 0.008, UNITS.boltR);
+    bolt.position.set(side * 0.074, footY - 0.002, to - 0.004);
+    slide.add(bolt);
+  }
+  group.add(slide);
 }
 
 /** How many sparks a forge throws — the pool every rig carries. */
@@ -694,7 +727,7 @@ export function buildUnit(type: UnitType): UnitRefs {
     lampMat = craftLamp(ram, 0.024);
     group.add(ram);
     craft = craftRig(group, 'maker', ram, stageY);
-    chuteTray(group);
+    chuteSlide(group);
     gland = buildGland();
   } else if (type === 'combiner') {
     // THE COMBINER: twin lobes under one clamp — two parts walk in the
@@ -709,16 +742,9 @@ export function buildUnit(type: UnitType): UnitRefs {
       frame.scale.copy(lobe.scale);
       frame.position.copy(lobe.position);
       group.add(frame);
-      const tray = new Mesh(boxGeo(), railMat);
-      tray.scale.set(0.16, 0.012, 0.16);
-      tray.position.set(side * (size / 2 + 0.05), benchTop + 0.006, 0);
-      group.add(tray);
-      for (const lz of [-1, 1]) {
-        const lip = new Mesh(boxGeo(), railMat);
-        lip.scale.set(0.16, 0.024, 0.012);
-        lip.position.set(side * (size / 2 + 0.05), benchTop + 0.012, lz * 0.074);
-        group.add(lip);
-      }
+      // The port: the chute slide turned onto this side, foot outward,
+      // so the rail that feeds it runs up into the hopper.
+      chuteSlide(group, (side * Math.PI) / 2);
     }
     // The FITTER'S BRASS: the clamp that presses two into one, and the
     // spine where the halves meet — the joint IS this box's trade.
@@ -757,7 +783,7 @@ export function buildUnit(type: UnitType): UnitRefs {
       bolt.position.set(0, benchTop + dy, 0.13);
       group.add(bolt);
     }
-    chuteTray(group);
+    chuteSlide(group);
     lampMat = craftLamp(group, benchTop + 0.05);
   } else if (type === 'belt') {
     // THE RAIL: floating — two slim side rails and a slatted TREAD that

@@ -172,16 +172,31 @@ export function pathTangent(
  * in between. Both fittings keep their axes exactly — flush at the
  * boss, flush at the gland — and the run bows over the shop between
  * them, which is what pipework does anyway.
+ *
+ * AND IT IS WINDOWED. Zero slope at the very end was not enough: the
+ * hump still rose through the last section, so a tall lift put the
+ * section IN the socket 20–40° off the socket's axis — the polyline law
+ * kept every joint sealed and the pipe still read as having jumped out
+ * of its seat. The bump is now dead flat for TUBE.dodgeEnd of the run
+ * at each end (one section of eight): whatever the lift, the section
+ * that sits in a fitting lies along that fitting's axis.
  */
 export function dodgeBump(t: number): number {
-  const w = 4 * t * (1 - t);
+  const e = TUBE.dodgeEnd;
+  const u = (t - e) / (1 - 2 * e);
+  if (u <= 0 || u >= 1) return 0;
+  const w = 4 * u * (1 - u);
   return w * w;
 }
 
-/** d/dt of dodgeBump. Zero at both ends by construction, so a displaced
- *  run's end tangents are exactly its bezier's own. */
+/** d/dt of dodgeBump. Zero at both ends (and across both end windows)
+ *  by construction, so a displaced run's end tangents are exactly its
+ *  bezier's own. */
 export function dodgeBumpSlope(t: number): number {
-  return 32 * t * (1 - t) * (1 - 2 * t);
+  const e = TUBE.dodgeEnd;
+  const u = (t - e) / (1 - 2 * e);
+  if (u <= 0 || u >= 1) return 0;
+  return (32 * u * (1 - u) * (1 - 2 * u)) / (1 - 2 * e);
 }
 
 /**
