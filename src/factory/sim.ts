@@ -43,6 +43,26 @@ const _c = { x: 0, z: 0 };
 
 /* ── where parts sit (the sim's word; FactorySystem renders it) ─────────── */
 
+/** The chute plane — where a stamped part's origin rests on the bench. */
+export const CHUTE_Y = UNITS.crate.benchTop + 0.045;
+
+/** How far a chute slot stands off its unit's centre, along OUT. Slot 0
+ *  sits IN the chute tray the builder draws (units.chuteTray, at
+ *  size/2 + 0.05 = 0.2); slot 1 waits on the machine's front edge behind
+ *  it. (The slots used to start at 0.105 and step 0.13 — the front part
+ *  hung over the drum's edge short of the tray and the second one sat
+ *  under the piston.) The craft theatre (factory/craft.ts) ends every
+ *  craft by sliding the forming part to exactly this spot, so the real
+ *  part appears where the ghost stopped. */
+export function chuteReach(slot: number): number {
+  return 0.21 - slot * 0.105;
+}
+
+/** A combiner's port trays, off the centre to either side — the same
+ *  offset chuteTray uses, so a part waits IN its tray rather than on the
+ *  lobe beside it. */
+export const PORT_REACH = UNITS.crate.size / 2 + 0.05;
+
 /** A part's world pose from its logical place. Hand parts are the one
  *  place the sim defers — FactorySystem pins those to the grip. */
 export function partPose(part: Part, out: Vector3): Vector3 {
@@ -54,8 +74,8 @@ export function partPose(part: Part, out: Vector3): Vector3 {
   cellCenter(unit.i, unit.j, _c);
   const dir = DIRS[unit.rot];
   if (at.kind === 'chute') {
-    const reach = CELL * 0.5 - 0.07 - at.slot * 0.13;
-    return out.set(_c.x + dir.di * reach, UNITS.crate.benchTop + 0.045, _c.z + dir.dj * reach);
+    const reach = chuteReach(at.slot);
+    return out.set(_c.x + dir.di * reach, CHUTE_Y, _c.z + dir.dj * reach);
   }
   if (at.kind === 'belt') {
     const p = Math.min(1, Math.max(0, part.p));
@@ -85,8 +105,7 @@ export function partPose(part: Part, out: Vector3): Vector3 {
   }
   if (at.kind === 'port') {
     const side = DIRS[portDir(unit, at.port)];
-    const reach = CELL * 0.5 - 0.09;
-    return out.set(_c.x + side.di * reach, UNITS.crate.benchTop + 0.045, _c.z + side.dj * reach);
+    return out.set(_c.x + side.di * PORT_REACH, CHUTE_Y, _c.z + side.dj * PORT_REACH);
   }
   // chest — a little stack on the crate's lid.
   return out.set(_c.x, UNITS.crate.benchTop + 0.05 + at.index * 0.05, _c.z);

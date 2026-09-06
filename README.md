@@ -191,6 +191,14 @@ src/
                          its bolted plate — and the part KITS — every
                          item a little assembly in its lineage's plate
                          language, instanced
+  factory/craft.ts       THE CRAFT THEATRE: every item made its own way,
+                         on its machine, in front of you — the gear
+                         struck, the cell drawn, the chip etched, the
+                         pump screwed, the lamp kindled, the servo
+                         torqued — one choreography per item over the
+                         sim's own craft progress, ending with the
+                         finished thing sliding onto the exact chute slot
+                         the real part will stand on
   goop/                  THE GOOP, vendored whole from RAVE RAID: the
                          blob sim, the raymarched gel surface, the body
                          plan and the club's dance stances — with the
@@ -255,6 +263,11 @@ tools/
                          machine, and THANKS FOR PLAYING. Painted text has
                          no rects to assert, and "the text was obscured"
                          is invisible to every state check
+  craft-look.mjs         every item's MAKING as a strip of PNGs — three
+                         fed makers and a hand-fed combiner shot at the
+                         moments that carry each craft, plus the asserts
+                         that CAN be made: the theatre is live, the ram
+                         and clamp leave their rests, the budget holds
   preview-shot.mjs       screenshots of the moments that carry the look
   socket-look.mjs        a socket from 14 angles — the anti-culling check
                          (open geometry looks whole from one viewpoint and
@@ -324,6 +337,25 @@ across the room), the COMBINER wears fitter's brass on its clamp and
 spine, the CHEST wears storeman's olive straps and a painted lid, and
 the BANK wears minted gold round its mouth.
 
+**EVERY ITEM IS MADE ITS OWN WAY.** A maker used to bob a piston and a
+combiner dip its clamp, on the same sine wave, whatever was being made.
+Now the making is the show, on the machine, in the open: the GEAR is
+**struck** — a molten slug on the anvil, three blows from the die set,
+sparks off each, the teeth indexing a third of a pitch per blow as the
+glow cools to iron; the CELL is **drawn** — the canister extrudes up out
+of the die, the plate comes down and presses the caps on, the charge
+band lights and pulses full; the CHIP is **etched** — six clicks round
+on an indexing table under a scriber, the traces growing a sixth at a
+time, the pin pressed in with a snap of arc; the PUMP is **screwed** —
+the cell arcs in over the gear and threads down onto it under a raised
+press frame; the LAMP is **kindled** — the chip lowered on as a crown,
+tapped home, and the filament flickers twice and stays lit; the SERVO
+is **torqued** — lamp onto pump, clamped, a quarter turn per bolt with
+the flash cycling amber, cyan, violet, white, then run in and braked.
+Each one ends with the finished thing sliding onto the exact chute slot
+the real part will stand on, already turning at the spin it will be born
+with, so the hand-off from ghost to part is a hand-off and not a cut.
+
 **NOTHING CLIPS.** A seated line arcs its belly OVER whatever stands
 under its flight path — lanes (and the parts riding them), boxes,
 decks, the vat — and over any other seated line it crosses, like a
@@ -358,6 +390,7 @@ node tools/floor-walk.mjs     # the factory floor: tape, clamps, lattice
 node tools/order-walk.mjs     # the shop, built through the hands' own path
 node tools/card-look.mjs      # shots/card-*.png — every page of the Ⓐ card
 node tools/goop-look.mjs      # shots/goop-*.png — the creature's face, close
+node tools/craft-look.mjs     # shots/craft/ — every item's making, frame by frame
 node tools/preview-shot.mjs   # shots/ of the landing, board, pull, pour
 node tools/socket-look.mjs    # shots/socket/ — one socket, 14 angles
 ```
