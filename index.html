@@ -17,8 +17,8 @@
        * the lines' own colours straight off config.ts: MAINS furnace
        * amber, COOLANT glacier cyan, VOLT violet plasma. Each is a real
        * telescoping run — five sections stepping DOWN in bore toward the
-       * head, a collar over every joint, frosted metal over a hot core of
-       * liquid — and each pours at its own line's pace (MAINS slow and
+       * head, GLASS full of lit liquid, a rubber joiner over every joint
+       * — and each pours at its own line's pace (MAINS slow and
        * heavy, COOLANT fast, VOLT fastest), which is the one thing the
        * three lines are actually different at.
        *
@@ -91,7 +91,7 @@
       /* A hidden element is not painted, so the pour costs nothing once
          you are inside — but say it outright anyway: this page sits
          behind a 90 fps session and has no business holding a frame. */
-      body.app-entered .sec > i::after {
+      body.app-entered .sec > i {
         animation-play-state: paused;
       }
       /* The corners sink away, so the lit run is the only thing here. */
@@ -149,7 +149,7 @@
         --glow: var(--mains);
         --deep: #571f02;
         --foam: #ffe9c4;
-        --halo: rgba(255, 162, 46, 0.5);
+        --halo: rgba(255, 162, 46, 0.62);
         --bore: clamp(52px, 9.2vh, 104px);
         --pace: 1.2s; /* MAINS is slow and heavy */
       }
@@ -157,7 +157,7 @@
         --glow: var(--coolant);
         --deep: #043346;
         --foam: #dcf8ff;
-        --halo: rgba(70, 224, 255, 0.44);
+        --halo: rgba(70, 224, 255, 0.55);
         --bore: clamp(44px, 7.8vh, 88px);
         --pace: 0.66s; /* COOLANT is fast and bright */
       }
@@ -165,61 +165,75 @@
         --glow: var(--volt);
         --deep: #2a0b4e;
         --foam: #efe0ff;
-        --halo: rgba(180, 107, 255, 0.46);
+        --halo: rgba(180, 107, 255, 0.58);
         --bore: clamp(37px, 6.6vh, 74px);
         --pace: 0.51s; /* VOLT travels in packets, and bites */
       }
 
       /* ONE SECTION of a telescoping run. The bore steps down toward the
-         head (--f), and the section is METAL FIRST: an opaque cylinder,
-         dark at both rims where the barrel turns away, a specular high
-         up where the work light catches it and a bounce low down off the
-         floor. The liquid is not the pipe — it glows through a window in
-         the middle of it, which is the whole look inside: a pour riding
-         behind frosted metal, never a lit rod. */
+         head (--f), and the section is GLASS FULL OF LIQUID — which is
+         what the real shell is: a translucent barrel with the pour lit
+         behind it, so on the headset the whole tube reads as a column of
+         light with a skin, never a pipe with a slot in it. (The first cut
+         here was an opaque metal cylinder with a narrow lit window; wrong
+         hardware.) Three layers, bottom up: the liquid itself, filling
+         the barrel — deep at the rims where it thins, the line's glow
+         through the body, foam-white along the hottest centre; the
+         travelling pour riding on it; and the GLASS over both — dark at
+         both rims where it turns away, one sharp specular high up where
+         the work light hits it, a softer reflection low down. */
       .sec {
         position: relative;
+        isolation: isolate;
         flex: 1 1 0;
         height: calc(var(--bore) * var(--f));
         background: linear-gradient(
           180deg,
-          #060504 0%,
-          #17130f 5%,
-          #453d35 14%,
-          #8d8175 23%,
-          #6b6257 30%,
-          #453e36 39%,
-          #2b2620 47%,
-          #241f1a 57%,
-          #383129 68%,
-          #4b443b 78%,
-          #221d19 89%,
-          #050403 100%
+          var(--deep) 0%,
+          var(--glow) 22%,
+          var(--glow) 40%,
+          var(--foam) 49%,
+          var(--glow) 58%,
+          var(--glow) 76%,
+          var(--deep) 100%
         );
-        box-shadow:
-          0 0 40px -6px var(--halo),
-          inset 0 1px 0 rgba(255, 255, 255, 0.09);
+        box-shadow: 0 0 52px -4px var(--halo);
       }
-      /* THE WINDOW: the pour, seen through the frost. A narrow hot band
-         down the barrel's middle — deep at its edges, the line's glow
-         either side of a foam-white centreline. */
-      .sec > i {
+      /* THE GLASS. */
+      .sec::before {
+        content: '';
         position: absolute;
-        inset: 35% 0;
-        display: block;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
         background: linear-gradient(
           180deg,
-          rgba(0, 0, 0, 0.55) 0%,
-          var(--deep) 12%,
-          var(--glow) 34%,
-          var(--foam) 50%,
-          var(--glow) 66%,
-          var(--deep) 88%,
-          rgba(0, 0, 0, 0.55) 100%
+          rgba(0, 0, 0, 0.78) 0%,
+          rgba(0, 0, 0, 0.42) 5%,
+          rgba(0, 0, 0, 0.1) 10%,
+          rgba(255, 255, 255, 0.58) 14%,
+          rgba(255, 255, 255, 0.22) 17%,
+          rgba(0, 0, 0, 0.14) 24%,
+          rgba(0, 0, 0, 0.04) 32%,
+          rgba(255, 255, 255, 0) 44%,
+          rgba(0, 0, 0, 0.08) 64%,
+          rgba(255, 255, 255, 0.12) 79%,
+          rgba(0, 0, 0, 0.3) 88%,
+          rgba(0, 0, 0, 0.6) 95%,
+          rgba(0, 0, 0, 0.82) 100%
         );
-        opacity: 0.94;
-        filter: blur(0.4px);
       }
+      /* THE POUR rides the liquid, under the glass, and fades toward the
+         rims where the liquid thins — the currents live in its body. */
+      .sec > i {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        display: block;
+        -webkit-mask-image: linear-gradient(180deg, transparent 12%, #000 34%, #000 68%, transparent 90%);
+        mask-image: linear-gradient(180deg, transparent 12%, #000 34%, #000 68%, transparent 90%);
+      }
+
       /*
        * THE POUR, MOVING — and it is ONE COLUMN, not five.
        *
@@ -245,27 +259,24 @@
        * two tiles of a quarter, 100% for one tile of a half. Both come
        * to half a section, which is why the two waves travel together.
        */
-      .sec > i::after {
-        content: '';
-        position: absolute;
-        inset: 0;
+      .sec > i {
         background-image:
           /* the currents */
           linear-gradient(
             90deg,
             rgba(255, 255, 255, 0) 0%,
-            rgba(255, 255, 255, 0.05) 26%,
-            rgba(255, 255, 255, 0.32) 46%,
-            rgba(255, 255, 255, 0.38) 50%,
-            rgba(255, 255, 255, 0.32) 54%,
-            rgba(255, 255, 255, 0.05) 74%,
+            rgba(255, 255, 255, 0.03) 22%,
+            rgba(255, 255, 255, 0.17) 44%,
+            rgba(255, 255, 255, 0.2) 50%,
+            rgba(255, 255, 255, 0.17) 56%,
+            rgba(255, 255, 255, 0.03) 78%,
             rgba(255, 255, 255, 0) 100%
           ),
           /* the swell under them */
           linear-gradient(
             90deg,
             rgba(255, 255, 255, 0) 0%,
-            rgba(255, 255, 255, 0.15) 50%,
+            rgba(255, 255, 255, 0.11) 50%,
             rgba(255, 255, 255, 0) 100%
           );
         background-size:
@@ -286,18 +297,18 @@
          genuinely darker. Their shoulders stay soft on purpose: cut hard,
          a packet stops reading as plasma and starts reading as a dashed
          rule, which is what the first cut of this looked like. */
-      .run--volt > .sec > i::after {
+      .run--volt > .sec > i {
         background-image:
           linear-gradient(
             90deg,
-            rgba(12, 0, 26, 0.34) 0%,
-            rgba(12, 0, 26, 0.34) 18%,
-            rgba(255, 255, 255, 0.12) 33%,
-            rgba(255, 255, 255, 0.46) 45%,
-            rgba(255, 255, 255, 0.46) 55%,
-            rgba(255, 255, 255, 0.12) 67%,
-            rgba(12, 0, 26, 0.34) 82%,
-            rgba(12, 0, 26, 0.34) 100%
+            rgba(12, 0, 26, 0.3) 0%,
+            rgba(12, 0, 26, 0.3) 18%,
+            rgba(255, 255, 255, 0.08) 33%,
+            rgba(255, 255, 255, 0.3) 45%,
+            rgba(255, 255, 255, 0.3) 55%,
+            rgba(255, 255, 255, 0.08) 67%,
+            rgba(12, 0, 26, 0.3) 82%,
+            rgba(12, 0, 26, 0.3) 100%
           ),
           linear-gradient(
             90deg,
@@ -307,41 +318,44 @@
           );
       }
       /* Liquid runs root to head — and COOLANT's head is the other way. */
-      .run--coolant > .sec > i::after {
+      .run--coolant > .sec > i {
         animation-direction: reverse;
       }
 
-      /* THE COLLAR over every joint — the fitting that covers the step in
-         bore, standing proud of the barrel like the real one. */
+      /* THE JOINER over every joint — RUBBER: matte black, soft-edged, a
+         dull sheen rather than a specular, standing a touch proud of the
+         glass either side of it. It covers the step in bore and it is the
+         one part of a run that is not lit. */
       .sec::after {
         content: '';
         position: absolute;
-        right: -7px;
+        right: -8px;
         top: 50%;
+        z-index: 3;
         translate: 0 -50%;
-        width: 14px;
-        height: calc(100% + 12px);
-        border-radius: 2px;
+        width: 16px;
+        height: calc(100% + 14px);
+        border-radius: 5px;
         background: linear-gradient(
           180deg,
-          #070605 0%,
-          #2b251f 9%,
-          #6e6459 24%,
-          #948779 33%,
-          #5c534a 46%,
-          #332d27 62%,
-          #4a433a 76%,
-          #1c1814 90%,
-          #060504 100%
+          #050505 0%,
+          #1d1d1d 12%,
+          #333232 28%,
+          #2a2929 46%,
+          #1c1b1b 66%,
+          #0e0e0e 86%,
+          #040404 100%
         );
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.07),
+          0 3px 8px rgba(0, 0, 0, 0.7);
       }
       .run > .sec:last-child::after {
         display: none;
       }
       .run--coolant > .sec::after {
         right: auto;
-        left: -0.4em;
+        left: -8px;
       }
       .run--coolant > .sec:last-child::after {
         display: none;
@@ -435,7 +449,7 @@
       }
 
       @media (prefers-reduced-motion: reduce) {
-        .sec > i::after {
+        .sec > i {
           animation: none;
         }
         #enter-ar {
