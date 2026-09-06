@@ -27,12 +27,15 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   RingGeometry,
+  SphereGeometry,
   TorusGeometry,
+  type Quaternion,
   type ShaderMaterial,
+  type Vector3,
 } from 'three';
 import { FLOW, TUBE, type LineSpec } from '../config.js';
-import { createFlowMaterial } from '../materials/flow.js';
-import { segmentRadius } from './geometry.js';
+import { createFlowMaterial, createJointMaterial } from '../materials/flow.js';
+import { segmentRadius, type TubeSegment } from './geometry.js';
 
 /* ── shared unit geometries (scaled per use, never rebuilt) ─────────────── */
 
@@ -48,6 +51,15 @@ let _pourGeo: CylinderGeometry | null = null;
  *  read as ANGULAR liquid whenever the light caught a facet. */
 function pourGeo(): CylinderGeometry {
   return (_pourGeo ??= new CylinderGeometry(1, 1, 1, 18, 1));
+}
+
+let _jointGeo: SphereGeometry | null = null;
+/** Unit joint ball (r=1): the pour's ELBOW. Every section's volume ends
+ *  in one of these at its outer joint, so a bend is a ball-and-socket
+ *  of lit liquid rather than two flat-cut cylinders meeting at an
+ *  angle. Same radial count as the pour, for the same reason. */
+function jointGeo(): SphereGeometry {
+  return (_jointGeo ??= new SphereGeometry(1, 18, 12));
 }
 
 const _plateGeos = new Map<number, CylinderGeometry>();
@@ -270,7 +282,22 @@ export interface SegmentRefs {
   /** The pour volume inside (hidden until the line charges). */
   pour: Mesh;
   pourMat: ShaderMaterial;
+  /** The pour's ELBOW at this section's outer joint — a ball the size of
+   *  this section's bore, sat on the shared joint point, that the next
+   *  (thinner) section's volume starts inside. Shares the pour's live
+   *  uniforms; owns its own arc-length range. */
+  joint: Mesh;
+  jointMat: ShaderMaterial;
 }
+
+/** THE POUR'S BORE, as a fraction of the shell's: a hair off the glass,
+ *  so the frost reads as a film over liquid rather than a pipe with a
+ *  light in. */
+export const POUR_BORE = 0.87;
+/** The joint ball stands a whisker proud of its section's bore, so the
+ *  section's flat end sits strictly inside it (no z-fight on the rim)
+ *  while the ball still clears the thinner shell it half-lives in. */
+export const JOINT_BORE = POUR_BORE * 1.03;
 
 /** One telescoping section: barrel + end collar + pour volume. All three
  *  are posed by TubeSystem every frame; nothing here owns a transform. */
@@ -296,10 +323,73 @@ export function buildSegment(line: LineSpec, index: number): SegmentRefs {
   );
   const pour = new Mesh(pourGeo(), pourMat);
   pour.renderOrder = 4;
-  pour.scale.set(r * 0.87, 1, r * 0.87);
+  pour.scale.set(r * POUR_BORE, 1, r * POUR_BORE);
   pour.visible = false;
 
-  return { shell, rib, pour, pourMat };
+  const jointMat = createJointMaterial(pourMat);
+  const joint = new Mesh(jointGeo(), jointMat);
+  joint.renderOrder = 4;
+  joint.scale.setScalar(r * JOINT_BORE);
+  joint.visible = false;
+
+  return { shell, rib, pour, pourMat, joint, jointMat };
+}
+
+/**
+ * Pose one section's POUR between its two joint points, and the ball
+ * that seals its outer joint.
+ *
+ * THE POUR IS ONE COLUMN — AND IT STAYS IN ITS OWN GLASS. Each section's
+ * volume is COAXIAL with its shell (same chord, same quaternion) and
+ * ends exactly on the shared joint point, where a BALL of its own bore
+ * sits: the next, thinner section's volume starts inside that ball, so
+ * at any bend the elbow is a sphere of lit liquid and no flat cut of
+ * either cylinder can ever face the room. (The volume used to TUCK
+ * backward through the joint into the fatter section instead, with the
+ * tuck clamped by the local kink — and at exactly the kinks the
+ * clearance arcs make, the clamp ran the tuck to nothing and both
+ * cylinders' flat ends showed through the frost as hard-edged wedges of
+ * liquid at every turn.) The rib ring hides the ball's equator seam.
+ *
+ * AT THE SOCKET IT KEEPS GOING: `into` runs the last section's volume on
+ * past the head into the socket's throat, so the column ends inside the
+ * wall instead of stopping dead at the collar plane.
+ *
+ * `jointTangent` is the curve's heading AT the joint (the rib's), so the
+ * ball's arc-length axis lies along the flow and the front sweeps
+ * through it instead of popping it. `sealed` = false on the last
+ * section (the collar caps the head; nothing follows).
+ */
+export function posePour(
+  seg: SegmentRefs,
+  span: TubeSegment,
+  pA: Vector3,
+  pB: Vector3,
+  tangent: Vector3,
+  quat: Quaternion,
+  chord: number,
+  into: number,
+  jointTangentQuat: Quaternion,
+  sealed: boolean,
+): void {
+  const bore = span.radius * POUR_BORE;
+  seg.pour.position.copy(pA).add(pB).multiplyScalar(0.5).addScaledVector(tangent, into / 2);
+  seg.pour.quaternion.copy(quat);
+  seg.pour.scale.set(bore, chord + into, bore);
+  seg.pourMat.uniforms.uS0.value = span.s0;
+  seg.pourMat.uniforms.uS1.value = span.s1 + into;
+
+  seg.joint.visible = sealed && seg.pour.visible;
+  if (!sealed) return;
+  const ball = span.radius * JOINT_BORE;
+  seg.joint.position.copy(pB);
+  seg.joint.quaternion.copy(jointTangentQuat);
+  seg.joint.scale.setScalar(ball);
+  // The unit sphere runs y ∈ [−1, 1]; the shader reads vAlong = y + 0.5,
+  // so a half-bore either side of the joint's own arc length puts the
+  // front through the ball at the pace it crosses the pipe.
+  seg.jointMat.uniforms.uS0.value = span.s1 - ball / 2;
+  seg.jointMat.uniforms.uS1.value = span.s1 + ball / 2;
 }
 
 export interface CollarRefs {

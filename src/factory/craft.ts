@@ -51,7 +51,7 @@
 
 import { Matrix4, Quaternion, Vector3, type Mesh, type MeshBasicMaterial, type Object3D, type Points, type PointsMaterial } from 'three';
 import { LINES, type ItemId } from '../config.js';
-import { CHUTE_Y, PORT_REACH } from './sim.js';
+import { CHUTE_Y, PORT_REACH, chuteY } from './sim.js';
 import { SPARKS, partKit } from './units.js';
 
 export type CraftCue =
@@ -356,7 +356,9 @@ export function tickCraft(rig: CraftRig, item: ItemId | null, p: number, ctx: Cr
  *  when the chute is full). Sets _pos; returns the blend for yaw. */
 function eject(rig: CraftRig, p: number, ctx: CraftContext, restY: number, from = 0.88): number {
   const e = ctx.chuteFull ? 0 : smooth(seg(p, from, 1));
-  _pos.set(0, lerp(rig.stageY + restY, CHUTE_Y, e), ctx.slotZ * e);
+  // …down the chute slide: the slot's own height, which is rail height
+  // once the slot is past the slide's foot.
+  _pos.set(0, lerp(rig.stageY + restY, chuteY(ctx.slotZ), e), ctx.slotZ * e);
   return e;
 }
 
@@ -612,8 +614,10 @@ function combine(
   f.maxLift = item === 'servo' ? 0.23 : item === 'pump' ? 0.19 : 0.16;
   f.hoverY = Math.min(f.seatY + 0.06, under + f.maxLift - TOP[crown] - 0.006);
   f.met = smooth(seg(p, 0, 0.28));
-  f.baseY = CHUTE_Y;
-  f.crownY = lerp(CHUTE_Y, f.hoverY, f.met);
+  // Both parts walk IN from the foot of their port slides (rail height)
+  // up onto the stage (bench height) as they meet.
+  f.baseY = lerp(chuteY(PORT_REACH), CHUTE_Y, f.met);
+  f.crownY = lerp(chuteY(PORT_REACH), f.hoverY, f.met);
   f.baseYaw = lerpAngle(ctx.portSpin[basePort], 0, f.met);
   f.crownYaw = lerpAngle(ctx.portSpin[crownPort], 0, f.met);
   f.lift = 0;
@@ -625,8 +629,10 @@ function combine(
   const e = ctx.chuteFull ? 0 : smooth(seg(p, 0.88, 1));
   const xB = (basePort === 0 ? 1 : -1) * PORT_REACH * (1 - f.met);
   const xC = (crownPort === 0 ? 1 : -1) * PORT_REACH * (1 - f.met);
-  _pA.set(xB, f.baseY, ctx.slotZ * e);
-  _pB.set(xC, f.crownY, ctx.slotZ * e);
+  // The finished stack slides out and DOWN the chute to its slot.
+  const drop = chuteY(ctx.slotZ) - CHUTE_Y;
+  _pA.set(xB, f.baseY + drop * e, ctx.slotZ * e);
+  _pB.set(xC, f.crownY + drop * e, ctx.slotZ * e);
   const yawB = lerpAngle(f.baseYaw, ctx.spinTarget, e);
   const yawC = lerpAngle(f.crownYaw, ctx.spinTarget, e);
   _scl.setScalar(1);

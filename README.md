@@ -47,9 +47,9 @@ industrial tube at a time.
 - **Then the payoff.** The line charges for one held breath — and POURS:
   a front of liquid light races the run from flange to socket behind
   frosted metal — ONE unbroken column, stepping down in bore straight
-  through every telescoping joint (each section's glow tucks back
-  through its collar into the section behind it, so the seams sit over
-  lit liquid, never over a gap) — lands with the line's own chord, and
+  through every telescoping joint (each joint is a BALL of lit liquid
+  the next section's glow starts inside, so a bend is an elbow and
+  never a flat cut) — lands with the line's own chord, and
   the socket blooms —
   a burst of lens glints, a settling hum, and **a shaft of sunlight
   firing straight out of a wall that never had a window**, dust motes
@@ -57,6 +57,10 @@ industrial tube at a time.
   a floor port, pouring straight down from a ceiling one. In passthrough that light lands in YOUR room, which is
   the whole trick: the game's best effect is played on a stage it didn't
   have to draw.
+- **Lines give way to each other.** Two seated runs whose paths cross
+  bow apart — the later one over the first, or under it, the ends
+  never leaving their fittings' axes — so HOT AND COLD's two hauls
+  share the air instead of passing through one another.
 - **Five jobs, one honest ladder.** One run on the MAINS teaches
   everything. Then a long haul across the room; then two lines whose
   sockets only take their own kind; then two long-hauled lines that want
@@ -272,6 +276,14 @@ tools/
   socket-look.mjs        a socket from 14 angles — the anti-culling check
                          (open geometry looks whole from one viewpoint and
                          half-there from the next; only an orbit catches it)
+  effects-look.mjs       the pour, the vat and the connection rings at
+                         fixed times, off the production materials
+  lines-look.mjs         THE LINES WHERE THEY MEET: the room's crossing
+                         hauls and the shop's three feeds over a lane of
+                         plant, measured — clearance between centrelines,
+                         each last section on its socket's axis, a re-solve
+                         that eases — plus the chute and port slides landing
+                         on their rails, shot close
 ```
 
 `DESIGN.md` has the full design notes and the roadmap. `FACTORY.md`
@@ -363,13 +375,30 @@ pipe bridging a pipe; then it comes down level into the box's side
 collar, which stays exactly the union it always was. (An angled-up
 intake high on the drum was tried for this instead and reverted on
 sight — the arc is the pipe-run look; the tilted collar wasn't.) The
-arc never costs the fittings their axes: the dodge is a bump that
-tapers to nothing at both ends, so a line leaves its spout and lands
-in its gland dead square however hard it has to climb in between. And
+arc never costs the fittings their axes: the dodge is a bump that is
+dead flat for the whole section at either end, so a line leaves its
+spout and lands in its gland square — on the gland's axis, not just
+tangent to it — however hard it has to climb in between; and when the
+answer changes (a new line seats, a box lands under a run, a collar
+is tugged loose) the arc EASES to the new shape instead of popping.
+The same pass now runs in the room too (`tube/clearance.ts`), so the
+wall game's crossing lines clear each other the way the shop's do. And
 the liquid stays in its casing: each section's pour is coaxial with
-its own glass, its joint tuck clamped by the local bend, so nothing
-angular ever pokes out of the frost again — and at the socket the
-column runs on INTO the throat rather than stopping at the collar.
+its own glass and ends in a ball of liquid at the joint that the next
+section starts inside, so a bend is an elbow and never a flat face of
+liquid through the frost — and at the socket the column runs on INTO
+the throat rather than stopping at the collar.
+
+**THE RAILS MEET THEIR MACHINES.** A maker's chute is a SLIDE now: it
+leaves the drum at bench height and comes down to rail height just
+over the cell's edge, where its foot sits bolted across the skids of
+whatever rail stands there — a spout the lane runs out of. A
+combiner's two ports are the same slide turned outward, so a lane runs
+UP into its hopper. The sim walks parts down the same slope the
+builder draws, and the craft theatre ends each making by sliding the
+finished thing to the slide's foot, on the rail, where the lane takes
+it. (The chute used to be a flat tray hung six centimetres above the
+rail's end, touching nothing, and a part left it by falling through.)
 
 **THE RECORDS.** 4 LEAF CLOVERS holds the board while you read the book;
 the three NEW SONGs work the floor, shuffled; and **NOVUS** takes the
@@ -393,6 +422,8 @@ node tools/goop-look.mjs      # shots/goop-*.png — the creature's face, close
 node tools/craft-look.mjs     # shots/craft/ — every item's making, frame by frame
 node tools/preview-shot.mjs   # shots/ of the landing, board, pull, pour
 node tools/socket-look.mjs    # shots/socket/ — one socket, 14 angles
+node tools/effects-look.mjs   # shots/effects/ — the liquids and the rings, timed
+node tools/lines-look.mjs     # shots/lines/ — crossing lines, flush glands, rails met
 ```
 
 The walk drives the REAL game through the debug hook — real placement

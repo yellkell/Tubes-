@@ -153,6 +153,24 @@ export interface FlowUniforms {
 
 /** One pour material for one segment volume. Cheap enough to clone per
  *  segment — a run is eight of these sharing values via updateFlow(). */
+/** THE JOINT BALL's material: the same pour, sharing every live uniform
+ *  (time, front, energy — one update lights both) and owning only its
+ *  arc-length range, since a ball straddles its joint rather than
+ *  spanning a section. Same shader source, so no second compile. */
+export function createJointMaterial(pour: ShaderMaterial): ShaderMaterial {
+  const u = pour.uniforms as unknown as FlowUniforms;
+  return new ShaderMaterial({
+    uniforms: {
+      ...u,
+      uS0: { value: 0 },
+      uS1: { value: 1 },
+    },
+    vertexShader: FLOW_VERT,
+    fragmentShader: FLOW_FRAG,
+    side: DoubleSide,
+  });
+}
+
 export function createFlowMaterial(
   glow: ColorRepresentation,
   deep: ColorRepresentation,

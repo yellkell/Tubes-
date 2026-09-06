@@ -1284,3 +1284,77 @@ exposure so a frame lands within a hundredth of its mark. It also
 asserts what can be asserted: the theatre is live, the die set and the
 clamp leave their rests, the draw budget holds with all of it running
 (338 of 420).
+
+### The thirteenth pass — the lines clear, land square, and the rails meet their machines
+
+**"In job the tubes can still overlap."** They could: the clearance
+pass was the factory's alone, and HOT AND COLD's two long hauls ran
+straight through each other. The pair half of that pass — the exact
+segment-to-segment relaxation, who-moves, the push down the line
+between the closest points — moved out of FactorySystem into
+`tube/clearance.ts`, and TubeSystem drives it too: every seated wall
+run is an item, re-solved when the seated set changes, drawn through
+the same `dodgedPoint`. The room sets the caps instead of the plant: a
+belly may rise to just under the scan's ceiling and, the floor being
+open, the LOWER of a pair may dip toward it (the shop never dips — the
+plant is down there). Two bores and a hand's width of daylight in the
+room (`CLEAR_ROOM`), because a crossing that cleared by two bores on
+paper still read as two pipes touching. job-walk now measures the
+closest approach between every seated pair's drawn curves on the
+multi-run jobs and holds it over 0.2 m through the middle of the runs.
+
+**"In factory we had it where the tubes jumped out of their socket when
+repositioning after an overlap."** Two mechanisms, both real. The
+window: `dodgeBump` was zero with zero slope at the ends and still
+ROSE through the last section, so a tall lift put the section in the
+gland 20–40° off the gland's axis — every joint sealed, and the pipe
+still read as having jumped out of its seat. The bump is dead flat for
+`TUBE.dodgeEnd` of the run at each end now (one section of eight), so
+whatever the lift, the section that sits in a fitting lies along that
+fitting's axis; lines-look measures it under 3° on every gland, every
+socket, before and after a re-solve. The snap: the pass re-solved the
+instant a line seated, a box landed, or a collar was tugged loose, and
+the frozen curve POPPED to the new one — at its worst the whole arc
+collapsed into your hands as the seal broke. Each system keeps the
+SOLVED offset apart from the DRAWN one and walks the drawn one toward
+it at `TUBE.dodgeEase` (`easeLift`), in every phase: a freshly seated
+line bows into place over half a second, and a tugged one relaxes.
+
+Two honesty rules came with the window, because a flat end costs
+leverage: inside the fitting corridors (bump under 0.2 — the first and
+last quarter of a run) a clash is the OTHER run's to clear if it has
+the purchase, and otherwise the fittings' business; and the plant
+sweep no longer pays for a clash the cap cannot clear — a press frame
+a few sections short of a gland used to buy the tallest tent the cap
+allows and still pass through the frame. Half a clearance is no
+clearance, and the arc it costs is real.
+
+**"We had edges of liquid showing at turns in the tubes across
+everything."** The eighth pass ran the joint tuck to zero against the
+local kink, which was the right failure for the tuck — and exactly at
+the kinks the clearance arcs make, both cylinders' flat ends then
+showed through the frost as hard wedges of liquid. THE BALL JOINT
+replaces the tuck (`build.posePour`): every section's pour ends on its
+joint point in a sphere of its own bore, sharing the pour's live
+uniforms (`createJointMaterial`) and carrying its own arc-length span
+so the front sweeps through it, and the next section starts inside it.
+A bend is an elbow of lit liquid now; no flat cut can face the room.
+Seven more draws a run; FULL PRESSURE sits at 132.
+
+**"We want the rails to actually connect to the makers and
+combiners."** They didn't: the chute tray hung 0.1 m over the next cell
+at bench height, six centimetres above the rail standing there and
+touching nothing, and a stamped part left it by dropping through the
+tray onto the tread. The chute is a SLIDE (`units.chuteSlide`,
+`sim.CHUTE_SLIDE`): it leaves the machine's face at bench height and
+comes down to rail height just over the cell edge, where its foot sits
+on the rail's skid tops with a bolted cross-bar under it. A combiner's
+two ports are the same slide turned outward, so a lane runs up into
+the hopper. `chuteY(reach)` is the one function that knows the slope:
+`partPose` walks a waiting part down it (slot 0 waits at the foot, at
+rail height — where the lane takes it from; slot 1 behind it on the
+drum's edge), a port part waits at its slide's foot on the end of the
+rail that fed it, and the craft theatre's eject and walk-in ride the
+same numbers, so the hand-off from phantom to part is still a
+hand-off. `tools/lines-look.mjs` shoots both joints close and asserts
+the slot heights.

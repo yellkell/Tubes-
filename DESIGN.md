@@ -153,13 +153,20 @@ run sharing front/time/energy:
   and centred on the curve used to fall short of each other, because a
   bent curve is longer than the chord between its ends — the walk now
   measures the worst joint off the scene's own transforms and holds it
-  at zero). And THE TUCK — each section's pour volume runs back through
-  its own joint into the fatter section behind it (the root into the
-  flange's gland), uniforms carrying the stretched span so the front's
-  clip stays world-true through the overlap, with the joint rings cut
-  slimmer than the collar stock so the bands sit over lit liquid. The
-  column steps down in bore at every joint, exactly what a telescope
-  full of liquid would do; it never breaks.
+  at zero). And THE BALL JOINT — each section's pour volume ends, on
+  its outer joint point, in a sphere of its own bore that the next
+  (thinner) section's volume starts inside, sharing the pour's live
+  uniforms and carrying its own arc-length span so the front sweeps
+  through it at the pace it crosses the pipe. At any bend the elbow is
+  a ball of lit liquid; no flat cut of either cylinder can ever face
+  the room. (The sections used to TUCK back through their joints into
+  the fatter one behind, the tuck clamped by the local kink — and at
+  exactly the kinks the clearance arcs make, the clamp ran the tuck to
+  nothing and both cylinders' flat ends showed through the frost as
+  hard wedges of liquid at every turn.) The joint rings are cut slimmer
+  than the collar stock and sit on the balls' equators. The column
+  steps down in bore at every joint, exactly what a telescope full of
+  liquid would do; it never breaks.
 - **Alive**: two travelling body waves plus the line's pulse — MAINS
   rolls (0.5 Hz), COOLANT streams (0.9), VOLT strobes (2.2 with `chop`
   squaring the wave into plasma packets with dark water between). Wet

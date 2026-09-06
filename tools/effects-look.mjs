@@ -6,7 +6,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
-const browser = await chromium.launch();
+let browser;
+try {
+  browser = await chromium.launch();
+} catch {
+  browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+}
 const page = await browser.newPage({ viewport: { width: 1200, height: 860 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));

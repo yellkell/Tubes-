@@ -43,24 +43,65 @@ const _c = { x: 0, z: 0 };
 
 /* ── where parts sit (the sim's word; FactorySystem renders it) ─────────── */
 
-/** The chute plane — where a stamped part's origin rests on the bench. */
+/** The chute plane — where a part's origin rests at BENCH height: on a
+ *  maker's anvil edge, on a combiner's stage. */
 export const CHUTE_Y = UNITS.crate.benchTop + 0.045;
 
+/**
+ * THE CHUTE IS A SLIDE — and it lands ON the rail.
+ *
+ * A chute used to be a flat tray at bench height hanging 0.1 m out over
+ * the neighbouring cell, six centimetres ABOVE the rail that stood
+ * there: nothing joined the two, and a stamped part dropped straight
+ * through the tray onto the tread. The same tray, mirrored, hovered
+ * over the end of every rail feeding a combiner's port. So the chute
+ * slopes now: it leaves the machine at bench height and comes down to
+ * rail height just past the cell's edge, where its foot sits on the
+ * rail's skids — a spout that the lane runs out of, and a lane that
+ * runs up into a hopper. The builder draws it, partPose walks parts
+ * down it, and the craft theatre slides its phantoms onto it, all off
+ * these three numbers.
+ */
+export const CHUTE_SLIDE = {
+  /** Where the slide leaves the machine's face (m from the centre)… */
+  from: 0.13,
+  /** …and where its foot lands, just over the cell edge (0.175) onto
+   *  the next cell's rail. */
+  to: 0.19,
+  /** The slide's top surface at either end: bench height at the
+   *  machine, and resting on the rail's skid tops at the foot. */
+  topY: UNITS.crate.benchTop + 0.012,
+  footY: UNITS.railTop + 0.01,
+  /** A part's origin rides this far above the surface it sits on. */
+  seat: 0.033,
+};
+
+/** Where a part's origin sits on a chute or port slide, `reach` out
+ *  from the machine's centre — bench height on the machine, rail
+ *  height once it is past the foot. */
+export function chuteY(reach: number): number {
+  const { from, to, topY, footY, seat } = CHUTE_SLIDE;
+  const t = Math.min(1, Math.max(0, (reach - from) / (to - from)));
+  return topY + (footY - topY) * t + seat;
+}
+
 /** How far a chute slot stands off its unit's centre, along OUT. Slot 0
- *  sits IN the chute tray the builder draws (units.chuteTray, at
- *  size/2 + 0.05 = 0.2); slot 1 waits on the machine's front edge behind
- *  it. (The slots used to start at 0.105 and step 0.13 — the front part
- *  hung over the drum's edge short of the tray and the second one sat
- *  under the piston.) The craft theatre (factory/craft.ts) ends every
- *  craft by sliding the forming part to exactly this spot, so the real
- *  part appears where the ghost stopped. */
+ *  waits at the FOOT of the chute slide (units.chuteSlide), on the
+ *  first centimetres of whatever rail stands there — at rail height,
+ *  which is where the lane takes it from; slot 1 waits on the machine's
+ *  front edge behind it, at bench height. (The slots used to start at
+ *  0.105 and step 0.13 — the front part hung over the drum's edge short
+ *  of the tray and the second one sat under the piston.) The craft
+ *  theatre (factory/craft.ts) ends every craft by sliding the forming
+ *  part to exactly this spot, so the real part appears where the ghost
+ *  stopped. */
 export function chuteReach(slot: number): number {
   return 0.21 - slot * 0.105;
 }
 
-/** A combiner's port trays, off the centre to either side — the same
- *  offset chuteTray uses, so a part waits IN its tray rather than on the
- *  lobe beside it. */
+/** A combiner's ports, off the centre to either side: a part waits at
+ *  the foot of the port's slide (the chute slide, mirrored — the same
+ *  numbers), on the end of the rail that fed it, at rail height. */
 export const PORT_REACH = UNITS.crate.size / 2 + 0.05;
 
 /** A part's world pose from its logical place. Hand parts are the one
@@ -75,7 +116,7 @@ export function partPose(part: Part, out: Vector3): Vector3 {
   const dir = DIRS[unit.rot];
   if (at.kind === 'chute') {
     const reach = chuteReach(at.slot);
-    return out.set(_c.x + dir.di * reach, CHUTE_Y, _c.z + dir.dj * reach);
+    return out.set(_c.x + dir.di * reach, chuteY(reach), _c.z + dir.dj * reach);
   }
   if (at.kind === 'belt') {
     const p = Math.min(1, Math.max(0, part.p));
@@ -105,7 +146,7 @@ export function partPose(part: Part, out: Vector3): Vector3 {
   }
   if (at.kind === 'port') {
     const side = DIRS[portDir(unit, at.port)];
-    return out.set(_c.x + side.di * PORT_REACH, CHUTE_Y, _c.z + side.dj * PORT_REACH);
+    return out.set(_c.x + side.di * PORT_REACH, chuteY(PORT_REACH), _c.z + side.dj * PORT_REACH);
   }
   // chest — a little stack on the crate's lid.
   return out.set(_c.x, UNITS.crate.benchTop + 0.05 + at.index * 0.05, _c.z);

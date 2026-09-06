@@ -143,6 +143,19 @@ export const TUBE = {
    *  gland sits 0.075 deep, the wall's 0.055) so it never pokes out the
    *  far side of a box. */
   pourSeatReach: 0.04,
+  /** THE DODGE WINDOW. A seated run that has to give way (to plant, or
+   *  to another run) bows its belly, and the bow used to start rising
+   *  the moment the tube left its fitting — so a big lift tipped the
+   *  last section 20–40° off the socket's axis and the pipe read as
+   *  having JUMPED OUT of its seat. The bump now stays exactly zero for
+   *  this fraction of the run at EACH end — one section, at eight — so
+   *  the section in the fitting is always on the fitting's axis and
+   *  the whole lift is spent over the middle. */
+  dodgeEnd: 0.125,
+  /** And a lift never snaps: when the clearance pass re-solves (a new
+   *  line seats, a box lands under a run, a collar is tugged loose) the
+   *  drawn offset EASES to the new answer at this rate (1/s). */
+  dodgeEase: 6,
 };
 
 /* ────────────────────────────── THE SEAT ─────────────────────────────────

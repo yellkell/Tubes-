@@ -3,7 +3,7 @@
  *
  * This system owns the physical shift: it builds the flange the moment a
  * mount lands, irises the socket awake on cue, and then runs THE PULL —
- * the game's whole feel, five rules deep:
+ * the game's whole feel, six rules deep:
  *
  *  1. TWO HANDS OR NOTHING — AND THEN IT'S YOURS. Both grips inside
  *     reach, both squeezing, and the collar is yours. One hand squeezing
@@ -32,6 +32,12 @@
  *     eases onto the seat pose (the path sweeping in along the socket's
  *     normal), and the latch dogs slam whether or not the hands hang on.
  *     Offering it up is enough — TUBES does not fail the willing.
+ *  6. SEATED LINES GIVE WAY TO EACH OTHER. Two runs whose curves come
+ *     inside two bores of one another bow apart — the later one over
+ *     (or, on the room's open floor, under) the first — through the
+ *     shared clearance pass (tube/clearance.ts), the same move the
+ *     factory's lines make over its plant. The ends never leave their
+ *     fittings' axes, and a re-solve eases in rather than snapping.
  *
  * FlowSystem reads this system's hardware registry to drive the pour;
  * this file never touches a flow uniform except to zero a fresh one.
@@ -50,17 +56,25 @@ import {
   buildFlange,
   buildSegment,
   buildSocket,
+  posePour,
   type CollarRefs,
   type FlangeRefs,
   type SegmentRefs,
   type SocketRefs,
 } from '../tube/build.js';
 import {
+  CLEAR_ROOM,
+  DODGE_SAMPLES,
+  dodgedPoint,
+  dodgedTangent,
+  easeLift,
+  relaxPairs,
+  type DodgeItem,
+} from '../tube/clearance.js';
+import {
   bendControl,
   endControl,
   maxExtensionFor,
-  pathPoint,
-  pathTangent,
   runLength,
   segmentSpans,
 } from '../tube/geometry.js';
@@ -117,6 +131,13 @@ export const tubeView: {
    *  between consecutive sections' shared joint points (metres) for a
    *  run, from the shells' actual transforms. ~0 or the law is broken. */
   jointGaps?: (runIndex: number) => number | null;
+  /** A seated run's curve exactly as layTube draws it, dodge included —
+   *  n samples of the centreline, so a tool can MEASURE tube-to-tube
+   *  clearance instead of eyeballing screenshots. Null unless
+   *  seated/flowing. */
+  runCurve?: (runIndex: number, n?: number) => Array<[number, number, number]> | null;
+  /** THE CLEARANCE PASS, visible: each dodged run's solved offset. */
+  dodges?: () => Record<number, [number, number, number]>;
 } = {};
 
 const UP_Y = new Vector3(0, 1, 0);
@@ -141,6 +162,8 @@ const SHELL_PAD = 0.03;
 const _prevDir = new Vector3();
 const _tangent = new Vector3();
 const _quat = new Quaternion();
+const _quat2 = new Quaternion();
+const _jointDir = new Vector3();
 const _seat = new Vector3();
 const _dir = new Vector3();
 
@@ -149,6 +172,14 @@ export class TubeSystem extends createSystem({}) {
   private clock = 0;
   /** The tool-driven hands: when active they replace both grips. */
   private driven = { active: false, pos: new Vector3() };
+  /** THE CLEARANCE PASS: per run, the SOLVED offset (re-solved whenever
+   *  the seated set changes — dodgeSig) and the DRAWN one, which eases
+   *  toward it (and back to nothing once a run is loose again). */
+  private dodgeSig = '';
+  private dodgeTarget: Array<Vector3 | undefined> = [];
+  private dodgeShown: Vector3[] = [];
+  private bufA = Array.from({ length: DODGE_SAMPLES }, () => new Vector3());
+  private bufB = Array.from({ length: DODGE_SAMPLES }, () => new Vector3());
 
   init(): void {
     tubeView.state = () =>
@@ -172,6 +203,26 @@ export class TubeSystem extends createSystem({}) {
     };
     tubeView.release = () => {
       this.driven.active = false;
+    };
+    tubeView.runCurve = (runIndex, n = 64) => {
+      const run = site.runs[runIndex];
+      const hw = runHardware[runIndex];
+      if (!run || !hw || (run.phase !== 'seated' && run.phase !== 'flowing')) return null;
+      const out: Array<[number, number, number]> = [];
+      const lift = this.dodgeShown[runIndex];
+      this.curveOf(run, hw, run.head, run.normalB);
+      for (let k = 0; k < n; k++) {
+        dodgedPoint(_mouth, _p1, _p2, run.head, lift, k / (n - 1), _pA);
+        out.push([_pA.x, _pA.y, _pA.z]);
+      }
+      return out;
+    };
+    tubeView.dodges = () => {
+      const out: Record<number, [number, number, number]> = {};
+      this.dodgeTarget.forEach((v, i) => {
+        if (v && v.lengthSq() > 1e-8) out[i] = [v.x, v.y, v.z];
+      });
+      return out;
     };
     tubeView.jointGaps = (runIndex) => {
       const hw = runHardware[runIndex];
@@ -214,18 +265,83 @@ export class TubeSystem extends createSystem({}) {
       this.teardown();
     }
 
+    // Seated lines give way to each other: re-solved when the seated set
+    // changes, then the drawn offsets EASE toward the answer (and back to
+    // nothing for a run that is loose again), so nothing ever pops.
+    let sig = '';
+    for (let i = 0; i < site.runs.length; i++) {
+      const r = site.runs[i];
+      if (r.phase === 'seated' || r.phase === 'flowing') sig += `${i}|`;
+    }
+    if (sig !== this.dodgeSig) {
+      this.dodgeSig = sig;
+      this.recomputeDodges();
+    }
+
     for (let i = 0; i < site.runs.length; i++) {
       const run = site.runs[i];
       if (run.phase === 'pending' || run.phase === 'place') continue;
       const hw = (runHardware[i] ??= this.buildHardware(run));
+      easeLift((this.dodgeShown[i] ??= new Vector3()), this.dodgeTarget[i], delta);
       this.poseStatics(run, hw);
-      this.tickWake(run, hw);
+      this.tickWake(run, hw, i);
       // Under the JOB CARD the pull freezes where it stands — the hands
       // belong to the card, and a parked tube can wait forever anyway.
       if (run.phase === 'pull' && !site.paused) this.tickPull(run, hw, i, delta);
-      if (run.phase === 'seated' || run.phase === 'flowing') this.layTube(run, hw, run.extension, true);
+      if (run.phase === 'seated' || run.phase === 'flowing') this.layTube(run, hw, run.extension, true, i);
       this.tickCollarTell(run, hw, delta);
     }
+  }
+
+  /* ── the clearance pass ───────────────────────────────────────────────── */
+
+  /** The bezier a seated run draws: mouth, both controls, into _mouth /
+   *  _p1 / _p2 — the head is the caller's (run.head, or headVisual). */
+  private curveOf(run: RunState, hw: RunHardware, head: Vector3, entry: Vector3): void {
+    this.mouthOf(run, hw.flange, _mouth);
+    bendControl(_mouth, run.normalA, run.extension, _p1);
+    endControl(head, entry, run.extension, _p2, 1);
+  }
+
+  /**
+   * Which seated runs clash, and who moves: the pair sweep from
+   * tube/clearance.ts over every seated run's frozen curve. The room
+   * sets the caps — a belly may rise to just under the scan's ceiling
+   * and, this floor being open (no plant under a wall run), the LOWER
+   * of a pair may dip toward the floor instead, so a crossing low on the
+   * wall doesn't have to buy its clearance in headroom it hasn't got.
+   */
+  private recomputeDodges(): void {
+    this.dodgeTarget.length = 0;
+    const ceiling = walls.find((w) => w.kind === 'ceiling');
+    const floor = walls.find((w) => w.kind === 'floor');
+    const floorY = floor?.center.y ?? 0;
+    const topY = ceiling?.center.y ?? floorY + 2.7;
+    const items: DodgeItem[] = [];
+    for (let i = 0; i < site.runs.length; i++) {
+      const run = site.runs[i];
+      const hw = runHardware[i];
+      if (!hw || (run.phase !== 'seated' && run.phase !== 'flowing')) continue;
+      const lift = new Vector3();
+      this.dodgeTarget[i] = lift;
+      const high = Math.max(run.pointA.y, run.pointB.y);
+      const low = Math.min(run.pointA.y, run.pointB.y);
+      items.push({
+        lift,
+        maxUp: Math.max(0, topY - 0.25 - high),
+        maxDown: Math.max(0, low - floorY - 0.5),
+        sample: (v, out) => {
+          this.curveOf(run, hw, run.head, run.normalB);
+          for (let k = 0; k < out.length; k++) {
+            dodgedPoint(_mouth, _p1, _p2, run.head, v, k / (out.length - 1), out[k]);
+          }
+        },
+      });
+    }
+    // A wall run may sidestep less than a shop run: the sockets sit
+    // inside the mount band, and 0.8 of sidestep could put a belly in
+    // the plaster of a wall it runs along.
+    relaxPairs(items, this.bufA, this.bufB, CLEAR_ROOM, 0.5);
   }
 
   /* ── build / teardown ─────────────────────────────────────────────────── */
@@ -239,7 +355,7 @@ export class TubeSystem extends createSystem({}) {
     for (let s = 0; s < TUBE.segments; s++) {
       const seg = buildSegment(run.line, s);
       segments.push(seg);
-      root.add(seg.shell, seg.rib, seg.pour);
+      root.add(seg.shell, seg.rib, seg.pour, seg.joint);
     }
     socket.group.visible = false; // the wake reveals it
     root.add(flange.group, socket.group, collar.group);
@@ -275,7 +391,10 @@ export class TubeSystem extends createSystem({}) {
     for (const hw of runHardware) {
       if (!hw) continue;
       hw.root.removeFromParent();
-      for (const seg of hw.segments) seg.pourMat.dispose();
+      for (const seg of hw.segments) {
+        seg.pourMat.dispose();
+        seg.jointMat.dispose();
+      }
       hw.flange.glowMat.dispose();
       hw.socket.glowMat.dispose();
       hw.socket.guideMat.dispose();
@@ -284,6 +403,9 @@ export class TubeSystem extends createSystem({}) {
     }
     runHardware.length = 0;
     this.driven.active = false;
+    this.dodgeSig = '';
+    this.dodgeTarget.length = 0;
+    this.dodgeShown.length = 0;
   }
 
   /** Where the tube leaves the flange (a touch off the plaster). */
@@ -302,7 +424,7 @@ export class TubeSystem extends createSystem({}) {
 
   /* ── the wake (socket theatre — poses only; sounds live in placement) ── */
 
-  private tickWake(run: RunState, hw: RunHardware): void {
+  private tickWake(run: RunState, hw: RunHardware, runIndex: number): void {
     if (run.phase === 'wake') {
       const p = run.phaseT;
       if (p >= WAKE.socketAt) {
@@ -313,7 +435,7 @@ export class TubeSystem extends createSystem({}) {
         hw.socket.group.scale.setScalar(s);
       }
       // The tube starts life visible as its capped stub.
-      this.layTube(run, hw, run.extension, false);
+      this.layTube(run, hw, run.extension, false, runIndex);
     } else if (hw.socket.group.visible) {
       hw.socket.group.scale.setScalar(1);
     } else if (run.phase !== 'pending') {
@@ -434,7 +556,7 @@ export class TubeSystem extends createSystem({}) {
       if (hw.seatP >= 1) this.seat(run, hw, runIndex, _mouth, _seat);
     }
 
-    this.layTube(run, hw, run.extension, hw.magnet);
+    this.layTube(run, hw, run.extension, hw.magnet, runIndex);
   }
 
   private seat(run: RunState, hw: RunHardware, runIndex: number, mouth: Vector3, seat: Vector3): void {
@@ -530,7 +652,7 @@ export class TubeSystem extends createSystem({}) {
 
   /* ── laying the tube along its path ───────────────────────────────────── */
 
-  private layTube(run: RunState, hw: RunHardware, ext: number, entering: boolean): void {
+  private layTube(run: RunState, hw: RunHardware, ext: number, entering: boolean, runIndex: number): void {
     this.mouthOf(run, hw.flange, _mouth);
     const maxExt = maxExtensionFor(runLength(_mouth, _seat.copy(run.pointB)));
     bendControl(_mouth, run.normalA, ext, _p1);
@@ -557,6 +679,13 @@ export class TubeSystem extends createSystem({}) {
     }
     endControl(hw.headVisual, _entry, ext, _p2, hw.held && hw.aimOk && !entering ? TUBE.steerReach : 1);
 
+    // The clearance pass lands here — as a BUMP ON THE CURVE (see
+    // tube/clearance.ts), whatever the run's phase: a seated run wears
+    // its solved offset, and a run tugged loose or torn down keeps
+    // wearing the drawn one while it eases back to nothing.
+    const shown = this.dodgeShown[runIndex];
+    const lift = shown && shown.lengthSq() > 1e-8 ? shown : undefined;
+
     const spans = segmentSpans(ext, maxExt);
     // THE POLYLINE LAW: every piece spans the straight line BETWEEN its
     // two points ON the curve, so consecutive sections share their joint
@@ -576,15 +705,16 @@ export class TubeSystem extends createSystem({}) {
       seg.rib.visible = on;
       if (!span) {
         seg.pour.visible = false;
+        seg.joint.visible = false;
         continue;
       }
-      pathPoint(_mouth, _p1, _p2, hw.headVisual, span.s0 / extSafe, _pA);
-      pathPoint(_mouth, _p1, _p2, hw.headVisual, Math.min(1, span.s1 / extSafe), _pB);
+      dodgedPoint(_mouth, _p1, _p2, hw.headVisual, lift, span.s0 / extSafe, _pA);
+      dodgedPoint(_mouth, _p1, _p2, hw.headVisual, lift, Math.min(1, span.s1 / extSafe), _pB);
       _tangent.copy(_pB).sub(_pA);
       let chord = _tangent.length();
       if (chord < 1e-5) {
         // A section barely emerged: fall back to the curve's own tangent.
-        pathTangent(_mouth, _p1, _p2, hw.headVisual, span.s0 / extSafe, _tangent);
+        dodgedTangent(_mouth, _p1, _p2, hw.headVisual, lift, span.s0 / extSafe, _tangent);
         chord = span.s1 - span.s0;
       } else {
         _tangent.divideScalar(chord);
@@ -593,69 +723,41 @@ export class TubeSystem extends createSystem({}) {
       seg.shell.position.copy(_pA).add(_pB).multiplyScalar(0.5);
       seg.shell.quaternion.copy(_quat);
       seg.shell.scale.set(span.radius, chord + SHELL_PAD, span.radius);
-      // THE POUR IS ONE COLUMN — AND IT STAYS IN ITS OWN GLASS. Each
-      // section's volume is COAXIAL with its shell (same chord, same
-      // quaternion) and simply extends backward along that axis through
-      // the joint into the fatter section behind it, so the seam and the
-      // joint ring sit over lit glow. It used to be aimed at the curve
-      // point behind the joint instead — a straight prism on a DIFFERENT
-      // line than its own casing, which cut the corner at any bend and
-      // stuck out of the glass as a hard orange wedge (the headset
-      // photographed exactly that). The tuck is clamped by the local
-      // kink so the tail can't burst out of the fatter shell either: at
-      // a sharp carried bend the overlap shortens and the rib covers the
-      // seam, which is the right failure.
-      // The tuck shrinks ALL THE WAY TO ZERO at a sharp elbow — a floor
-      // here was a lit nub poking sideways out of the fatter shell at
-      // every steep joint, which is exactly where the clearance arcs
-      // put steep joints. The seam a vanished tuck can no longer bridge
-      // is the RIB's job below: the joint collar widens with the kink,
-      // covering the elbow in metal the way a real fitting does. And
-      // the ROOT has no tail at all: a tail along a steep root chord
-      // swings OUT of the mouth's boss and shows its raw lit cap to the
-      // room (the headset photographed exactly that) — the shell's own
-      // overhang plus the boss ring cover the mouth seam without it.
-      let tuck = span.index === 0 ? 0 : Math.min(TUBE.pourOverlap, span.s0);
       if (span.index === 0) _prevDir.copy(run.normalA);
       const kink = _prevDir.distanceTo(_tangent); // ≈ the turn, as a chord
-      if (tuck > 0 && kink > 1e-4) {
-        const room = spans[span.index - 1].radius - span.radius * 0.87;
-        tuck = Math.min(tuck, Math.max(0, room) / kink);
-      }
-      // AND AT THE SOCKET IT KEEPS GOING: the last section's volume runs
-      // on past the head into the socket's throat, so the column ends
-      // inside the wall instead of stopping dead at the collar plane and
-      // showing the flat face of the liquid at the joint.
-      const into = entering && i === spans.length - 1 ? TUBE.pourSeatReach : 0;
-      seg.pour.position
-        .copy(_pA)
-        .add(_pB)
-        .multiplyScalar(0.5)
-        .addScaledVector(_tangent, (into - tuck) / 2);
-      seg.pour.quaternion.copy(_quat);
-      // 0.87 of the shell's bore: a hair off the glass, so the frost
-      // reads as a film over liquid rather than a pipe with a light in.
-      seg.pour.scale.set(span.radius * 0.87, chord + tuck + into, span.radius * 0.87);
-      seg.pourMat.uniforms.uS0.value = span.s0 - tuck;
-      seg.pourMat.uniforms.uS1.value = span.s1 + into;
       _prevDir.copy(_tangent);
       // The joint collar sits ON the shared joint point, wearing the
       // curve's own tangent there — halfway between its two elbows. And
       // it CARRIES the elbow: the band widens with the joint's kink (set
       // on the PREVIOUS segment's rib, which is the collar at this
       // joint), so a sharp bend reads as a fatter fitting, never a gap.
-      pathTangent(_mouth, _p1, _p2, hw.headVisual, Math.min(1, span.s1 / extSafe), _tangent);
+      dodgedTangent(_mouth, _p1, _p2, hw.headVisual, lift, Math.min(1, span.s1 / extSafe), _jointDir);
       seg.rib.position.copy(_pB);
-      seg.rib.quaternion.copy(_quat.setFromUnitVectors(FWD_Z, _tangent));
+      seg.rib.quaternion.copy(_quat2.setFromUnitVectors(FWD_Z, _jointDir));
       seg.rib.scale.z = span.radius * 1.1;
       if (span.index > 0) {
         hw.segments[span.index - 1].rib.scale.z =
           spans[span.index - 1].radius * 1.1 * (1 + Math.min(1.4, kink * 2.5));
       }
+      // THE POUR: one column, elbowed with balls at every joint, running
+      // on into the socket's throat at the seat (build.posePour).
+      const into = entering && i === spans.length - 1 ? TUBE.pourSeatReach : 0;
+      posePour(
+        seg,
+        span,
+        _pA,
+        _pB,
+        _tangent,
+        _quat,
+        chord,
+        into,
+        _quat2.setFromUnitVectors(UP_Y, _jointDir),
+        i < spans.length - 1,
+      );
     }
 
     // The collar caps the head, facing out along the final tangent.
-    pathTangent(_mouth, _p1, _p2, hw.headVisual, 1, _tangent);
+    dodgedTangent(_mouth, _p1, _p2, hw.headVisual, lift, 1, _tangent);
     hw.collar.group.position.copy(hw.headVisual);
     hw.collar.group.quaternion.copy(_quat.setFromUnitVectors(FWD_Z, _tangent));
   }

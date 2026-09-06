@@ -185,6 +185,46 @@ for (let job = 0; job < jobRuns.length; job++) {
     await workRun(r);
   }
 
+  // SEATED LINES GIVE WAY TO EACH OTHER: on a multi-run job, no two
+  // seated centrelines may come inside a bore of one another through
+  // the middle of their runs (the fitting corridors at the ends are the
+  // sockets' business), and every run still lands square on its socket
+  // whatever it dodged. Measured off the drawn curves, dodge included.
+  if (jobRuns[job] > 1) {
+    const lines = await page.evaluate(() => {
+      const t = window.__tubes;
+      return t.site.runs.map((run, i) => ({
+        curve: t.tube.runCurve(i, 48),
+        n: { x: run.normalB.x, y: run.normalB.y, z: run.normalB.z },
+      }));
+    });
+    const inner = (pts) => pts.slice(Math.floor(pts.length * 0.2), Math.ceil(pts.length * 0.8));
+    let worst = Infinity;
+    for (let i = 0; i < lines.length; i++) {
+      for (let j = i + 1; j < lines.length; j++) {
+        if (!lines[i].curve || !lines[j].curve) continue;
+        for (const p of inner(lines[i].curve)) {
+          for (const q of inner(lines[j].curve)) {
+            worst = Math.min(worst, Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]));
+          }
+        }
+      }
+    }
+    check(worst > 0.2, `job ${job + 1}: seated lines clear each other (closest ${worst.toFixed(2)} m)`);
+    let steepest = 0;
+    for (const l of lines) {
+      if (!l.curve) continue;
+      const [a, b] = [l.curve[l.curve.length - 2], l.curve[l.curve.length - 1]];
+      const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      const L = Math.hypot(...d) || 1;
+      const cos = -(d[0] * l.n.x + d[1] * l.n.y + d[2] * l.n.z) / L;
+      steepest = Math.max(steepest, (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI);
+    }
+    // The bezier's own curvature over the last sample is worth 2–3° on
+    // a steep run; the dodge's share is exactly zero, and 4 is the bar.
+    check(steepest < 4, `job ${job + 1}: every line lands on its socket's axis (worst ${steepest.toFixed(1)}°)`);
+  }
+
   await page.waitForFunction(() => window.__tubes.site.screen === 'ceremony', undefined, {
     timeout: 10000,
   });
