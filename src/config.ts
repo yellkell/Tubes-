@@ -334,33 +334,33 @@ export const JOBS: JobSpec[] = [
   {
     id: 'first-light',
     name: 'FIRST LIGHT',
-    brief: 'One run on the MAINS. Mount the flange, haul the tube, seat it. The machine does the rest.',
+    brief: 'Connect MAINS. Trigger to mount a flange; use both grips to haul the tube to its matching socket.',
     runs: ['mains'],
   },
   {
     id: 'crosstown',
     name: 'CROSSTOWN',
-    brief: 'The MAINS again — but the socket wakes across the room. Walk it over. Mind the sofa.',
+    brief: 'Connect MAINS across the room. Carry the tube to the amber socket with both grips.',
     runs: ['mains'],
     longHaul: true,
   },
   {
     id: 'two-hander',
     name: 'TWO-HANDER',
-    brief: 'MAINS and COOLANT, one after the other. A socket only takes its own line — the collar tells you whose.',
+    brief: 'Connect MAINS, then COOLANT. Match each tube to its own socket.',
     runs: ['mains', 'coolant'],
   },
   {
     id: 'hot-and-cold',
     name: 'HOT AND COLD',
-    brief: 'Both services, long-hauled. The runs will want the same air. Route around your own work.',
+    brief: 'Connect MAINS and COOLANT across the room. Steer the second tube around the first.',
     runs: ['coolant', 'mains'],
     longHaul: true,
   },
   {
     id: 'full-pressure',
     name: 'FULL PRESSURE',
-    brief: 'MAINS, COOLANT, VOLT. Every line at once. Seat the last one and see what the room does.',
+    brief: 'Connect MAINS, COOLANT and VOLT. Finish all three lines.',
     runs: ['mains', 'coolant', 'volt'],
     longHaul: true,
   },
@@ -594,9 +594,7 @@ export interface ItemSpec {
   tier: 1 | 2 | 3;
   /** The lines whose look this part carries (first = the body). */
   lineage: CoreLineId[];
-  /** THE DOCKET — what the works DOES with it. One line, on the sheet:
-   *  every part is FOR something behind your walls, and the fiction
-   *  says so out loud. */
+  /** One-line recipe shown on the goal card. */
   docket: string;
 }
 
@@ -606,35 +604,35 @@ export const ITEMS: Record<ItemId, ItemSpec> = {
     name: 'GEAR',
     tier: 1,
     lineage: ['mains'],
-    docket: 're-tooths the old drives sleeping behind your walls',
+    docket: 'MAINS + MAKER → GEAR',
   },
   cell: {
     id: 'cell',
     name: 'CELL',
     tier: 1,
     lineage: ['coolant'],
-    docket: 'holds a charge of coolant light for the dark stretches',
+    docket: 'COOLANT + MAKER → CELL',
   },
   chip: {
     id: 'chip',
     name: 'CHIP',
     tier: 1,
     lineage: ['volt'],
-    docket: 'thinks for valves that forgot their timings',
+    docket: 'VOLT + MAKER → CHIP',
   },
   pump: {
     id: 'pump',
     name: 'PUMP',
     tier: 2,
     lineage: ['mains', 'coolant'],
-    docket: 'puts pressure back where the mains ran to silt',
+    docket: 'GEAR + CELL → PUMP',
   },
   lamp: {
     id: 'lamp',
     name: 'LAMP',
     tier: 2,
     lineage: ['coolant', 'volt'],
-    docket: 'a room behind the plaster gets its morning back',
+    docket: 'CELL + CHIP → LAMP',
   },
   servo: {
     id: 'servo',
@@ -647,7 +645,7 @@ export const ITEMS: Record<ItemId, ItemSpec> = {
     // and the gate is bolted with them for exactly that reason.
     tier: 3,
     lineage: ['mains', 'coolant', 'volt'],
-    docket: 'an old arm on the far side learns its reach again',
+    docket: 'PUMP + LAMP → SERVO',
   },
 };
 
@@ -701,25 +699,25 @@ export const UPGRADES: UpgradeSpec[] = [
   {
     id: 'long-reach',
     name: 'LONG REACH',
-    effect: 'supply tubes stretch two metres further',
+    effect: 'Supply tube reach +2 m',
     bill: { gear: 4 },
   },
   {
     id: 'belt-pace',
     name: 'BELT PACE',
-    effect: 'rails run a quarter faster',
+    effect: 'Rail speed +25%',
     bill: { gear: 8, cell: 6 },
   },
   {
     id: 'quick-boxes',
     name: 'QUICK BOXES',
-    effect: 'makers and combiners craft a quarter faster',
+    effect: 'Crafting time −25%',
     bill: { cell: 8, pump: 4 },
   },
   {
     id: 'deep-crates',
     name: 'DEEP CRATES',
-    effect: 'chests hold twice the parts',
+    effect: 'Chest capacity ×2',
     bill: { chip: 6, lamp: 4 },
   },
   {
@@ -727,7 +725,7 @@ export const UPGRADES: UpgradeSpec[] = [
     // goes direct until you give it somewhere to go through.
     id: 'route-posts',
     name: 'ROUTING POSTS',
-    effect: 'sticks you plant — a hauled rail bends to visit them',
+    effect: 'Unlock posts to guide rail routes',
     // GEAR ONLY, and early. This is the first fitting anyone actually
     // wants — it shapes the very first lane you pull — so it is priced
     // in the part the very first lane makes. A routing aid you cannot
@@ -784,12 +782,11 @@ export const ORDERS: OrderSpec[] = [
   {
     id: 'first-gear',
     name: 'FIRST GEAR',
-    brief:
-      'Stand a MAKER on the floor and run the amber feed straight into its collar. The collar turns to meet you — just bring it near. Then watch: the works stamps a GEAR every few seconds onto its chute.',
+    brief: 'Make 2 GEARS with an amber-fed MAKER.',
     steps: [
-      'Ⓐ → BUILD → MAKER, then trigger on the floor to stand it',
-      'Take the amber feed\u2019s collar in BOTH grips and haul it to the maker',
-      'Squeeze near a finished gear to lift it off the chute — handy, never needed',
+      'Ⓐ → BUILD → MAKER. Aim at the floor; trigger to place.',
+      'Hold the amber collar with both grips. Pull it to the maker.',
+      'Let the maker produce 2 GEARS. No delivery needed.',
     ],
     target: { kind: 'craft', item: 'gear' },
     // TWO, AND THE CHUTE HOLDS TWO. This sheet asked for three, and the
@@ -806,12 +803,11 @@ export const ORDERS: OrderSpec[] = [
   {
     id: 'the-bank',
     name: 'THE BANK',
-    brief:
-      'The chute is full and the maker has stopped — gears piling up are gears going nowhere. Stand the BANK, then stand ONE rail at the maker\u2019s chute and HOLD the trigger: the run hauls out of it like a tube out of a wall, bending round anything in its way, all the way to the bank.',
+    brief: 'Deliver 10 GEARS to the BANK.',
     steps: [
-      'Stand the BANK anywhere on the floor',
-      'Stand a RAIL at the maker\u2019s chute, then HOLD the trigger and pull the run to the bank',
-      'Rails point themselves — they turn to feed whatever they touch',
+      'Ⓐ → BUILD → BANK. Trigger to place.',
+      'Place a RAIL at the maker chute. Hold trigger; drag to the bank.',
+      'Deliver 10 GEARS. Rails carry them automatically.',
     ],
     target: { kind: 'item', item: 'gear' },
     goal: 10,
@@ -820,11 +816,11 @@ export const ORDERS: OrderSpec[] = [
   {
     id: 'the-line',
     name: 'THE LINE',
-    brief:
-      'The cyan feed wakes. A second maker, a second lane — CELLS this time, and two chains sharing one bank.',
+    brief: 'Deliver 10 CELLS from a cyan-fed MAKER to the BANK.',
     steps: [
-      'Stand a second MAKER near the cyan feed',
-      'Run its tube, and rail its chute into the line you already have',
+      'Place a second MAKER.',
+      'Use both grips to pull the cyan feed to it.',
+      'Rail its chute to the BANK. Deliver 10 CELLS.',
     ],
     target: { kind: 'item', item: 'cell' },
     goal: 10,
@@ -833,12 +829,11 @@ export const ORDERS: OrderSpec[] = [
   {
     id: 'first-fitting',
     name: 'FIRST FITTING',
-    brief:
-      'The COMBINER: gears into one side, cells into the other, PUMPS out the front. Two lines becoming one is the whole trade.',
+    brief: 'Combine GEARS and CELLS. Deliver 10 PUMPS to the BANK.',
     steps: [
-      'Stand a COMBINER where both lines can reach its two sides',
-      'Rail the gear line into one side, the cell line into the other',
-      'Pull a rail run from its front chute to the bank',
+      'Place a COMBINER between the gear and cell lines.',
+      'Rail GEARS into one side and CELLS into the other.',
+      'Rail the front chute to the BANK. Deliver 10 PUMPS.',
     ],
     target: { kind: 'item', item: 'pump' },
     goal: 10,
@@ -847,12 +842,11 @@ export const ORDERS: OrderSpec[] = [
   {
     id: 'night-shift',
     name: 'NIGHT SHIFT',
-    brief:
-      'Violet wakes. CHIPS meet cells and make LAMPS — and the CHEST arrives to hold what runs ahead of the line. Click any box to see what is inside it.',
+    brief: 'Combine CELLS and CHIPS. Deliver 10 LAMPS to the BANK.',
     steps: [
-      'Haul a maker\u2019s collar off in both hands and re-seat it on the violet line \u2014 the same box now stamps CHIPS',
-      'Feed chips and cells to the combiner',
-      'Stand a CHEST anywhere a line runs ahead of itself',
+      'Place a MAKER and connect the violet feed to make CHIPS.',
+      'Rail CHIPS and CELLS into opposite sides of a COMBINER.',
+      'Rail its front chute to the BANK. Deliver 10 LAMPS.',
     ],
     target: { kind: 'item', item: 'lamp' },
     goal: 10,
@@ -861,12 +855,11 @@ export const ORDERS: OrderSpec[] = [
   {
     id: 'the-fourth-gate',
     name: 'THE FOURTH GATE',
-    brief:
-      'There is a fourth manifold on the near side of your floor and it has never opened. It is bolted, not locked — and the bolts are SERVOS: a PUMP and a LAMP fitted into one. Every line you have runs through that part. Bank three and the works cranks the gate itself.',
+    brief: 'Combine PUMPS and LAMPS. Deliver 3 SERVOS to unlock the green feed.',
     steps: [
-      'SERVO is a PUMP and a LAMP fitted together \u2014 the whole trade in one bolt',
-      'Three combiners\u2019 work: gears and cells make pumps, cells and chips make lamps',
-      'Three into the bank, and the near pillar starts to move',
+      'Use two COMBINERS: GEAR + CELL → PUMP; CELL + CHIP → LAMP.',
+      'Rail PUMPS and LAMPS into opposite sides of a third COMBINER.',
+      'Rail its front chute to the BANK. Deliver 3 SERVOS.',
     ],
     target: { kind: 'item', item: 'servo' },
     // THREE, NOT SIX. Each servo is four base parts through three
@@ -876,13 +869,12 @@ export const ORDERS: OrderSpec[] = [
   },
   {
     id: 'the-goop',
-    name: 'THE GOOP',
-    brief:
-      'The fourth manifold is open, and it is GREEN. Nothing in the catalogue drinks that — so stand the VAT, the last thing in the book, and run the green line into it. Then stand back.',
+    name: 'THE VAT',
+    brief: 'Fill the VAT with the green feed.',
     steps: [
-      'Ⓐ → BUILD → VAT, and stand it with room around it',
-      'Haul the GREEN collar off the near pillar with both hands',
-      'Seat it in the vat, and watch the level come up',
+      'Ⓐ → BUILD → VAT. Place it with space around it.',
+      'Use both grips to pull the green feed to the vat.',
+      'Let the vat fill to complete the final goal.',
     ],
     target: { kind: 'brew' },
     goal: 1,

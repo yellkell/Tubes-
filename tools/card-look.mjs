@@ -56,10 +56,24 @@ for (const tab of ['jobs', 'factory', 'sys']) {
 
 console.log('THE Ⓐ CARD, PAGE BY PAGE');
 await page.evaluate(() => {
+  window.__tubes.menu.act('tab:jobs');
+  window.__tubes.menu.act('start');
+  window.__tubes.menu.setPause(true);
+});
+await page.waitForTimeout(400);
+save('card-job', await page.evaluate(() => window.__tubes.menu.snapCard()));
+await page.evaluate(() => {
+  window.__tubes.menu.act('quit');
+  window.__tubes.menu.act('quit');
+});
+await page.evaluate(() => {
   window.__tubes.menu.act('tab:factory');
   window.__tubes.menu.act('start-order');
 });
 await page.waitForFunction(() => window.__tubes.site.screen === 'factory', undefined, { timeout: 5000 });
+await page.evaluate(() => window.__tubes.menu.setPause(true));
+await page.waitForTimeout(400);
+save('card-live-goal', await page.evaluate(() => window.__tubes.menu.snapCard()));
 // The whole catalogue open, so the BUILD page shoots every machine.
 await page.evaluate(() => window.__tubes.plant.openAll());
 await page.evaluate(() => window.__tubes.menu.setPause(true));
@@ -70,12 +84,21 @@ const shot = async (name, acts) => {
   save(name, await page.evaluate(() => window.__tubes.menu.snapCard()));
 };
 await shot('card-build', ['card:build']);
+await page.evaluate(() => {
+  window.__tubes.menu.act('build:maker');
+  window.__tubes.menu.setPause(true);
+});
+await page.waitForTimeout(400);
+save('card-build-description', await page.evaluate(() => window.__tubes.menu.snapCard()));
+await page.evaluate(() => window.__tubes.build.stow());
 await shot('card-goals', ['card:goals']);
-await shot('card-sheet-first', ['goal:0']);
-// The last sheet is the longest in the book — the one that overflowed.
 const sheets = (await page.evaluate(() => window.__tubes.menu.cardButtons())).filter((b) =>
   /^goal:\d/.test(b),
 ).length;
+await shot('card-sheet-first', ['goal:0']);
+for (let i = 1; i < sheets - 1; i++) {
+  await shot(`card-sheet-${i + 1}`, ['goal:back', `goal:${i}`]);
+}
 await shot('card-sheet-last', ['goal:back', `goal:${sheets - 1}`]);
 await shot('card-supply', ['goal:back', 'card:supply']);
 await page.evaluate(() => {

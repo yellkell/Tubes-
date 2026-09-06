@@ -138,13 +138,13 @@ export const UNIT_NAME: Record<UnitType, string> = {
 /** One line on what each piece of plant is FOR — the box panel's
  *  subtitle, and the catalogue's tooltip line. */
 const UNIT_DOCKET: Record<UnitType, string> = {
-  dock: 'where parts leave the floor — the sheet counts what lands in it',
-  maker: 'drinks a line and stamps its part onto the chute',
-  belt: 'carries parts one cell; haul a run of them in one gesture',
-  combiner: 'two parts in the sides, one deeper part out the front',
-  chest: 'holds what runs ahead of the line',
-  post: 'a stick a hauled rail bends to visit',
-  vat: 'drinks the fourth manifold. Nobody knows what for',
+  dock: 'Receives goal deliveries. Stores surplus for upgrades.',
+  maker: 'Turns a supply feed into parts. Feed colour sets the recipe.',
+  belt: 'Carries parts between machines. Hold trigger to extend.',
+  combiner: 'Combines two parts. Inputs on the sides; output at the front.',
+  chest: 'Stores parts from rails. Grip a part to take it out.',
+  post: 'Guides a rail route. Place where you want it to bend.',
+  vat: 'Takes the green feed. Fill it to complete the final goal.',
 };
 
 /** Canvas geometry of the board. */
@@ -751,7 +751,7 @@ export class MenuSystem extends createSystem({}) {
     const tabs: Array<{ id: string; tab: Tab; label: string }> = [
       { id: 'tab:jobs', tab: 'jobs', label: 'JOBS' },
       { id: 'tab:factory', tab: 'factory', label: 'FACTORY' },
-      { id: 'tab:sys', tab: 'sys', label: 'SYSTEM' },
+      { id: 'tab:sys', tab: 'sys', label: 'SETTINGS' },
     ];
     tabs.forEach((t, i) => {
       buttons.push({
@@ -795,7 +795,7 @@ export class MenuSystem extends createSystem({}) {
     g.fill();
     g.font = font(500, 22);
     g.fillStyle = UI.faint;
-    g.fillText('THE WORKS WANTS BACK ON', RAIL_X + 226, 100);
+    g.fillText('CONNECT PIPES. BUILD MACHINES.', RAIL_X + 226, 100);
 
     // Room status, top right: what the scan gave us. Walls only — the
     // floor and ceiling are registry citizens too, but "6 WALLS" over a
@@ -961,11 +961,11 @@ export class MenuSystem extends createSystem({}) {
       g.fillText('BEST', SHEET_X + 26, ROW_Y0 + 356);
       g.font = font(600, 34);
       g.fillStyle = best === null ? UI.faint : UI.text;
-      g.fillText(best === null ? 'no time on the sheet' : fmtMs(best), SHEET_X + 108, ROW_Y0 + 356);
+      g.fillText(best === null ? 'Not completed' : fmtMs(best), SHEET_X + 108, ROW_Y0 + 356);
       if (!site.wallsReady) {
         g.font = font(500, 23);
         g.fillStyle = UI.warn;
-        g.fillText('waiting for walls — look around the room', SHEET_X + 26, ROW_Y0 + 412);
+        g.fillText('Look around to find walls', SHEET_X + 26, ROW_Y0 + 412);
       }
     };
   }
@@ -989,17 +989,17 @@ export class MenuSystem extends createSystem({}) {
   } {
     if (spec.target.kind === 'brew') {
       return {
-        name: 'THE GOOP',
-        verb: 'BREW',
+        name: 'VAT',
+        verb: 'FILL',
         dots: [LINES.pearl.hex],
-        docket: 'nobody wrote a docket for this one. It writes its own',
-        glyph: (g, x, y, size, dead) => goopGlyph(g, x, y, size, !dead),
+        docket: 'PEARL → VAT',
+        glyph: toolGlyph('vat'),
       };
     }
     const item = ITEMS[spec.target.item];
     return {
       name: item.name,
-      verb: spec.target.kind === 'craft' ? 'STAMP' : 'DELIVER',
+      verb: spec.target.kind === 'craft' ? 'MAKE' : 'BANK',
       dots: item.lineage.map((l) => LINES[l].hex),
       docket: item.docket,
       glyph: partGlyph(item.id),
@@ -1052,7 +1052,7 @@ export class MenuSystem extends createSystem({}) {
         // player has to know is that Ⓐ exists — and the only place to
         // tell them is here, before they go in.
         id: 'shop-note',
-        label: '\u24b6 on the right controller raises the card',
+        label: '\u24b6 MENU',
         display: true,
         small: true,
         x: SHEET_X + 10,
@@ -1070,7 +1070,7 @@ export class MenuSystem extends createSystem({}) {
       g.font = font(600, 24);
       g.fillStyle = UI.faint;
       g.letterSpacing = '2px';
-      g.fillText('THE BOOK', ROW_X + 2, ROW_Y0 - 22);
+      g.fillText('GOALS', ROW_X + 2, ROW_Y0 - 22);
       g.letterSpacing = '0px';
 
       ORDERS.forEach((o, i) => {
@@ -1132,7 +1132,7 @@ export class MenuSystem extends createSystem({}) {
         30 *
           wrapText(
             g,
-            'Your floor becomes the shop. Feeds wake on its four sides, you haul supply tubes into the boxes you stand, and rails carry what they make. The book asks for one thing at a time and posts the next onto the same floor \u2014 nothing is ever taken off you. Everything you build comes off the \u24b6 card; point at any machine with an empty hand to open it up.',
+            'Build machines. Connect feeds. Rail parts to the bank. Complete each goal to unlock more. Your factory stays in place between goals. \u24b6 opens the menu.',
             SHEET_X + 26,
             y,
             SHEET_W - 52,
@@ -1147,7 +1147,7 @@ export class MenuSystem extends createSystem({}) {
       const t = this.targetOf(at);
       g.font = font(500, 22);
       g.fillStyle = UI.faint;
-      g.fillText(done >= ORDERS.length ? 'THE BOOK IS FILLED' : 'UP NEXT', SHEET_X + 26, y);
+      g.fillText(done >= ORDERS.length ? 'ALL GOALS COMPLETE' : 'UP NEXT', SHEET_X + 26, y);
       y += 34;
       t.glyph(g, SHEET_X + 26, y - 22, 44, false);
       g.font = font(600, 30);
@@ -1170,7 +1170,7 @@ export class MenuSystem extends createSystem({}) {
       if (held.length === 0) {
         g.font = font(500, 21);
         g.fillStyle = UI.faint;
-        g.fillText('empty \u2014 surplus deliveries keep here', SHEET_X + 26, y + 6);
+        g.fillText('No surplus parts', SHEET_X + 26, y + 6);
       } else {
         held.slice(0, 6).forEach(([item, n], i) => {
           const cx = SHEET_X + 26 + (i % 3) * 106;
@@ -1187,7 +1187,7 @@ export class MenuSystem extends createSystem({}) {
         g.textAlign = 'left';
         g.font = font(500, 23);
         g.fillStyle = UI.warn;
-        g.fillText('waiting for walls \u2014 look around the room', SHEET_X + 26, ROW_Y0 + sheetH - 26);
+        g.fillText('Look around to find walls', SHEET_X + 26, ROW_Y0 + sheetH - 26);
       }
     };
   }
@@ -1282,14 +1282,14 @@ export class MenuSystem extends createSystem({}) {
         g.fillStyle = UI.faint;
         g.fillText(sub, CONTENT_X + 10, y + 68, labelW);
       };
-      label('SOUND', 'the shop, the ratchet, the pour', SYS_Y0);
+      label('SOUND', 'Effects volume', SYS_Y0);
       // The now-playing line rides the MUSIC row's sub, because a record
       // you cannot name is a record you cannot ask for again.
       const on = nowPlaying();
       label('MUSIC', on ? `now playing · ${on}` : 'the records', SYS_Y0 + SYS_PITCH);
-      label('WALL FRAMES', 'hairlines on what the scan found', SYS_Y0 + SYS_PITCH * 2);
-      label('THE FLOOR', 'hazard tape — drag its sides to your walls', SYS_Y0 + SYS_PITCH * 3);
-      label('THE SHEET', 'tear it up, start the trade again', SYS_Y0 + SYS_PITCH * 4);
+      label('WALL FRAMES', 'Show detected walls', SYS_Y0 + SYS_PITCH * 2);
+      label('THE FLOOR', 'Drag the tape to resize', SYS_Y0 + SYS_PITCH * 3);
+      label('PROGRESS', 'Clear unlocks and best times', SYS_Y0 + SYS_PITCH * 4);
 
       const real = walls.filter((w) => w.real && w.kind === 'wall').length;
       const flats = walls.filter((w) => w.kind !== 'wall').length;
@@ -1297,7 +1297,7 @@ export class MenuSystem extends createSystem({}) {
       g.font = font(500, 22);
       g.fillStyle = UI.faint;
       g.fillText(
-        `room: ${real} scanned wall${real === 1 ? '' : 's'}${fake ? ` · ${fake} stand-in` : ''}${flats ? ` · floor/ceiling ports live` : ''}  ·  passthrough AR  ·  built on the Immersive Web SDK`,
+        `room: ${real} scanned wall${real === 1 ? '' : 's'}${fake ? ` · ${fake} stand-in` : ''}${flats ? ` · floor/ceiling ports live` : ''}`,
         CONTENT_X + 10,
         H - 44,
       );
@@ -1316,7 +1316,7 @@ export class MenuSystem extends createSystem({}) {
     const buttons: PanelButton[] = [
       {
         id: 'resume',
-        label: 'BACK TO IT',
+        label: 'RESUME',
         primary: true,
         x: 34,
         y: ch - 118,
@@ -1339,11 +1339,12 @@ export class MenuSystem extends createSystem({}) {
       (g) => {
         g.textAlign = 'left';
         g.textBaseline = 'middle';
-        // The clock.
+        // Keep the completion requirement visible above the live steps.
         g.textAlign = 'center';
         g.font = font(600, 34);
         g.fillStyle = UI.dim;
-        g.fillText(fmtMs(site.elapsedMs), cw / 2, 132);
+        const complete = site.runs.filter((run) => run.phase === 'flowing').length;
+        g.fillText(`${complete} / ${site.runs.length} LINES CONNECTED`, cw / 2, 132);
         // One row per run: line dot, name, where it stands.
         site.runs.forEach((run, i) => {
           const y = 176 + i * 40;
@@ -1363,15 +1364,28 @@ export class MenuSystem extends createSystem({}) {
               : run.phase === 'seated'
                 ? 'CHARGING'
                 : run.phase === 'pull'
-                  ? 'ON THE HOOK'
+                  ? 'CONNECT TO SOCKET'
                   : run.phase === 'wake'
-                    ? 'WAKING'
+                    ? 'SOCKET OPENING'
                     : run.phase === 'place'
-                      ? 'PLACE THE FLANGE'
-                      : 'WAITING';
+                      ? 'MOUNT FLANGE'
+                      : 'UP NEXT';
           g.fillStyle = run.phase === 'flowing' ? UI.positive : UI.dim;
           g.fillText(state, cw - 44, y + 1);
         });
+        const active = site.runs.find((run) => run.phase === 'place' || run.phase === 'wake' || run.phase === 'pull');
+        const instruction = active?.phase === 'place'
+          ? 'Aim at a wall. Pull the trigger to mount the flange.'
+          : active?.phase === 'wake'
+            ? 'Find the matching socket as it opens.'
+            : active?.phase === 'pull'
+              ? 'Hold the collar with both grips. Carry it to the matching socket.'
+              : 'Let the connected lines fill.';
+        wrapText(g, instruction, 44, 358, cw - 88, 32, font(600, 26), UI.text, 'center');
+        g.textAlign = 'center';
+        g.font = font(500, 22);
+        g.fillStyle = UI.dim;
+        g.fillText(fmtMs(site.elapsedMs), cw / 2, ch - 162);
       },
       buttons,
       this.hover,
@@ -1416,10 +1430,10 @@ export class MenuSystem extends createSystem({}) {
     const buttons: PanelButton[] = [
       tab('card:build', 'BUILD', this.cardMode === 'build', 0),
       tab('card:goals', 'GOALS', this.cardMode === 'goals', 1),
-      tab('card:supply', 'SUPPLY', this.cardMode === 'supply', 2),
+      tab('card:supply', 'UPGRADES', this.cardMode === 'supply', 2),
       {
         id: 'resume',
-        label: 'BACK TO IT',
+        label: 'RESUME',
         primary: true,
         x: 34,
         y: ch - 84,
@@ -1533,7 +1547,7 @@ export class MenuSystem extends createSystem({}) {
           g.fillText(`${plant.count} / ${spec.goal}`, cw - 96, 112);
           g.font = font(600, 22);
           g.fillStyle = UI.dim;
-          g.fillText(target.name, cw - 96, 144);
+          g.fillText(`${target.verb} ${target.name}`, cw - 96, 144);
           target.glyph(g, cw - 84, 92, 48, false);
           // THE BREW has no counter worth reading — one of one — so the
           // vat gets a level bar instead, which is the honest gauge.
@@ -1552,30 +1566,37 @@ export class MenuSystem extends createSystem({}) {
           g.textAlign = 'right';
           g.font = font(600, 24);
           g.fillStyle = UI.accent;
-          g.fillText('every sheet filled', cw - 40, 118);
+          g.fillText('All goals complete', cw - 40, 118);
           g.font = font(500, 20);
           g.fillStyle = UI.faint;
-          g.fillText('build whatever you like', cw - 40, 146);
+          g.fillText('Keep building', cw - 40, 146);
         }
 
         if (this.cardMode === 'goals') this.paintGoals(g, cw, ch);
         else if (this.cardMode === 'supply') this.paintBills(g, cw, ch);
         else {
           g.textAlign = 'center';
+          const hoveredTool = this.hover?.startsWith('build:') ? this.hover.slice(6) : null;
+          const describedTool = hoveredTool ?? armed;
+          if (describedTool && describedTool in UNIT_DOCKET) {
+            g.font = font(500, 18);
+            g.fillStyle = UI.dim;
+            g.fillText(UNIT_DOCKET[describedTool as UnitType], cw / 2, ch - CARD_FOOT - 64, cw - 2 * CARD_PAD);
+          }
           g.font = font(500, 20);
           g.fillStyle = UI.faint;
           g.fillText(
             armed === 'delete'
-              ? 'point at plant and pull the trigger to take it out'
+              ? 'Aim at a machine; trigger to remove'
               : armed === 'belt'
-                ? 'stand one, then HOLD the trigger and haul the run out \u2014 it bends round anything'
+                ? 'Place a rail; hold trigger and drag to extend'
                 : armed === 'post'
-                  ? 'plant a stick where you want a hauled rail to bend'
+                  ? 'Place a post where the rail should bend'
                   : armed === 'vat'
-                    ? 'stand it with room around it, then bring it the green line'
+                    ? 'Place the vat; connect the green feed'
                     : armed
-                      ? 'aim at the floor \u2014 it turns itself to connect, \u24d1 turns it yourself'
-                      : 'empty-handed, the trigger OPENS a box: what is in it, and UNPLUG',
+                      ? 'Aim at floor · Trigger: place · \u24d1: rotate'
+                      : 'Choose a machine to build. Empty-handed: trigger to inspect.',
             cw / 2,
             ch - CARD_FOOT - 34,
           );
@@ -1586,7 +1607,7 @@ export class MenuSystem extends createSystem({}) {
           if (armed) {
             g.font = font(600, 19);
             g.fillStyle = UI.dim;
-            g.fillText('\u24cd on the left controller puts it back down', cw / 2, ch - CARD_FOOT - 8);
+            g.fillText('\u24cd PUT TOOL AWAY', cw / 2, ch - CARD_FOOT - 8);
           }
         }
       },
@@ -1643,7 +1664,7 @@ export class MenuSystem extends createSystem({}) {
       g.textAlign = 'center';
       g.font = font(500, 18);
       g.fillStyle = UI.faint;
-      g.fillText('tap a sheet for what it asks', cw / 2, ch - CARD_FOOT - 26);
+      g.fillText('Select a goal for steps', cw / 2, ch - CARD_FOOT - 26);
       return;
     }
 
@@ -1666,7 +1687,7 @@ export class MenuSystem extends createSystem({}) {
     t.glyph(g, cw - CARD_PAD - 56, CARD_BODY - 8, 54, false);
     // The docket advances the cursor by however many lines it took.
     let y = CARD_BODY + 66;
-    y += 22 * wrapText(g, t.docket, left, y, wide, 22, font(500, 17), UI.faint) + 14;
+    y += 26 * wrapText(g, t.docket, left, y, wide, 26, font(500, 20), UI.faint) + 14;
     // The steps stop where the footer band begins — better a sheet you
     // can read to the bottom of than one that prints over its own feet.
     const floorY = ch - CARD_FOOT - 34;
@@ -1676,14 +1697,14 @@ export class MenuSystem extends createSystem({}) {
       g.beginPath();
       g.arc(left + 8, y - 5, 3.5, 0, Math.PI * 2);
       g.fill();
-      y += 22 * wrapText(g, stepText, left + 22, y, wide - 22, 22, font(500, 17), UI.dim) + 8;
+      y += 28 * wrapText(g, stepText, left + 22, y, wide - 22, 28, font(500, 22), UI.dim) + 12;
     }
     const next = ORDERS[this.goalOpen + 1];
     g.textAlign = 'right';
     g.font = font(500, 17);
     g.fillStyle = UI.faint;
     g.fillText(
-      next ? `next \u00b7 ${next.name}` : 'last sheet \u2014 then the shop is yours',
+      next ? `next \u00b7 ${next.name}` : 'Final goal',
       cw - CARD_PAD,
       ch - CARD_FOOT + 12,
     );
@@ -1744,7 +1765,7 @@ export class MenuSystem extends createSystem({}) {
                   : 'ON THE CHUTE';
     const emptyLine =
       unit.type === 'dock'
-        ? 'nothing banked yet \u2014 surplus deliveries keep here'
+        ? 'No surplus parts'
         : unit.type === 'belt'
           ? 'nothing riding it'
           : 'empty';
@@ -1755,7 +1776,7 @@ export class MenuSystem extends createSystem({}) {
     const buttons: PanelButton[] = [
       {
         id: 'box:unplug',
-        label: run ? 'UNPLUG' : 'NOTHING PLUMBED',
+        label: 'UNPLUG',
         small: true,
         px: 20,
         disabled: !run,
@@ -1780,7 +1801,7 @@ export class MenuSystem extends createSystem({}) {
       },
       {
         id: 'box:remove',
-        label: 'TAKE IT OUT',
+        label: 'REMOVE',
         small: true,
         px: 20,
         tone: UI.danger,
@@ -1846,10 +1867,10 @@ export class MenuSystem extends createSystem({}) {
           g.fillStyle = UI.faint;
           g.fillText(
             takesTube(unit)
-              ? 'no line seated \u2014 haul one over and it will take it'
+              ? 'Use both grips to connect a supply tube'
               : unit.type === 'post'
-                ? 'a stick. A hauled rail bends to visit it, and takes its place'
-                : 'this one takes rails, not tubes',
+                ? 'Drag a rail route through this post'
+                : 'Connect rails to deliver parts',
             PAD,
             y,
           );
@@ -1882,10 +1903,10 @@ export class MenuSystem extends createSystem({}) {
           g.fillStyle = p > 0.45 ? UI.onAccent : UI.dim;
           g.fillText(
             plant.goop === 'none'
-              ? 'dry \u2014 nothing green has reached it'
+              ? 'Connect the green feed'
               : plant.goop === 'brewing'
-                ? `${Math.round(p * 100)}% \u2014 something is taking shape in there`
-                : 'whatever was in here is out here now',
+                ? `${Math.round(p * 100)}% full`
+                : 'Brew complete',
             PAD + 24,
             y + 24,
           );
