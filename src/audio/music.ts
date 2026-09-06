@@ -27,7 +27,7 @@
  * to pin beat zero to the audio clock; nothing here counts bars.
  *
  * Nothing autoplays. The AudioContext and the first play() both wait for
- * the CLOCK IN tap, and a browser that refuses anyway just leaves the
+ * the PLAY tap, and a browser that refuses anyway just leaves the
  * shop quiet — every noise the game NEEDS to make is synthesised and
  * runs regardless.
  *
@@ -109,7 +109,7 @@ interface Voice {
   dying: boolean;
 }
 
-/** Nothing is attempted until the CLOCK IN tap has primed us. Starting a
+/** Nothing is attempted until the PLAY tap has primed us. Starting a
  *  record on the landing page would be refused by every browser worth
  *  shipping to, and the retry path is a fallback, not a plan. */
 let primed = false;
@@ -246,7 +246,7 @@ export function currentDeck(): Deck {
   return deck;
 }
 
-/** Call from the CLOCK IN gesture, next to ensureAudio(): the first
+/** Call from the PLAY gesture, next to ensureAudio(): the first
  *  play() then happens inside a real user interaction and is allowed. */
 export function primeMusic(): void {
   primed = true;

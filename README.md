@@ -99,12 +99,12 @@ npm install
 npm run dev          # → http://localhost:5173
 ```
 
-- **Quest browser**: open the page, tap **CLOCK IN** → passthrough AR over
+- **Quest browser**: open the page, tap **PLAY** → passthrough AR over
   your own room. If the headset has a room scan (Settings → Physical
   Space → Space Setup), the game uses your actual walls; without one, a
   stand-in room stands in after a few seconds and the board says so.
 - **Desktop**: the IWSDK dev plugin injects a WebXR emulator (IWER) —
-  click CLOCK IN and drive with the emulator's controls; the stand-in
+  click PLAY and drive with the emulator's controls; the stand-in
   room appears (there is no plaster in a browser tab), with hairline
   frames drawn on its walls whenever a flange wants placing.
 - **Mid-shift**: the right controller's **Ⓐ** raises **THE JOB CARD** —

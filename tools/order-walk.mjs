@@ -56,7 +56,7 @@ async function clockIn() {
   await page.waitForFunction(() => window.__tubes.site.wallsReady, { timeout: 5000 });
 }
 
-console.log('CLOCK IN');
+console.log('PLAY');
 // A walk starts on a headset that has never seen the game.
 await page.evaluate(() => localStorage.removeItem('tubes-progress'));
 await page.reload({ waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
