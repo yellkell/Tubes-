@@ -304,7 +304,7 @@ Four buttons, and every one of them is the same verb in two moods:
 | --- | --- | --- |
 | **Trigger** | stamp it (hold, on a rail, to haul the run) | open the box under the reticle |
 | **Ⓑ** | turn the piece a quarter, and mean it | unplug a seated line, or unbolt a bare box |
-| **Ⓧ** | put it back down — ghost, links and a haul in progress | — |
+| **Ⓧ / Ⓨ** | put it back down — ghost, links and a haul in progress | — |
 | **Ⓐ** | the shift card | the shift card (or close an open box) |
 
 **Ⓧ** was the late one. Arming a tool from the card was a one-way door:

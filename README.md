@@ -107,6 +107,11 @@ npm run dev          # → http://localhost:5173
   click PLAY and drive with the emulator's controls; the stand-in
   room appears (there is no plaster in a browser tab), with hairline
   frames drawn on its walls whenever a flange wants placing.
+- **The buttons**: the board's **CONTROLS** tab draws both controllers
+  with every button named, and a table of what each one does on a pipe
+  job, on the shop floor, and while setting the floor. Mid-shift, the
+  same page lives on the Ⓐ card as **CONTROLS**, with the factory's
+  verbs pointed at the controller they live on.
 - **Mid-shift**: the right controller's **Ⓐ** raises **THE JOB CARD** —
   the sheet's live state, a clock, and two honest buttons: BACK TO IT or
   DOWN TOOLS. The hands pause under the card; a pour mid-race keeps
@@ -227,7 +232,7 @@ src/
                               HAUL: stand one rail, hold the trigger, and
                               drag the run out of it (armed from the shift
                               card; pieces face themselves, Ⓑ turns one,
-                              Ⓑ empty-handed unplugs or unbolts, Ⓧ puts
+                              Ⓑ empty-handed unplugs or unbolts, Ⓧ or Ⓨ puts
                               the tool back down, and an empty hand on the
                               trigger opens a box)
   systems/FactorySystem.ts    the shift: feeds, the factory pull (the
@@ -322,7 +327,7 @@ re-aimed at bench machines whose intakes SWIVEL to meet the tube, rails
 and boxes that TURN THEMSELVES to connect (and Ⓑ turns one yourself when
 you disagree), bought sticks to bend a lane exactly where you want it, a
 BOX PANEL on every machine — click one to see what is inside it and to
-UNPLUG its line without unbolting the machine — **Ⓧ** on the left
+UNPLUG its line without unbolting the machine — **Ⓧ** (or **Ⓨ**) on the left
 controller to put a tool back down (mid-haul included), and a BANK
 counting every delivery.
 

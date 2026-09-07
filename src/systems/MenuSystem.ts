@@ -113,6 +113,8 @@ import {
   type GlyphId,
 } from '../ui/icons.js';
 import { Panel, UI, type PanelButton } from '../ui/panel.js';
+import { callout, drawController, faceGlyph, type Control, type Hand } from '../ui/controller.js';
+import { controllerModelView, onControllerImage } from '../ui/controllerModel.js';
 import { PointerRay } from '../ui/pointer.js';
 import { walls } from './WallSystem.js';
 
@@ -173,7 +175,7 @@ const SYS_Y0 = 188;
  *  straight through the room-status footer. */
 const SYS_PITCH = 124;
 
-type Tab = 'jobs' | 'factory' | 'sys';
+type Tab = 'jobs' | 'factory' | 'controls' | 'sys';
 
 /** Headless/dev hooks (wired into __tubes in main.ts) — drive the board
  *  without controllers: hover, press, read what's offered. */
@@ -210,6 +212,8 @@ export const menuView: {
   /** THE COACH LINE — is it up, and what does it say. */
   coachUp?: () => boolean;
   snapCoach?: () => string;
+  /** THE REAL CONTROLLER — its picture, for the CONTROLS pages. */
+  controllers?: typeof controllerModelView;
 } = {};
 
 const _origin = new Vector3();
@@ -248,7 +252,7 @@ export class MenuSystem extends createSystem({}) {
   private quitArm = 0;
   private lastScreen = '';
   /** The factory card's page: the catalogue, or the bank's bills. */
-  private cardMode: 'build' | 'goals' | 'supply' = 'build';
+  private cardMode: 'build' | 'goals' | 'supply' | 'controls' = 'build';
   /** The GOALS page's open sheet (null = the list). */
   private goalOpen: number | null = null;
 
@@ -312,6 +316,13 @@ export class MenuSystem extends createSystem({}) {
     menuView.snapFinale = () =>
       (this.finale.ctx().canvas as HTMLCanvasElement).toDataURL('image/png');
     menuView.coachUp = () => this.coach.isShown;
+    menuView.controllers = controllerModelView;
+    // The real controller pictures arrive after the first paint of a
+    // CONTROLS page; when they do, the page that drew the stand-in
+    // redraws with the thing itself.
+    onControllerImage(() => {
+      this.lastKey = '';
+    });
     menuView.snapCoach = () => (this.coach.ctx().canvas as HTMLCanvasElement).toDataURL('image/png');
   }
 
@@ -588,6 +599,7 @@ export class MenuSystem extends createSystem({}) {
     // muscle memory both still say it, and a renamed tab is no reason to
     // break a door that already works.
     else if (id === 'tab:factory' || id === 'tab:orders') this.tab = 'factory';
+    else if (id === 'tab:controls') this.tab = 'controls';
     else if (id === 'tab:sys') this.tab = 'sys';
     else if (id.startsWith('job:')) {
       const i = Number(id.slice(4));
@@ -615,6 +627,8 @@ export class MenuSystem extends createSystem({}) {
       this.cardMode = 'goals';
     } else if (id === 'card:supply') {
       this.cardMode = 'supply';
+    } else if (id === 'card:controls') {
+      this.cardMode = 'controls';
     } else if (id === 'goal:back') {
       // BEFORE the prefix test below — 'goal:back' starts with 'goal:'
       // too, and parsing it as an index put NaN in goalOpen, which sent
@@ -825,6 +839,7 @@ export class MenuSystem extends createSystem({}) {
     const tabs: Array<{ id: string; tab: Tab; label: string }> = [
       { id: 'tab:jobs', tab: 'jobs', label: 'JOBS' },
       { id: 'tab:factory', tab: 'factory', label: 'FACTORY' },
+      { id: 'tab:controls', tab: 'controls', label: 'CONTROLS' },
       { id: 'tab:sys', tab: 'sys', label: 'SETTINGS' },
     ];
     tabs.forEach((t, i) => {
@@ -844,9 +859,11 @@ export class MenuSystem extends createSystem({}) {
     // Each tab painter installs its own body; the shared chrome fronts it.
     this.boardJobsBody = null;
     this.boardOrdersBody = null;
+    this.boardControlsBody = null;
     this.boardSysBody = null;
     if (this.tab === 'jobs') this.paintJobs(buttons);
     else if (this.tab === 'factory') this.paintFactoryTab(buttons);
+    else if (this.tab === 'controls') this.paintControls();
     else this.paintSystem(buttons);
 
     this.board.paint('', (g) => this.paintBoardBody(g), buttons, this.hover);
@@ -1046,6 +1063,7 @@ export class MenuSystem extends createSystem({}) {
 
   private boardJobsBody: ((g: CanvasRenderingContext2D) => void) | null = null;
   private boardOrdersBody: ((g: CanvasRenderingContext2D) => void) | null = null;
+  private boardControlsBody: ((g: CanvasRenderingContext2D) => void) | null = null;
   private boardSysBody: ((g: CanvasRenderingContext2D) => void) | null = null;
 
   /* ── FACTORY tab (one door into the book) ────────────────────────────── */
@@ -1263,6 +1281,207 @@ export class MenuSystem extends createSystem({}) {
         g.fillStyle = UI.warn;
         g.fillText('Look around to find walls', SHEET_X + 26, ROW_Y0 + sheetH - 26);
       }
+    };
+  }
+
+  /* ── CONTROLS tab ─────────────────────────────────────────────────────── */
+
+  /**
+   * THE CONTROLS TAB — both controllers drawn, every button named, and a
+   * table of what each one does on each kind of shift.
+   *
+   * Five controls carry the whole game and until now the only one written
+   * down before you needed it was Ⓐ. The diagram is the thing in your
+   * hands with the words pointing at it; the table under it is the
+   * part you come back for — "what does Ⓑ do in the factory again" —
+   * split by where you are, because the trigger mounts a flange on one
+   * shift and stamps a machine on the next. No buttons: it is a sheet
+   * you read, not one you press.
+   */
+  private paintControls(): void {
+    const S = 230;
+    const TOP = 186;
+    const LX = 470;
+    const RX = 930;
+    const MID = (LX + S + RX) / 2;
+    const litRight = new Set<Control>(['trigger', 'grip', 'upper', 'lower']);
+    const litLeft = new Set<Control>(['trigger', 'grip', 'upper', 'lower']);
+
+    // THE TABLE. Rows are the controls, columns are the three kinds of
+    // shift; each cell is at most three short lines, and a dash is an
+    // honest cell: that button does nothing there.
+    const T0 = 460;
+    const LBL_W = 118;
+    const COL_X0 = ROW_X + LBL_W + 14;
+    const COL_GAP = 10;
+    const COL_W = (W - 34 - COL_X0 - 2 * COL_GAP) / 3;
+    const PITCH = 66;
+    const rows: Array<{ name: string; hand: string; cells: [string, string, string] }> = [
+      {
+        name: 'TRIGGER',
+        hand: 'right hand',
+        cells: [
+          'Aim at a wall and pull: the flange mounts there.',
+          'Place the piece in hand. Keep it held to haul a rail out. Empty-handed on a box: open its panel.',
+          'Squeeze near a tape side to take it, drag, let go to save. It snaps to your walls.',
+        ],
+      },
+      {
+        name: 'GRIP',
+        hand: 'both hands',
+        cells: [
+          'Both hands on the collar: haul the tube. One hand only rattles it. Let go and it parks.',
+          'The same haul for a supply tube. One hand near a loose part: carry it. Open the hand to drop it.',
+          '—',
+        ],
+      },
+      {
+        name: faceGlyph('right', 'lower'),
+        hand: 'right hand',
+        cells: [
+          'The job card: the lines, the clock, RESUME or QUIT.',
+          'The shift card: BUILD · GOALS · UPGRADES · CONTROLS. Also puts the box panel away.',
+          'Done. The floor saves and the board comes back.',
+        ],
+      },
+      {
+        name: faceGlyph('right', 'upper'),
+        hand: 'right hand',
+        cells: [
+          '—',
+          'Holding a piece: turn it a quarter. Empty-handed on a box: unplug it, or take a bare one out.',
+          '—',
+        ],
+      },
+      {
+        name: `${faceGlyph('left', 'lower')} ${faceGlyph('left', 'upper')}`,
+        hand: 'left hand',
+        cells: ['—', 'Put the tool away.', `${faceGlyph('left', 'lower')}: done, the same as Ⓐ.`],
+      },
+    ];
+
+    this.boardControlsBody = (g: CanvasRenderingContext2D): void => {
+      g.textAlign = 'left';
+      g.textBaseline = 'middle';
+      g.font = font(600, 24);
+      g.fillStyle = UI.faint;
+      g.letterSpacing = '2px';
+      g.fillText('THE CONTROLLERS', ROW_X + 2, ROW_Y0 - 22);
+      g.letterSpacing = '0px';
+
+      // THE PAIR — the real models when they are in, and the anchors
+      // every callout below points at come back from the drawing.
+      const anchors: Record<Hand, Record<Control, { x: number; y: number }>> = {
+        left: drawController(g, 'left', LX, TOP, S, litLeft),
+        right: drawController(g, 'right', RX, TOP, S, litRight),
+      };
+      const at = (hand: Hand, c: Control): { x: number; y: number } => anchors[hand][c];
+      g.textAlign = 'center';
+      g.font = font(500, 19);
+      g.letterSpacing = '2px';
+      g.fillStyle = UI.faint;
+      g.fillText('LEFT HAND', LX + S / 2, TOP + S + 18);
+      g.fillText('RIGHT HAND', RX + S / 2, TOP + S + 18);
+      g.letterSpacing = '0px';
+
+      // Outer callouts: the face buttons and the trigger, out to each
+      // margin. Inner callouts: the stick and the grip, which the two
+      // controllers share, named once between them.
+      const lm = LX - 24;
+      const rm = RX + S + 24;
+      callout(g, at('left', 'trigger'), lm, TOP + 14, 'left', 'TRIGGER');
+      callout(g, at('left', 'upper'), lm, TOP + 54, 'left', faceGlyph('left', 'upper'));
+      callout(g, at('left', 'lower'), lm, TOP + 94, 'left', faceGlyph('left', 'lower'));
+      callout(g, at('right', 'trigger'), rm, TOP + 14, 'right', 'TRIGGER');
+      callout(g, at('right', 'upper'), rm, TOP + 54, 'right', faceGlyph('right', 'upper'));
+      callout(g, at('right', 'lower'), rm, TOP + 94, 'right', faceGlyph('right', 'lower'));
+      // The two shared controls sit at nearly the same height on the
+      // picture, so their words take rows of their own — STICK above,
+      // GRIP below — and the leaders fan to them.
+      const between = (c: Control, label: string, live: boolean, y: number): void => {
+        const l = at('left', c);
+        const r = at('right', c);
+        g.save();
+        g.strokeStyle = live ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.18)';
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.moveTo(l.x, l.y);
+        g.lineTo(MID - 52, y);
+        g.moveTo(r.x, r.y);
+        g.lineTo(MID + 52, y);
+        g.stroke();
+        g.fillStyle = live ? UI.accent : UI.disabled;
+        for (const p of [l, r]) {
+          g.beginPath();
+          g.arc(p.x, p.y, 4, 0, Math.PI * 2);
+          g.fill();
+        }
+        g.textAlign = 'center';
+        g.font = font(600, 22);
+        g.letterSpacing = '1.5px';
+        g.fillStyle = live ? UI.text : UI.disabled;
+        g.fillText(label, MID, y);
+        g.restore();
+      };
+      between('stick', 'STICK', false, TOP + 30);
+      between('grip', 'GRIP', true, TOP + 176);
+
+      // THE TABLE.
+      g.textAlign = 'left';
+      g.font = font(600, 19);
+      g.letterSpacing = '2px';
+      g.fillStyle = UI.faint;
+      ['PIPE JOBS', 'THE FACTORY', 'THE FLOOR'].forEach((h, c) => {
+        g.fillText(h, COL_X0 + c * (COL_W + COL_GAP), T0 + 8);
+      });
+      g.letterSpacing = '0px';
+      g.strokeStyle = UI.lineFaint;
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(ROW_X, T0 + 26);
+      g.lineTo(W - 34, T0 + 26);
+      g.stroke();
+
+      rows.forEach((row, i) => {
+        const y = T0 + 36 + i * PITCH;
+        if (i > 0) {
+          g.strokeStyle = 'rgba(255,255,255,0.06)';
+          g.lineWidth = 1;
+          g.beginPath();
+          g.moveTo(ROW_X, y - 5);
+          g.lineTo(W - 34, y - 5);
+          g.stroke();
+        }
+        g.textAlign = 'left';
+        g.font = font(600, 25);
+        g.letterSpacing = '1px';
+        g.fillStyle = UI.text;
+        g.fillText(row.name, ROW_X, y + 16);
+        g.letterSpacing = '0px';
+        g.font = font(500, 15);
+        g.fillStyle = UI.faint;
+        g.fillText(row.hand, ROW_X, y + 42, LBL_W + 8);
+        row.cells.forEach((cell, c) => {
+          const x = COL_X0 + c * (COL_W + COL_GAP);
+          if (cell === '—') {
+            g.font = font(500, 18);
+            g.fillStyle = UI.disabled;
+            g.textAlign = 'left';
+            g.fillText(cell, x, y + 12);
+            return;
+          }
+          wrapText(g, cell, x, y + 10, COL_W - 8, 20, font(500, 18), UI.dim);
+        });
+      });
+
+      g.textAlign = 'left';
+      g.font = font(500, 19);
+      g.fillStyle = UI.faint;
+      g.fillText(
+        'The sticks and the menu buttons do nothing. Walk — it is your room.',
+        ROW_X,
+        H - 40,
+      );
     };
   }
 
@@ -1491,20 +1710,25 @@ export class MenuSystem extends createSystem({}) {
     // the card grew and every hard-coded 166 would have left a gutter.
     const colW = (cw - 2 * CARD_PAD - 2 * CARD_GAP) / 3;
     const colX = (c: number): number => CARD_PAD + c * (colW + CARD_GAP);
+    // The page tabs are FOUR across (CONTROLS joined late), on their own
+    // measure — the catalogue below keeps its three columns.
+    const tabW = (cw - 2 * CARD_PAD - 3 * CARD_GAP) / 4;
     const tab = (id: string, label: string, on: boolean, c: number): PanelButton => ({
       id,
       label,
       small: true,
+      px: 24,
       selected: on,
-      x: colX(c),
+      x: CARD_PAD + c * (tabW + CARD_GAP),
       y: 162,
-      w: colW,
+      w: tabW,
       h: 42,
     });
     const buttons: PanelButton[] = [
       tab('card:build', 'BUILD', this.cardMode === 'build', 0),
       tab('card:goals', 'GOALS', this.cardMode === 'goals', 1),
       tab('card:supply', 'UPGRADES', this.cardMode === 'supply', 2),
+      tab('card:controls', 'CONTROLS', this.cardMode === 'controls', 3),
       {
         id: 'resume',
         label: 'RESUME',
@@ -1585,7 +1809,7 @@ export class MenuSystem extends createSystem({}) {
           h: 44,
         });
       }
-    } else {
+    } else if (this.cardMode === 'supply') {
       UPGRADES.forEach((u, i) => {
         buttons.push({
           id: `buy:${u.id}`,
@@ -1648,6 +1872,7 @@ export class MenuSystem extends createSystem({}) {
 
         if (this.cardMode === 'goals') this.paintGoals(g, cw, ch);
         else if (this.cardMode === 'supply') this.paintBills(g, cw, ch);
+        else if (this.cardMode === 'controls') this.paintCardControls(g);
         else {
           g.textAlign = 'center';
           const hoveredTool = this.hover?.startsWith('build:') ? this.hover.slice(6) : null;
@@ -1669,7 +1894,7 @@ export class MenuSystem extends createSystem({}) {
                   : armed === 'vat'
                     ? 'Place the vat; connect the green feed'
                     : armed
-                      ? 'Aim at floor · Trigger: place · \u24d1: rotate'
+                      ? 'Aim at floor · Trigger: place · \u24b7: rotate'
                       : 'Choose a machine to build. Empty-handed: trigger to inspect.',
             cw / 2,
             ch - CARD_FOOT - 34,
@@ -1681,7 +1906,7 @@ export class MenuSystem extends createSystem({}) {
           if (armed) {
             g.font = font(600, 19);
             g.fillStyle = UI.dim;
-            g.fillText('\u24cd PUT TOOL AWAY', cw / 2, ch - CARD_FOOT - 8);
+            g.fillText('\u24cd / \u24ce PUT TOOL AWAY', cw / 2, ch - CARD_FOOT - 8);
           }
         }
       },
@@ -1782,6 +2007,58 @@ export class MenuSystem extends createSystem({}) {
       cw - CARD_PAD,
       ch - CARD_FOOT + 12,
     );
+  }
+
+  /**
+   * THE CARD'S CONTROLS PAGE — the factory's buttons, with the
+   * controller they live on drawn beside them.
+   *
+   * The board's CONTROLS tab is the whole map; this is the one page of
+   * it that matters mid-shift, at arm's length, with the words pointing
+   * at the button. The right controller carries nearly everything, so
+   * it goes on top; the left is here for Ⓧ, and to say the grip is a
+   * two-handed thing.
+   */
+  private paintCardControls(g: CanvasRenderingContext2D): void {
+    const S = 160;
+    const X0 = CARD_PAD + 10;
+    const RY = CARD_BODY + 4;
+    const LY = RY + S + 28;
+    const LBL = 250;
+    const litRight = new Set<Control>(['trigger', 'grip', 'upper', 'lower']);
+    const litLeft = new Set<Control>(['trigger', 'grip', 'upper', 'lower']);
+
+    const aR = drawController(g, 'right', X0, RY, S, litRight);
+    const aL = drawController(g, 'left', X0, LY, S, litLeft);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = font(500, 16);
+    g.letterSpacing = '2px';
+    g.fillStyle = UI.faint;
+    g.fillText('RIGHT HAND', X0 + S / 2, RY + S + 12);
+    g.fillText('LEFT HAND', X0 + S / 2, LY + S + 12);
+    g.letterSpacing = '0px';
+
+    const r = (c: Control): { x: number; y: number } => aR[c];
+    const l = (c: Control): { x: number; y: number } => aL[c];
+    callout(g, r('trigger'), LBL, RY + 12, 'right', 'TRIGGER',
+      'Place the piece. Hold it to haul a rail. On a box: inspect.');
+    callout(g, r('upper'), LBL, RY + 60, 'right', faceGlyph('right', 'upper'),
+      'Turn the piece a quarter. On a box: unplug, or remove.');
+    callout(g, r('lower'), LBL, RY + 108, 'right', faceGlyph('right', 'lower'),
+      'This card. Also puts the box panel away.');
+    callout(g, r('grip'), LBL, RY + 156, 'right', 'GRIP',
+      'Carry a loose part. Both hands on a collar: haul the tube.');
+    callout(
+      g,
+      l('lower'),
+      LBL,
+      LY + 40,
+      'right',
+      `${faceGlyph('left', 'lower')} ${faceGlyph('left', 'upper')}`,
+      'Put the tool away.',
+    );
+    callout(g, l('stick'), LBL, LY + 96, 'right', 'STICKS · MENU', 'Not used. Walk — it is your room.', false);
   }
 
   /* ── THE BOX PANEL ────────────────────────────────────────────────────
@@ -2219,6 +2496,7 @@ export class MenuSystem extends createSystem({}) {
     this.paintChrome(g);
     this.boardJobsBody?.(g);
     this.boardOrdersBody?.(g);
+    this.boardControlsBody?.(g);
     this.boardSysBody?.(g);
   }
 }

@@ -37,6 +37,7 @@
  *     hand — the ghost, the links, and a rail run you are mid-haul on —
  *     and gives you the empty hand back, which is also the hand that
  *     opens boxes. One button, always available, never destructive.
+ *     (Ⓨ does the same: it is the other button under that thumb.)
  *
  * This system MUTATES the plant only (factory/sim.ts's doors) — meshes
  * belong to FactorySystem.
@@ -563,7 +564,15 @@ export class BuildSystem extends createSystem({}) {
     // drawn. It lives on the LEFT controller on purpose: the right hand
     // is holding the piece and doing the aiming, and a bail-out you have
     // to aim with is not a bail-out.
-    if (this.input.xr.gamepads.left?.getButtonDown(InputComponent.X_Button)) this.stow();
+    // (Ⓨ too: the two left-hand buttons sit under one thumb, and a
+    // bail-out should not care which of them it landed on.)
+    const left = this.input.xr.gamepads.left;
+    if (
+      left?.getButtonDown(InputComponent.X_Button) ||
+      left?.getButtonDown(InputComponent.Y_Button)
+    ) {
+      this.stow();
+    }
 
     const rayObj = this.world.playerSpaceEntities?.raySpaces?.right?.object3D;
     const pad = this.input.xr.gamepads.right;
