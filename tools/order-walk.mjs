@@ -748,7 +748,7 @@ const sweep = (name, rects, frame) => {
   const off = rects.filter((r) => r.y + r.h > frame.h || r.x + r.w > frame.w || r.x < 0 || r.y < 0);
   if (off.length) overlaps.push(`${name}: ${off.map((r) => r.id).join(', ')} off the card`);
 };
-for (const which of ['build', 'goals', 'supply']) {
+for (const which of ['build', 'goals', 'supply', 'controls']) {
   const rects = await rectsOf(which);
   check(rects.length > 2, `the ${which} page paints its controls (${rects.length})`);
   sweep(which, rects, boxes);

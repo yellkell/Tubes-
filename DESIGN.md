@@ -217,7 +217,12 @@ and all the puzzle the ladder needs to teach.
 
 Five sheets, no difficulty settings — the ladder IS the difficulty:
 
-1. **FIRST LIGHT** — one MAINS run. The verbs, taught by doing.
+1. **FIRST LIGHT** — one MAINS run. The verbs, taught by doing — plus
+   one sentence of coaching standing in the room while the first flange
+   wants placing (the board's words leave with the board, the beam only
+   draws once it is already on a wall, and Ⓐ is a button nobody has
+   been told about). The only words a shift ever speaks unprompted;
+   every later sheet trusts the flange on the ray.
 2. **CROSSTOWN** — one run, long-hauled: the picker weights the farthest
    honest wall, so the tube must cross the room and the park (letting
    go halfway) earns its keep.
@@ -299,7 +304,7 @@ Four buttons, and every one of them is the same verb in two moods:
 | --- | --- | --- |
 | **Trigger** | stamp it (hold, on a rail, to haul the run) | open the box under the reticle |
 | **Ⓑ** | turn the piece a quarter, and mean it | unplug a seated line, or unbolt a bare box |
-| **Ⓧ** | put it back down — ghost, links and a haul in progress | — |
+| **Ⓧ / Ⓨ** | put it back down — ghost, links and a haul in progress | — |
 | **Ⓐ** | the shift card | the shift card (or close an open box) |
 
 **Ⓧ** was the late one. Arming a tool from the card was a one-way door:

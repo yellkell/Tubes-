@@ -48,7 +48,7 @@ const save = (name, url) => {
 };
 
 console.log('THE BOARD, TAB BY TAB');
-for (const tab of ['jobs', 'factory', 'sys']) {
+for (const tab of ['jobs', 'factory', 'controls', 'sys']) {
   await page.evaluate((t) => window.__tubes.menu.act(`tab:${t}`), tab);
   await page.waitForTimeout(400);
   save(`board-${tab}`, await page.evaluate(() => window.__tubes.menu.snapBoard()));
@@ -101,6 +101,7 @@ for (let i = 1; i < sheets - 1; i++) {
 }
 await shot('card-sheet-last', ['goal:back', `goal:${sheets - 1}`]);
 await shot('card-supply', ['goal:back', 'card:supply']);
+await shot('card-controls', ['card:controls']);
 await page.evaluate(() => {
   window.__tubes.menu.act('card:build');
   window.__tubes.menu.setPause(false);
