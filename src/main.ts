@@ -27,6 +27,7 @@ import { MusicSystem } from './systems/MusicSystem.js';
 import { PlacementSystem, placeView } from './systems/PlacementSystem.js';
 import { TubeSystem, tubeView } from './systems/TubeSystem.js';
 import { WallSystem, wallsView } from './systems/WallSystem.js';
+import { stageView } from './room/stage.js';
 
 const container = document.getElementById('scene-container') as HTMLDivElement;
 const enterButton = document.getElementById('enter-ar') as HTMLButtonElement | null;
@@ -153,6 +154,8 @@ declare global {
       /** The wall registry, live — the room as the game sees it. */
       walls: typeof walls;
       wallsInfo: typeof wallsView;
+      /** THE STAGE: the headset's room-scale box, and a stand-in for it. */
+      stage: typeof stageView;
       startJob: typeof startJob;
       abandonShift: typeof abandonShift;
       /** The board + job card, drivable headlessly. */
@@ -191,6 +194,7 @@ window.__tubes = {
   site,
   walls,
   wallsInfo: wallsView,
+  stage: stageView,
   startJob,
   abandonShift,
   menu: menuView,

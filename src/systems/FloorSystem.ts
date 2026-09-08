@@ -16,6 +16,9 @@
  *  - THE PLANT LAW. Sides refuse to cross standing crates (the clamp
  *    lives in floor/plan.ts; the grid feeds it), so re-planning the
  *    boundary can never orphan a machine.
+ *  - THE STAGE. A headset with its boundary drawn deals the tape onto
+ *    that room-scale box first (room/stage.ts); the scan's walls only
+ *    take their turn when there is no box to stand on.
  *
  * This system owns the tape rig and the adjust verb. What stands INSIDE
  * the tape belongs to BuildSystem.
@@ -41,6 +44,7 @@ import {
   type FloorSide,
 } from '../floor/plan.js';
 import { buildTapeRig, type TapeRig } from '../floor/tape.js';
+import { pollStage, stage } from '../room/stage.js';
 import { usable } from '../room/walls.js';
 import { walls } from './WallSystem.js';
 
@@ -93,7 +97,7 @@ export class FloorSystem extends createSystem({}) {
     };
     floorView.reset = () => {
       this.camera.getWorldPosition(_cam);
-      resetLayout(walls, _cam.x, _cam.z);
+      resetLayout(walls, _cam.x, _cam.z, stage.rect);
     };
     floorView.state = () => ({
       initialized: floorAdjust.initialized,
@@ -107,11 +111,20 @@ export class FloorSystem extends createSystem({}) {
     const rig = this.rig;
     if (!rig) return;
 
-    // Deal the layout once the room can vote (or the moment the player
-    // asks for the floor with no room yet — the starter rect stands in).
-    if (!floorAdjust.initialized && (site.wallsReady || site.screen === 'floor')) {
+    // The headset's room-scale box, read once per session (cheap after).
+    pollStage(this.world.session ?? null, this.xrFrame, this.xrManager?.getReferenceSpace() ?? null);
+
+    // Deal the layout once the room can vote — the stage first, then the
+    // walls (or the moment the player asks for the floor with no room
+    // yet — the starter rect stands in). The stage question is answered
+    // within a few frames of the session, so waiting on it costs nothing.
+    if (
+      !floorAdjust.initialized &&
+      stage.settled &&
+      (stage.rect !== null || site.wallsReady || site.screen === 'floor')
+    ) {
       this.camera.getWorldPosition(_cam);
-      initLayout(walls, _cam.x, _cam.z);
+      initLayout(walls, _cam.x, _cam.z, stage.rect);
     }
 
     // THE TAPE COMES DOWN once you're set up: barricade tape is site

@@ -90,6 +90,28 @@ await page.evaluate(() => window.__tubes.floor.reset());
 s = await state();
 check(near(s.layout.left, -2.05) && near(s.layout.right, 2.05), 'reset deals the walls again');
 
+// THE STAGE: the desktop has no boundary drawn (the emulator's bounded
+// floor carries no geometry), so the walls dealt the default above —
+// stand a room-scale box in for the headset's and it beats the walls,
+// taken as drawn, no inset; lift it and the walls take their turn back.
+let st = await page.evaluate(() => window.__tubes.stage.state());
+check(st.settled && st.rect === null, `no boundary on the desktop: the stage settled empty (${JSON.stringify(st)})`);
+await page.evaluate(() => window.__tubes.stage.force({ minX: -1.3, maxX: 1.1, minZ: -1.0, maxZ: 0.9 }));
+await page.evaluate(() => window.__tubes.floor.reset());
+s = await state();
+check(
+  near(s.layout.left, -1.3) && near(s.layout.right, 1.1) && near(s.layout.far, -1.0) && near(s.layout.near, 0.9),
+  `the tape stands on the room-scale box (left ${s.layout.left.toFixed(2)}, right ${s.layout.right.toFixed(2)}, far ${s.layout.far.toFixed(2)}, near ${s.layout.near.toFixed(2)})`,
+);
+await page.evaluate(() => window.__tubes.stage.force({ minX: -0.4, maxX: 0.4, minZ: -0.3, maxZ: 0.3 }));
+await page.evaluate(() => window.__tubes.floor.reset());
+s = await state();
+check(near(s.layout.right - s.layout.left, 1.8) && near(s.layout.near - s.layout.far, 1.8), `a box too small still gets a floor (${(s.layout.right - s.layout.left).toFixed(2)} × ${(s.layout.near - s.layout.far).toFixed(2)})`);
+await page.evaluate(() => window.__tubes.stage.force(null));
+await page.evaluate(() => window.__tubes.floor.reset());
+s = await state();
+check(near(s.layout.left, -2.05) && near(s.layout.right, 2.05), 'the box lifted, the walls deal again');
+
 // THE SNAP, through the live drag path: inside snapDist of a parallel
 // wall the side magnetises to just off the plaster (wall −2.3 + gap).
 v = await dragTo('left', -2.25);

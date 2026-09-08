@@ -16,13 +16,15 @@
  *   near  = the tape BEHIND ME at spawn (+Z)
  *   far   = the tape ACROSS THE ROOM (−Z)
  *
- * The default rectangle is derived from the wall registry (the scan's
- * walls, inset), so with a scanned room the tape STARTS at your walls and
- * you drag it inward; with no walls yet, a starter floor stands around
- * the player. A saved layout beats both.
+ * The default rectangle is the headset's own room-scale box when it has
+ * one (room/stage.ts — the boundary you already drew), else the wall
+ * registry (the scan's walls, inset) so the tape STARTS at your walls
+ * and you drag it inward; with neither yet, a starter floor stands
+ * around the player. A saved layout beats all three.
  */
 
 import { FLOOR } from '../config.js';
+import type { StageRect } from '../room/stage.js';
 import type { Wall } from '../room/walls.js';
 
 export type FloorSide = 'left' | 'right' | 'near' | 'far';
@@ -105,13 +107,26 @@ export function setSide(side: FloorSide, value: number): void {
 }
 
 /**
- * The default rectangle: the registry's walls, inset — every wall's two
- * plan-view endpoints vote on a bounding box. No usable walls yet, and a
- * starter floor stands around the player instead. (An off-axis scan gets
- * a box AROUND its room rather than inside it; the drag and the snap are
- * how it comes home — v0 documented honestly in FACTORY.md.)
+ * The default rectangle, in order of who knows the room best:
+ *  1. THE STAGE — the headset's room-scale box, taken as drawn: that
+ *     boundary IS the floor you set aside to walk, so the tape stands
+ *     right on it rather than out at the plaster.
+ *  2. The registry's walls, inset — every wall's two plan-view endpoints
+ *     vote on a bounding box.
+ *  3. No usable walls yet, and a starter floor stands around the player.
+ * (An off-axis boundary or scan gets a box AROUND its room rather than
+ * inside it; the drag and the snap are how it comes home — v0 documented
+ * honestly in FACTORY.md.)
  */
-export function defaultLayout(allWalls: readonly Wall[], px: number, pz: number): FloorLayout {
+export function defaultLayout(
+  allWalls: readonly Wall[],
+  px: number,
+  pz: number,
+  stageRect: StageRect | null = null,
+): FloorLayout {
+  if (stageRect) {
+    return { left: stageRect.minX, right: stageRect.maxX, far: stageRect.minZ, near: stageRect.maxZ };
+  }
   let minX = Infinity;
   let maxX = -Infinity;
   let minZ = Infinity;
@@ -146,16 +161,26 @@ export function defaultLayout(allWalls: readonly Wall[], px: number, pz: number)
 }
 
 /** Deal the layout once: a saved floor wins, else the room decides. */
-export function initLayout(allWalls: readonly Wall[], px: number, pz: number): void {
+export function initLayout(
+  allWalls: readonly Wall[],
+  px: number,
+  pz: number,
+  stageRect: StageRect | null = null,
+): void {
   if (floorAdjust.initialized) return;
-  if (!loadLayout()) Object.assign(floorLayout, defaultLayout(allWalls, px, pz));
+  if (!loadLayout()) Object.assign(floorLayout, defaultLayout(allWalls, px, pz, stageRect));
   clampLayout(floorLayout);
   floorAdjust.initialized = true;
   floorAdjust.dirty++;
 }
 
-export function resetLayout(allWalls: readonly Wall[], px: number, pz: number): void {
-  Object.assign(floorLayout, defaultLayout(allWalls, px, pz));
+export function resetLayout(
+  allWalls: readonly Wall[],
+  px: number,
+  pz: number,
+  stageRect: StageRect | null = null,
+): void {
+  Object.assign(floorLayout, defaultLayout(allWalls, px, pz, stageRect));
   clampLayout(floorLayout);
   floorAdjust.dirty++;
   saveLayout();

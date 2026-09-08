@@ -175,9 +175,12 @@ src/
                          for an advancing front inside a pipe
   room/walls.ts          the wall model: registry types, mount band,
                          the seeded socket picker, the fallback room
+  room/stage.ts          THE STAGE: the headset's room-scale box (the
+                         bounded floor), folded into the game's frame
   floor/plan.ts          THE FLOOR: the hazard-tape site boundary —
                          SLUGFEST's ring layout ported whole (clamps,
-                         wall snap, the plant law, per-headset save)
+                         wall snap, the plant law, per-headset save);
+                         dealt onto the stage first, the walls second
   floor/grid.ts          the world-anchored build lattice + occupancy
   floor/tape.ts          the tape rig: striped bands, bench posts,
                          grab rings, deck line, lattice hint

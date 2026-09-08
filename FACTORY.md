@@ -221,10 +221,14 @@ inside it, and in adjust mode each side grows a glowing grab ring —
   your real wall; release and it stays; one side at a time; clamps keep a
   minimum floor (≥ 1.8 × 1.8 m) and a maximum inside arm's-reach of the
   registry's walls.
-- with a room scan, sides **initialise at your actual walls** (inset
-  0.25 m) and **snap** to a wall when dragged within 0.2 m of it; in the
-  fallback room, a 3.6 × 2.8 m default stands in — same law as both
-  parent games, playable anywhere.
+- a headset with its boundary drawn deals the sides **onto its own
+  room-scale box** (WebXR's bounded floor, folded into the game's frame
+  — `room/stage.ts`): the area you set aside to walk is the floor, not
+  the plaster beyond it. Without one, a room scan **initialises the sides
+  at your actual walls** (inset 0.25 m); sides **snap** to a wall when
+  dragged within 0.2 m of it either way; in the fallback room, a
+  3.6 × 2.8 m default stands in — same law as both parent games,
+  playable anywhere.
 - the layout **saves per headset** (`localStorage`, the SLUGFEST pattern)
   and greets you next shift.
 - once plant is standing, a side **refuses to cross it** — the clamp
