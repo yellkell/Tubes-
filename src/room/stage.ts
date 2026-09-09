@@ -10,11 +10,14 @@
  * frame can pose the two spaces against each other, and folds the
  * corners into the game's frame as one axis-aligned box.
  *
- * That box is what the hazard tape deals itself from first (floor/plan.ts):
- * the boundary you already drew IS your room-scale area, so the tape
- * should stand on it rather than on the scan's plaster. No boundary — a
- * stationary guardian, an emulator, a browser that refuses the space —
- * and `rect` settles to null, and the walls take their turn as before.
+ * That box is the room, for everything: the hazard tape deals itself
+ * from it first (floor/plan.ts), and the wall registry becomes it —
+ * four faces on its edges, the floor and the ceiling trimmed to it
+ * (systems/WallSystem.ts) — so a job's flange and ports stand on the
+ * boundary you already drew rather than on the scan's plaster beyond
+ * it. No boundary — a stationary guardian, an emulator, a browser that
+ * refuses the space — and `rect` settles to null, and the scan's walls
+ * take their turn as before.
  *
  * A rotated boundary (drawn off-axis to the heading you entered on) gets
  * the box AROUND it, same honest v0 caveat as an off-axis scan: the drag

@@ -18,6 +18,14 @@
  * arriving later evict the stand-ins, but only between shifts: hardware
  * mid-job stays on the walls it was bolted to.
  *
+ * And where the headset has its boundary drawn, THE STAGE ROOM takes the
+ * registry outright (room/stage.ts reads the box): four faces standing
+ * on the room-scale box's edges, the floor and the ceiling trimmed to
+ * it, at the heights the scan lends. The plaster beyond the box is not
+ * the room — every flange, port and tape run stays inside the floor you
+ * set aside to walk. Same law as the stand-in: only re-dealt between
+ * shifts.
+ *
  * The registry also owns its own debug skin: hairline frames on every
  * wall, on for synthetic walls whenever they're being aimed at (you
  * cannot aim at a wall you cannot see) and switchable for real ones from
@@ -34,8 +42,10 @@ import {
 } from 'three';
 import { WALLS } from '../config.js';
 import { site } from '../game/state.js';
+import { pollStage, stage } from '../room/stage.js';
 import {
   buildFallbackRoom,
+  buildStageRoom,
   pointOn,
   usable,
   type SurfaceKind,
@@ -44,6 +54,11 @@ import {
 
 /** The live registry — everything downstream reads walls through here. */
 export const walls: Wall[] = [];
+
+/** The stage room's six ids — fixed, so a refresh lands in place and
+ *  hardware bolted to a face keeps it. */
+const STAGE_ID = 2000;
+const isStageId = (id: number): boolean => id >= STAGE_ID && id < STAGE_ID + 6;
 
 /** Headless/dev view (wired into __tubes in main.ts). */
 export const wallsView: {
@@ -74,6 +89,13 @@ export class WallSystem extends createSystem({
   private idByPlane = new Map<object, number>();
   private graceLeft = WALLS.fallbackGraceS;
   private fallbackBuilt = false;
+  /** The stage room stands (the registry IS the room-scale box). */
+  private stageBuilt = false;
+  private stageSig = '';
+  /** What the scan says the floor and ceiling heights are — lent to the
+   *  stage room whether or not the planes themselves are in the registry. */
+  private scanFloorY: number | null = null;
+  private scanCeilY: number | null = null;
   /** Registry revision — the hint skin rebuilds when it moves. */
   private revision = 0;
   private paintedRevision = -1;
@@ -93,17 +115,22 @@ export class WallSystem extends createSystem({
   }
 
   update(delta: number): void {
+    // The headset's room-scale box, asked for once per session (cheap after).
+    pollStage(this.world.session ?? null, this.xrFrame, this.xrManager?.getReferenceSpace() ?? null);
+
     this.harvestPlanes();
+    this.syncStage();
 
     // The grace only counts down while a session is actually running —
     // the scan can't answer a page that hasn't entered the headset yet.
-    if (this.world.session && !this.hasRealWalls() && !this.fallbackBuilt) {
+    if (this.world.session && !this.hasRealWalls() && !this.fallbackBuilt && !this.stageBuilt) {
       this.graceLeft -= delta;
       if (this.graceLeft <= 0) this.buildFallback();
     }
 
     site.wallsReady = walls.some((w) => usable(w));
     site.fallbackRoom = this.fallbackBuilt && !this.hasRealWalls();
+    site.stageRoom = this.stageBuilt;
 
     this.paintHints();
   }
@@ -117,6 +144,8 @@ export class WallSystem extends createSystem({
   private harvestPlanes(): void {
     const seen = new Set<number>();
     let realArrived = false;
+    let floorY = Infinity;
+    let ceilY = -Infinity;
 
     for (const entity of this.queries.planes.entities) {
       const plane = entity.getValue(XRPlane, '_plane') as
@@ -126,6 +155,11 @@ export class WallSystem extends createSystem({
       if (!plane || !obj) continue;
       const kind = classifyPlane(plane, obj.position.y);
       if (!kind) continue;
+      if (kind === 'floor') floorY = Math.min(floorY, obj.position.y);
+      else if (kind === 'ceiling') ceilY = Math.max(ceilY, obj.position.y);
+      // While the stage room stands the scan only lends its heights:
+      // the plaster beyond the box is not the room.
+      if (this.stageBuilt) continue;
 
       const shape = polygonShape(plane.polygon);
       if (!shape) continue;
@@ -139,6 +173,9 @@ export class WallSystem extends createSystem({
       seen.add(id);
       this.writeWall(id, kind, obj.position, obj.quaternion, shape);
     }
+
+    if (Number.isFinite(floorY)) this.scanFloorY = floorY;
+    if (Number.isFinite(ceilY)) this.scanCeilY = ceilY;
 
     // Planes the scan withdrew (or the session ended) leave the registry.
     const before = walls.length;
@@ -229,6 +266,55 @@ export class WallSystem extends createSystem({
     if (moved) this.revision++;
   }
 
+  /* ── the stage room ───────────────────────────────────────────────────── */
+
+  /** The room-scale box takes the registry: the scan's plaster and the
+   *  stand-in both leave, six faces stand on the box. Refreshed in place
+   *  (fixed ids) when the box or the scan's heights move — and, like
+   *  every re-deal of the room, only between shifts. */
+  private syncStage(): void {
+    if (site.screen !== 'board') return;
+    const rect = stage.rect;
+    if (!rect) {
+      if (!this.stageBuilt) return;
+      // The box is gone (a tool lifted it): the scan, or the grace,
+      // takes the room back next frame.
+      for (let i = walls.length - 1; i >= 0; i--) {
+        if (isStageId(walls[i].id)) walls.splice(i, 1);
+      }
+      this.stageBuilt = false;
+      this.stageSig = '';
+      this.revision++;
+      return;
+    }
+    const floorY = this.scanFloorY ?? 0;
+    const ceilY = this.scanCeilY ?? floorY + WALLS.fallback.h;
+    const sig = [rect.minX, rect.maxX, rect.minZ, rect.maxZ, floorY, ceilY].map((n) => n.toFixed(3)).join(',');
+    if (this.stageBuilt && sig === this.stageSig) return;
+
+    for (let i = walls.length - 1; i >= 0; i--) {
+      if (!isStageId(walls[i].id)) walls.splice(i, 1);
+    }
+    for (const fresh of buildStageRoom(rect, floorY, ceilY, STAGE_ID)) {
+      const ex = walls.find((w) => w.id === fresh.id);
+      if (!ex) {
+        walls.push(fresh);
+        continue;
+      }
+      ex.kind = fresh.kind;
+      ex.center.copy(fresh.center);
+      ex.normal.copy(fresh.normal);
+      ex.right.copy(fresh.right);
+      ex.up.copy(fresh.up);
+      ex.halfW = fresh.halfW;
+      ex.halfH = fresh.halfH;
+    }
+    this.fallbackBuilt = false;
+    this.stageBuilt = true;
+    this.stageSig = sig;
+    this.revision++;
+  }
+
   /* ── the stand-in room ────────────────────────────────────────────────── */
 
   private buildFallback(): void {
@@ -243,10 +329,11 @@ export class WallSystem extends createSystem({
 
   private paintHints(): void {
     // Synthetic walls show themselves whenever a flange wants placing —
-    // you cannot aim at plaster that isn't there. Everything else waits
-    // for the SYSTEM toggle.
+    // you cannot aim at plaster that isn't there (nor at a boundary the
+    // headset stopped drawing). Everything else waits for the SYSTEM
+    // toggle.
     const placing = site.runs.some((r) => r.phase === 'place');
-    const wantFallback = site.fallbackRoom && site.screen !== 'board' && placing;
+    const wantSynthetic = (site.fallbackRoom || site.stageRoom) && site.screen !== 'board' && placing;
 
     if (this.paintedRevision !== this.revision) {
       this.paintedRevision = this.revision;
@@ -277,7 +364,7 @@ export class WallSystem extends createSystem({
 
     for (let i = 0; i < this.hintLines.length; i++) {
       const wall = walls[i];
-      const show = site.showWalls || (wantFallback && wall && !wall.real);
+      const show = site.showWalls || (wantSynthetic && wall && !wall.real);
       this.hintLines[i].frame.visible = show;
       this.hintLines[i].tick.visible = show;
     }

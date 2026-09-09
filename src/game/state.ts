@@ -96,6 +96,8 @@ export interface Site {
   /** WallSystem reports: any walls at all, and whether they're synthetic. */
   wallsReady: boolean;
   fallbackRoom: boolean;
+  /** …or the headset's own room-scale box, standing as the room. */
+  stageRoom: boolean;
   /** SYSTEM tab: draw hairline frames on the registry's walls. */
   showWalls: boolean;
   /** The fx bus. */
@@ -116,6 +118,7 @@ export const site: Site = {
   generation: 0,
   wallsReady: false,
   fallbackRoom: false,
+  stageRoom: false,
   showWalls: false,
   fx: [],
 };

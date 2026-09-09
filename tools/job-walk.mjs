@@ -55,6 +55,33 @@ check(
   `fallback room stands in (${kinds.join(', ')})`,
 );
 
+// THE STAGE ROOM: a headset with its boundary drawn plays inside that
+// box — stand one in and the registry becomes it (four faces on its
+// edges, the floor and the ceiling trimmed to it, at the stand-in's
+// heights since no scan answers here), the stand-in gone; lift it and
+// the stand-in comes back for the rest of the walk.
+await page.evaluate(() => window.__tubes.stage.force({ minX: -1.2, maxX: 1.4, minZ: -1.5, maxZ: 0.9 }));
+await page.waitForFunction(() => window.__tubes.site.stageRoom, { timeout: 5000 });
+const box = await page.evaluate(() =>
+  window.__tubes.walls.map((w) => ({ kind: w.kind, real: w.real, x: w.center.x, y: w.center.y, z: w.center.z, hw: w.halfW, hh: w.halfH })),
+);
+const at = (a, b) => Math.abs(a - b) < 0.02;
+const face = (axis, v) => box.some((w) => w.kind === 'wall' && at(w[axis], v));
+check(
+  box.length === 6 && box.every((w) => !w.real) && face('x', -1.2) && face('x', 1.4) && face('z', -1.5) && face('z', 0.9),
+  `the room-scale box takes the registry (${box.map((w) => `${w.kind}@${w.x.toFixed(1)},${w.z.toFixed(1)}`).join(' ')})`,
+);
+const boxFloor = box.find((w) => w.kind === 'floor');
+const boxCeil = box.find((w) => w.kind === 'ceiling');
+check(
+  boxFloor && boxCeil && at(boxFloor.y, 0) && at(boxCeil.y, 2.7) && at(boxFloor.hw, 1.3) && at(boxFloor.hh, 1.2),
+  `the floor and the ceiling are trimmed to the box (floor ${boxFloor?.hw.toFixed(2)} × ${boxFloor?.hh.toFixed(2)} half-extents, ceiling at ${boxCeil?.y.toFixed(2)})`,
+);
+await page.evaluate(() => window.__tubes.stage.force(null));
+await page.waitForFunction(() => !window.__tubes.site.stageRoom && window.__tubes.site.fallbackRoom, { timeout: 5000 });
+const back = await page.evaluate(() => window.__tubes.walls.map((w) => w.kind));
+check(back.length === 6 && back.filter((k) => k === 'wall').length === 4, `the box lifted, the stand-in room stands again (${back.join(', ')})`);
+
 const phase = (i) => page.evaluate((idx) => window.__tubes.site.runs[idx]?.phase ?? 'gone', i);
 const waitPhase = (i, want, timeout = 15000) =>
   page.waitForFunction(

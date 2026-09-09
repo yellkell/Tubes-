@@ -21,6 +21,7 @@
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import { PORTS, RUN_RANGE, WALLS } from '../config.js';
 import { mulberry32 } from '../game/rng.js';
+import type { StageRect } from './stage.js';
 
 export type SurfaceKind = 'wall' | 'floor' | 'ceiling';
 
@@ -209,27 +210,29 @@ export function pickSocket(
 }
 
 /**
- * The fallback room — four synthetic walls plus a floor and a ceiling
- * around the player, aligned to their facing, when no scan answers
- * (desktop emulator, a headset without room setup). Synthetic surfaces
- * are honest registry citizens: everything downstream works identically,
- * it just can't see the plaster.
+ * A BOX ROOM — four walls, a floor and a ceiling round a rectangle of
+ * floor. `fwd` and `side` are the box's plan axes (unit, horizontal):
+ * `halfW` runs along `side`, `halfD` along `fwd`; the walls stand from
+ * `floorY` to `ceilY`. Synthetic surfaces are honest registry citizens:
+ * everything downstream works identically, it just can't see the
+ * plaster. Both stand-in rooms are built here.
  */
-export function buildFallbackRoom(
+function boxRoom(
   centerX: number,
   centerZ: number,
-  yaw: number,
-  nextId: number,
+  fwd: Vector3,
+  side: Vector3,
+  halfW: number,
+  halfD: number,
+  floorY: number,
+  ceilY: number,
+  firstId: number,
 ): Wall[] {
-  const { w, d, h } = WALLS.fallback;
-  const cos = Math.cos(yaw);
-  const sin = Math.sin(yaw);
-  const fwd = new Vector3(-sin, 0, -cos); // yaw 0 faces −Z
-  const side = new Vector3(cos, 0, -sin);
   const up = new Vector3(0, 1, 0);
-  const mid = h / 2;
-  const make = (offset: Vector3, normal: Vector3, halfW: number, id: number): Wall => {
-    const center = new Vector3(centerX, mid, centerZ).add(offset);
+  const midY = (floorY + ceilY) / 2;
+  const halfH = (ceilY - floorY) / 2;
+  const make = (offset: Vector3, normal: Vector3, hw: number, id: number): Wall => {
+    const center = new Vector3(centerX, midY, centerZ).add(offset);
     const right = new Vector3().crossVectors(up, normal).normalize();
     return {
       id,
@@ -238,8 +241,8 @@ export function buildFallbackRoom(
       normal: normal.clone().normalize(),
       right,
       up: up.clone(),
-      halfW,
-      halfH: mid,
+      halfW: hw,
+      halfH,
       real: false,
     };
   };
@@ -256,16 +259,56 @@ export function buildFallbackRoom(
     // its right with it, and mountQuaternion stays a pure rotation).
     right: new Vector3().crossVectors(fwd, normal).normalize(),
     up: fwd.clone(),
-    halfW: w / 2,
-    halfH: d / 2,
+    halfW,
+    halfH: halfD,
     real: false,
   });
   return [
-    make(fwd.clone().multiplyScalar(d / 2), fwd.clone().negate(), w / 2, nextId),
-    make(fwd.clone().multiplyScalar(-d / 2), fwd.clone(), w / 2, nextId + 1),
-    make(side.clone().multiplyScalar(w / 2), side.clone().negate(), d / 2, nextId + 2),
-    make(side.clone().multiplyScalar(-w / 2), side.clone(), d / 2, nextId + 3),
-    flat(0, new Vector3(0, 1, 0), nextId + 4, 'floor'),
-    flat(h, new Vector3(0, -1, 0), nextId + 5, 'ceiling'),
+    make(fwd.clone().multiplyScalar(halfD), fwd.clone().negate(), halfW, firstId),
+    make(fwd.clone().multiplyScalar(-halfD), fwd.clone(), halfW, firstId + 1),
+    make(side.clone().multiplyScalar(halfW), side.clone().negate(), halfD, firstId + 2),
+    make(side.clone().multiplyScalar(-halfW), side.clone(), halfD, firstId + 3),
+    flat(floorY, new Vector3(0, 1, 0), firstId + 4, 'floor'),
+    flat(ceilY, new Vector3(0, -1, 0), firstId + 5, 'ceiling'),
   ];
+}
+
+/**
+ * The fallback room — four synthetic walls plus a floor and a ceiling
+ * around the player, aligned to their facing, when no scan answers
+ * (desktop emulator, a headset without room setup).
+ */
+export function buildFallbackRoom(
+  centerX: number,
+  centerZ: number,
+  yaw: number,
+  nextId: number,
+): Wall[] {
+  const { w, d, h } = WALLS.fallback;
+  const cos = Math.cos(yaw);
+  const sin = Math.sin(yaw);
+  const fwd = new Vector3(-sin, 0, -cos); // yaw 0 faces −Z
+  const side = new Vector3(cos, 0, -sin);
+  return boxRoom(centerX, centerZ, fwd, side, w / 2, d / 2, 0, h, nextId);
+}
+
+/**
+ * THE STAGE ROOM — the headset's room-scale box as a room: four faces
+ * standing on the box's edges (world-axis aligned, as the box is), the
+ * floor and the ceiling trimmed to it, at the heights the scan lends
+ * (room/stage.ts for where the box comes from; WallSystem for when it
+ * takes the registry).
+ */
+export function buildStageRoom(rect: StageRect, floorY: number, ceilY: number, firstId: number): Wall[] {
+  return boxRoom(
+    (rect.minX + rect.maxX) / 2,
+    (rect.minZ + rect.maxZ) / 2,
+    new Vector3(0, 0, -1),
+    new Vector3(1, 0, 0),
+    (rect.maxX - rect.minX) / 2,
+    (rect.maxZ - rect.minZ) / 2,
+    floorY,
+    ceilY,
+    firstId,
+  );
 }

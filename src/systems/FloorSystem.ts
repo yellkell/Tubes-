@@ -44,7 +44,7 @@ import {
   type FloorSide,
 } from '../floor/plan.js';
 import { buildTapeRig, type TapeRig } from '../floor/tape.js';
-import { pollStage, stage } from '../room/stage.js';
+import { stage } from '../room/stage.js';
 import { usable } from '../room/walls.js';
 import { walls } from './WallSystem.js';
 
@@ -111,13 +111,11 @@ export class FloorSystem extends createSystem({}) {
     const rig = this.rig;
     if (!rig) return;
 
-    // The headset's room-scale box, read once per session (cheap after).
-    pollStage(this.world.session ?? null, this.xrFrame, this.xrManager?.getReferenceSpace() ?? null);
-
     // Deal the layout once the room can vote — the stage first, then the
     // walls (or the moment the player asks for the floor with no room
-    // yet — the starter rect stands in). The stage question is answered
-    // within a few frames of the session, so waiting on it costs nothing.
+    // yet — the starter rect stands in). WallSystem asks the stage
+    // question; it is answered within a few frames of the session, so
+    // waiting on it costs nothing.
     if (
       !floorAdjust.initialized &&
       stage.settled &&

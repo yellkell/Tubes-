@@ -100,9 +100,13 @@ npm run dev          # → http://localhost:5173
 ```
 
 - **Quest browser**: open the page, tap **PLAY** → passthrough AR over
-  your own room. If the headset has a room scan (Settings → Physical
-  Space → Space Setup), the game uses your actual walls; without one, a
-  stand-in room stands in after a few seconds and the board says so.
+  your own room. If the headset has its boundary drawn, the game plays
+  inside that room-scale box: flanges, ports and the tape all stand on
+  its faces (hairline frames show them whenever a flange wants placing),
+  and a room scan lends only its floor and ceiling heights. Without a
+  boundary, a room scan (Settings → Physical Space → Space Setup) gives
+  the game your actual walls; without either, a stand-in room stands in
+  after a few seconds. The board says which room you're in.
 - **Desktop**: the IWSDK dev plugin injects a WebXR emulator (IWER) —
   click PLAY and drive with the emulator's controls; the stand-in
   room appears (there is no plaster in a browser tab), with hairline

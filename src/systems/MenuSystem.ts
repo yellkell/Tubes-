@@ -743,6 +743,7 @@ export class MenuSystem extends createSystem({}) {
       this.quitArm > 0,
       walls.length,
       site.fallbackRoom,
+      site.stageRoom,
       site.wallsReady,
       runsKey,
       ordersUnlocked(),
@@ -894,9 +895,11 @@ export class MenuSystem extends createSystem({}) {
     const real = walls.filter((w) => w.real && w.kind === 'wall').length;
     const label = !site.wallsReady
       ? 'WAITING FOR WALLS'
-      : site.fallbackRoom
-        ? 'STAND-IN ROOM'
-        : `ROOM SCANNED · ${real} WALL${real === 1 ? '' : 'S'}`;
+      : site.stageRoom
+        ? 'ROOM-SCALE BOX'
+        : site.fallbackRoom
+          ? 'STAND-IN ROOM'
+          : `ROOM SCANNED · ${real} WALL${real === 1 ? '' : 'S'}`;
     g.textAlign = 'right';
     g.font = font(600, 24);
     g.fillStyle = site.fallbackRoom || !site.wallsReady ? UI.warn : UI.positive;
@@ -1590,7 +1593,9 @@ export class MenuSystem extends createSystem({}) {
       g.font = font(500, 22);
       g.fillStyle = UI.faint;
       g.fillText(
-        `room: ${real} scanned wall${real === 1 ? '' : 's'}${fake ? ` · ${fake} stand-in` : ''}${flats ? ` · floor/ceiling ports live` : ''}`,
+        site.stageRoom
+          ? `room: the headset's room-scale box${flats ? ` · floor/ceiling ports live` : ''}`
+          : `room: ${real} scanned wall${real === 1 ? '' : 's'}${fake ? ` · ${fake} stand-in` : ''}${flats ? ` · floor/ceiling ports live` : ''}`,
         CONTENT_X + 10,
         H - 44,
       );

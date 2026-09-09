@@ -97,6 +97,13 @@ never touches a raw XRPlane.
   cannot aim at plaster you cannot see — and the board's status chip
   always says which room you're in. Real planes arriving later evict the
   stand-ins, but never mid-shift: mounted hardware keeps its walls.
+- **The stage room.** A headset with its boundary drawn plays inside
+  that room-scale box, not the scan: the registry becomes six faces on
+  the box's edges (`room/stage.ts` reads WebXR's bounded floor; the
+  scan lends floor and ceiling heights), so the flange reticle, the
+  socket picker and the tape all land on the floor you set aside to
+  walk. Drawn as hairline frames while a flange wants placing, like the
+  stand-in, and re-dealt only between shifts, like everything else.
 
 ## The tube
 
