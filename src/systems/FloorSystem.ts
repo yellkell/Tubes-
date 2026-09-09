@@ -35,6 +35,7 @@ import {
   floorAdjust,
   floorLayout,
   initLayout,
+  layoutWithin,
   nearestSide,
   resetLayout,
   saveLayout,
@@ -123,6 +124,22 @@ export class FloorSystem extends createSystem({}) {
     ) {
       this.camera.getWorldPosition(_cam);
       initLayout(walls, _cam.x, _cam.z, stage.rect);
+    }
+
+    // THE BOX ARRIVING LATE. Quest fills its bounds a moment after the
+    // session starts, and a boundary can be redrawn mid-session: a floor
+    // the ROOM dealt, or a save that stands outside the box, re-deals
+    // onto it — never a floor you set yourself inside the box, and never
+    // mid-shift.
+    if (
+      floorAdjust.initialized &&
+      stage.rect &&
+      site.screen === 'board' &&
+      floorAdjust.source !== 'stage' &&
+      (floorAdjust.source === 'room' || !layoutWithin(floorLayout, stage.rect))
+    ) {
+      this.camera.getWorldPosition(_cam);
+      resetLayout(walls, _cam.x, _cam.z, stage.rect);
     }
 
     // THE TAPE COMES DOWN once you're set up: barricade tape is site
@@ -223,6 +240,8 @@ export class FloorSystem extends createSystem({}) {
     floorAdjust.snapped = false;
     floorAdjust.dirty++;
     if (save) {
+      // A side you set yourself is yours: no box re-deals it.
+      floorAdjust.source = 'save';
       saveLayout();
       sfx.uiClick();
     }

@@ -117,6 +117,7 @@ import { callout, drawController, faceGlyph, type Control, type Hand } from '../
 import { controllerModelView, onControllerImage } from '../ui/controllerModel.js';
 import { PointerRay } from '../ui/pointer.js';
 import { walls } from './WallSystem.js';
+import { stage } from '../room/stage.js';
 
 /** A button's picture: the machine's own shop drawing, greyed with the
  *  plate when the catalogue is refusing it. */
@@ -744,6 +745,7 @@ export class MenuSystem extends createSystem({}) {
       walls.length,
       site.fallbackRoom,
       site.stageRoom,
+      stage.why,
       site.wallsReady,
       runsKey,
       ordersUnlocked(),
@@ -1594,8 +1596,8 @@ export class MenuSystem extends createSystem({}) {
       g.fillStyle = UI.faint;
       g.fillText(
         site.stageRoom
-          ? `room: the headset's room-scale box${flats ? ` · floor/ceiling ports live` : ''}`
-          : `room: ${real} scanned wall${real === 1 ? '' : 's'}${fake ? ` · ${fake} stand-in` : ''}${flats ? ` · floor/ceiling ports live` : ''}`,
+          ? `room: the headset's room-scale box (${stage.why})${flats ? ` · floor/ceiling ports live` : ''}`
+          : `room: ${real} scanned wall${real === 1 ? '' : 's'}${fake ? ` · ${fake} stand-in` : ''}${flats ? ` · floor/ceiling ports live` : ''} · stage: ${stage.why}`,
         CONTENT_X + 10,
         H - 44,
       );

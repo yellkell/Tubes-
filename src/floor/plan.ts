@@ -20,7 +20,9 @@
  * one (room/stage.ts — the boundary you already drew), else the wall
  * registry (the scan's walls, inset) so the tape STARTS at your walls
  * and you drag it inward; with neither yet, a starter floor stands
- * around the player. A saved layout beats all three.
+ * around the player. A saved layout beats all three — unless a box is
+ * known and the save lies outside it (a floor from another room, or
+ * from before the boundary was drawn): the box you walk is the floor.
  */
 
 import { FLOOR } from '../config.js';
@@ -48,6 +50,11 @@ export const floorAdjust = {
   /** The layout has been dealt (from storage, the walls, or the
    *  fallback) — nothing draws or clamps before this. */
   initialized: false,
+  /** Where the standing layout came from: a headset save, the stage
+   *  box, or the room (walls / the starter floor). A box arriving late
+   *  re-deals a 'room' floor, and a 'save' that lies outside the box —
+   *  never a 'stage' floor, never one you set yourself inside the box. */
+  source: 'none' as 'none' | 'save' | 'stage' | 'room',
   /** The side currently held (one at a time — that's the law). */
   grabbed: null as FloorSide | null,
   /** Which hand holds it. */
@@ -168,10 +175,24 @@ export function initLayout(
   stageRect: StageRect | null = null,
 ): void {
   if (floorAdjust.initialized) return;
-  if (!loadLayout()) Object.assign(floorLayout, defaultLayout(allWalls, px, pz, stageRect));
+  const loaded = loadLayout();
+  if (loaded && (!stageRect || layoutWithin(floorLayout, stageRect))) {
+    floorAdjust.source = 'save';
+  } else {
+    // No save — or a save that stands outside the box you walk: the
+    // room deals, the box first.
+    Object.assign(floorLayout, defaultLayout(allWalls, px, pz, stageRect));
+    floorAdjust.source = stageRect ? 'stage' : 'room';
+  }
   clampLayout(floorLayout);
   floorAdjust.initialized = true;
   floorAdjust.dirty++;
+}
+
+/** Does a layout stand inside a box — every side on it or inward, with
+ *  a little tolerance for the clamp's own nudges? */
+export function layoutWithin(l: FloorLayout, r: StageRect, tol = 0.1): boolean {
+  return l.left >= r.minX - tol && l.right <= r.maxX + tol && l.far >= r.minZ - tol && l.near <= r.maxZ + tol;
 }
 
 export function resetLayout(
@@ -181,6 +202,7 @@ export function resetLayout(
   stageRect: StageRect | null = null,
 ): void {
   Object.assign(floorLayout, defaultLayout(allWalls, px, pz, stageRect));
+  floorAdjust.source = stageRect ? 'stage' : 'room';
   clampLayout(floorLayout);
   floorAdjust.dirty++;
   saveLayout();

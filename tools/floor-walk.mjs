@@ -165,6 +165,8 @@ const kept = { ...s.layout };
 await page.evaluate(() => window.__tubes.floor.exit());
 await page.waitForFunction(() => window.__tubes.site.screen === 'board', undefined, { timeout: 4000 });
 check(true, 'DONE returns the board');
+// (The rig lowers on the floor's next update — give it the frame.)
+await page.waitForFunction(() => window.__tubes.floor.state().tapeUp === false, undefined, { timeout: 2000 }).catch(() => {});
 s = await state();
 check(s.tapeUp === false, 'the tape came down with the setup');
 
